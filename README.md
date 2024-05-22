@@ -30,9 +30,9 @@ The preferred installation method only needs a Windows PC connected to the same 
 
 
 ```sh
-wget https://raw.githubusercontent.com/BritishAmateurTelevisionClub/portsdown4/master/install_portsdown.sh
-chmod +x install_portsdown.sh
-./install_portsdown.sh
+wget https://github.com/BritishAmateurTelevisionClub/portsdown5/raw/main/install_p5.sh
+chmod +x install_p5.sh
+./install_p5.sh
 ```
 
 The initial build can take between 45 minutes and one hour, however it does not need any user input, so go and make a cup of coffee and keep an eye on the touchscreen.  When the build is finished the Pi will reboot and start-up with the touchscreen menu.
@@ -53,9 +53,9 @@ Then reboot, and try again.  The command asks your RPi to use Google's DNS, not 
 To load the development version, cut and paste in the following lines:
 
 ```sh
-wget https://raw.githubusercontent.com/davecrump/portsdown5/master/install_portsdown.sh
-chmod +x install_portsdown.sh
-./install_portsdown.sh -d
+wget https://github.com/davecrump/portsdown5/raw/main/install_p5.sh
+chmod +x install_p5.sh
+./install_p5.sh -d
 ```
 
 
