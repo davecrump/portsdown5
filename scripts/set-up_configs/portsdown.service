@@ -1,0 +1,9 @@
+[Unit]
+Description=Portsdown 5
+[Service]
+ExecStart=/home/pi/portsdown/scripts/startup.sh
+User=pi
+Group=pi
+WorkingDirectory=/home/pi
+[Install]
+WantedBy=multi-user.target

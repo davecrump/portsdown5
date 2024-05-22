@@ -1,0 +1,13 @@
+# Configuration Settings that apply to all apps, not just the TX or RX
+
+# startup: Portsdown_boot, Bandview_boot
+startup=Bandview_boot
+
+# display: Browser
+display=Browser
+
+# touch: normal, inverted
+touch=inverted
+
+# webcontrol: enabled, disabled
+webcontrol=enabled
