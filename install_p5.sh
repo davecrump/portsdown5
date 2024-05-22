@@ -14,7 +14,7 @@ BUILD_STATUS="Success"
 
 # Create first entry for the build error log
 echo $(date -u) "New Build started" | sudo tee -a /home/pi/p5_initial_build_log.txt  > /dev/null
-sudo chown pi:pi /home/pi/p4ng_initial_build_log.txt
+sudo chown pi:pi /home/pi/p5_initial_build_log.txt
 
 # Check current user
 whoami | grep -q pi
@@ -49,7 +49,7 @@ if [ "$1" == "-d" ]; then
   echo "--------------------------------------------------------"
   echo "----- Installing development version of Portsdown 5-----"
   echo "--------------------------------------------------------"
-  echo $(date -u) "Installing Dev Version" | sudo tee -a /home/pi/p4ng_initial_build_log.txt  > /dev/null
+  echo $(date -u) "Installing Dev Version" | sudo tee -a /home/pi/p5_initial_build_log.txt  > /dev/null
 elif [ "$1" == "-u" -a ! -z "$2" ]; then
   GIT_SRC="$2"
   echo
@@ -59,14 +59,14 @@ elif [ "$1" == "-u" -a ! -z "$2" ]; then
     exit 1;
   fi
   echo "ok!";
-  echo $(date -u) "Installing ${GIT_SRC} Version" | sudo tee -a /home/pi/p4ng_initial_build_log.txt  > /dev/null
+  echo $(date -u) "Installing ${GIT_SRC} Version" | sudo tee -a /home/pi/p5_initial_build_log.txt  > /dev/null
 else
   GIT_SRC="britishamateurtelevisionclub";
   echo
   echo "----------------------------------------------------------------"
   echo "----- Installing BATC Production version of Portsdown 4 NG -----"
   echo "----------------------------------------------------------------"
-  echo $(date -u) "Installing Production Version" | sudo tee -a /home/pi/p4ng_initial_build_log.txt  > /dev/null
+  echo $(date -u) "Installing Production Version" | sudo tee -a /home/pi/p5_initial_build_log.txt  > /dev/null
 fi
 
 # Update the package manager
@@ -116,14 +116,14 @@ sudo apt-get -y install imagemagick                      # for captions
   SUCCESS=$?; BuildLogMsg $SUCCESS "imagemagick install"
 sudo apt-get -y install libraspberrypi-dev               # for bcm_host
   SUCCESS=$?; BuildLogMsg $SUCCESS "libraspberrypi-dev install"
-sudo apt-get install libpng-dev                          # for screen capture
+sudo apt-get -y install libpng-dev                          # for screen capture
   SUCCESS=$?; BuildLogMsg $SUCCESS "libpng-dev install"
-sudo apt-get install vlc                                 # for rx and replay
+sudo apt-get -y install vlc                                 # for rx and replay
   SUCCESS=$?; BuildLogMsg $SUCCESS "vlc install"
 
 echo
 echo "----------------------------------------"
-echo "----- Installing LimeSuiteNG -----"
+echo "-----    Installing LimeSuiteNG    -----"
 echo "----------------------------------------"
 
 git clone https://github.com/myriadrf/LimeSuiteNG        # Download LimeSuiteNG
@@ -144,7 +144,12 @@ sudo apt-get -y install --no-install-recommends libusb-1.0-0-dev
 sudo apt-get -y install --no-install-recommends libwxgtk3.2-dev
   SUCCESS=$?; BuildLogMsg $SUCCESS "libwxgtk3.2-dev install"
 
-cmake -B build && cd build
+cd LimeSuiteNG
+
+cmake -B build
+  SUCCESS=$?; BuildLogMsg $SUCCESS "LimeSuiteNG cmake"
+
+cd build
 
 make -j 4 -O
   SUCCESS=$?; BuildLogMsg $SUCCESS "LimeSuiteNG make"
@@ -154,7 +159,6 @@ sudo make install
 
 sudo ldconfig
   SUCCESS=$?; BuildLogMsg $SUCCESS "LimeSuiteNG ldconfig"
-
 
 # Install LimeSuite 23.11 as at 8 May 2024
 # Commit 9dce3b6a6bd66537a2249ad27101345d31aafc89
@@ -218,7 +222,6 @@ echo "---------------------------------"
 cd /home/pi/portsdown/src/gui
 make -j 4 -O
   SUCCESS=$?; BuildLogMsg $SUCCESS "Portsdown 5 compile"
-
 mv /home/pi/portsdown/src/gui/portsdown5 /home/pi/portsdown/bin/portsdown5
 cd /home/pi
 
@@ -243,7 +246,7 @@ cd /home/pi
 
 # Rotate the touchscreen display to the normal orientation 
 if !(grep video=DSI-1 /boot/firmware/cmdline.txt) then
-  sudo sed -i '1s,$, video=DSI-1:800x480M@60,rotate=180,' /boot/firmware/cmdline.txt
+  sudo sed -i '1s,$, video=DSI-1:800x480M@60\,rotate=180,' /boot/firmware/cmdline.txt
 fi
 
 # Set the default HDMI 0 output to 720p60
@@ -282,9 +285,7 @@ echo "0" > /home/pi/snaps/snap_index.txt
 # Install the command-line aliases
 echo "alias ugui='/home/pi/portsdown/utils/uguir.sh'"  >> /home/pi/.bash_aliases
 
-
-
-# Record Version Number
+# Record the Version Number
 head -c 9 /home/pi/portsdown/version_history.txt > /home/pi/portsdown/configs/installed_version.txt
 echo -e "\n" >> /home/pi/portsdown/configs/installed_version.txt
 echo "Version number" | sudo tee -a /home/pi/p5_initial_build_log.txt  > /dev/null
