@@ -1,0 +1,7 @@
+Notepad for programming guidelines
+
+Graphics x and y in function calls are always from bottom left of an 800x480 canvas.  However, Touchscreen only has 479x799 pixels.  So 1, 1 is visible bottom left and 799, 479 is visible top right.  The coords 0, 0 will however show on an hdmi display.
+
+screenXsize and screenYsize can be 1920x1080 or 1280x720, but this does not change the 800x480 drawing canvas.
+
+fbi and vlc write to the large (720p or 1080p) canvas, so clearscreen clears the entire canvas.
