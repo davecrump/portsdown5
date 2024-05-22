@@ -204,6 +204,7 @@ echo "--------------------------------------------"
 echo "----- Downloading Portsdown 5 Software -----"
 echo "--------------------------------------------"
 
+cd /home/pi
 wget https://github.com/${GIT_SRC}/portsdown5/archive/main.zip
   SUCCESS=$?; BuildLogMsg $SUCCESS "Portsdown 5 download from GitHub"
 
@@ -211,7 +212,7 @@ wget https://github.com/${GIT_SRC}/portsdown5/archive/main.zip
 unzip -o main.zip
 mv portsdown5-main portsdown
 rm main.zip
-cd /home/pi
+mkdir /home/pi/portsdown/bin
 
 # Compile the main Portsdown 5 application
 echo
@@ -242,7 +243,10 @@ mv /home/pi/portsdown/src/limeview/limeview /home/pi/portsdown/bin/limeview
 #cp .fftwf_wisdom /home/pi/.fftwf_wisdom
 cd /home/pi
 
-
+# Configure to start Portsdown on boot as a service
+sudo cp /home/pi/portsdown/scripts/set-up_configs/portsdown.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable portsdown
 
 # Rotate the touchscreen display to the normal orientation 
 if !(grep video=DSI-1 /boot/firmware/cmdline.txt) then

@@ -8,7 +8,7 @@ INCLUDEFLAGS2=-lpthread -I/opt/vc/include -I/opt/vc/include/interface/vmcs_host/
 LIBFLAGS2=-L/opt/vc/lib -lpthread -lrt -lm -ldl  -fcommon
 
 portsdown5: portsdown5.c 
-	gcc -Wall $(INCLUDEFLAGS2) -o  portsdown5 \
+	gcc -fdiagnostics-color -Wall $(INCLUDEFLAGS2) -o  portsdown5 \
 		../common/font/font.c \
 		../common/font/dejavu_sans_18.c \
 		../common/font/dejavu_sans_20.c \
