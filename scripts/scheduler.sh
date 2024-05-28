@@ -12,6 +12,7 @@
 ############ Set Environment Variables ###############
 
 PCONFIGFILE="/home/pi/portsdown/configs/portsdown_config.txt"
+SCONFIGFILE="/home/pi/portsdown/configs/system_config.txt"
 
 ############ Function to Read from Config File ###############
 
@@ -201,9 +202,12 @@ case "$MODE_STARTUP" in
 esac
 
 while [ "$GUI_RETURN_CODE" -gt 127 ] || [ "$GUI_RETURN_CODE" -eq 0 ];  do
+
+echo $GUI_RETURN_CODE
+
   case "$GUI_RETURN_CODE" in
     0)
-      /home/pi/portsdown/bin/portsdown5 > /tmp/PortsdownGUI.log 2>&1
+      /home/pi/portsdown/bin/portsdown5 # > /tmp/PortsdownGUI.log 2>&1
       GUI_RETURN_CODE="$?"
       sudo killall vlc >/dev/null 2>/dev/null
     ;;
@@ -212,7 +216,7 @@ while [ "$GUI_RETURN_CODE" -gt 127 ] || [ "$GUI_RETURN_CODE" -eq 0 ];  do
       break
     ;;
     129)
-      /home/pi/portsdown/bin/portsdown5 > /tmp/PortsdownGUI.log 2>&1
+      /home/pi/portsdown/bin/portsdown5 # > /tmp/PortsdownGUI.log 2>&1
       GUI_RETURN_CODE="$?"
       sudo killall vlc >/dev/null 2>/dev/null
     ;;
@@ -259,7 +263,8 @@ while [ "$GUI_RETURN_CODE" -gt 127 ] || [ "$GUI_RETURN_CODE" -eq 0 ];  do
     ;;
     139)
       sleep 1
-      /home/pi/portsdown/bin/sweeper
+      #/home/pi/portsdown/bin/sweeper
+      /home/pi/portsdown/bin/portsdown5
       GUI_RETURN_CODE="$?"
     ;;
     140)

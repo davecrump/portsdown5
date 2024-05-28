@@ -193,7 +193,7 @@ void CheckConfigFile();
 void ReadSavedParams();
 void *WaitTouchscreenEvent(void * arg);
 void *WaitMouseEvent(void * arg);
-void handle_mouse();
+//void handle_mouse();
 void *WebClickListener(void * arg);
 void parseClickQuerystring(char *query_string, int *x_ptr, int *y_ptr);
 FFUNC touchscreenClick(ffunc_session_t * session);
@@ -201,7 +201,6 @@ void do_snapcheck();
 int IsImageToBeChanged(int x,int y);
 int CheckLimeConnect();
 int CheckMouse();
-void MsgBox4(char *message1, char *message2, char *message3, char *message4);
 void UpdateWeb();
 void Keyboard(char RequestText[63], char InitText[63], int MaxLength);
 int openTouchScreen(int NoDevice);
@@ -641,17 +640,17 @@ void *WaitMouseEvent(void * arg)
 }
 
 
-void handle_mouse()
-{
+//void handle_mouse()
+//{
   // First check if mouse is connected
-  if (CheckMouse() != 0)    // Mouse not connected
-  {
-    return;
-  }
-  mouse_connected = true;
-  printf("Starting Mouse Thread\n");
-  pthread_create (&thmouse, NULL, &WaitMouseEvent, NULL);
-}
+//  if (CheckMouse() != 0)    // Mouse not connected
+//  {
+//    return;
+//  }
+//  mouse_connected = true;
+//  printf("Starting Mouse Thread\n");
+//  pthread_create (&thmouse, NULL, &WaitMouseEvent, NULL);
+//}
 
 
 void *WebClickListener(void * arg)
@@ -890,24 +889,6 @@ int CheckMouse()
   }
   pclose(fp);
   return 1;
-}
-
-
-void MsgBox4(char *message1, char *message2, char *message3, char *message4)
-{
-  // Display a 4-line message
-  const font_t *font_ptr = &font_dejavu_sans_32;
-  int txtht =  font_ptr->ascent;
-  int linepitch = (14 * txtht) / 10;
-
-  clearScreen(0, 0, 0);
-  TextMid(wscreen / 2, hscreen - (linepitch * 2), message1, font_ptr, 0, 0, 0, 255, 255, 255);
-  TextMid(wscreen / 2, hscreen - 2 * (linepitch * 2), message2, font_ptr, 0, 0, 0, 255, 255, 255);
-  TextMid(wscreen / 2, hscreen - 3 * (linepitch * 2), message3, font_ptr, 0, 0, 0, 255, 255, 255);
-  TextMid(wscreen / 2, hscreen - 4 * (linepitch * 2), message4, font_ptr, 0, 0, 0, 255, 255, 255);
-  UpdateWeb();
-
-  // printf("MsgBox4 called\n");
 }
 
 
@@ -5249,12 +5230,15 @@ void DrawTrace(int xoffset, int prev2, int prev1, int current)
 static void cleanexit(int calling_exit_code)
 {
   exit_code = calling_exit_code;
-  app_exit = true;
   printf("Clean Exit Code %d\n", exit_code);
+  app_exit = true;
   usleep(1000000);
+  printf("Close screen\n");
+  closeScreen();
   char Commnd[255];
   sprintf(Commnd,"stty echo");
   system(Commnd);
+
   printf("scans = %d\n", tracecount);
   exit(exit_code);
 }
@@ -5262,10 +5246,11 @@ static void cleanexit(int calling_exit_code)
 
 static void terminate(int sig)
 {
-  app_exit = true;
   printf("Terminating\n");
-  clearScreen(0, 0, 0);
+  app_exit = true;
   usleep(1000000);
+  printf("Close screen\n");
+  closeScreen();
   char Commnd[255];
   sprintf(Commnd,"stty echo");
   system(Commnd);
@@ -5326,38 +5311,69 @@ int main(void)
   }
   if(NoDeviceEvent != 7)  // Touchscreen detected
   {
+    printf("Touchscreen detected\n");
+    touchscreen_present = true;
+
+    // Set correct entry in config file if required.  No need to reboot
+    if ((strcmp(DisplayType, "Element14_7") != 0) && (strcmp(DisplayType, "dfrobot5") != 0))
+    {
+      strcpy(DisplayType, "Element14_7");
+      SetConfigParam(PATH_SCONFIG, "display", "Element14_7");
+    }
+
     // Create Touchscreen thread
     pthread_create (&thtouchscreen, NULL, &WaitTouchscreenEvent, NULL);
   }
-  else // No touchscreen detected
+  else // No touchscreen detected, check for mouse
   {
-    touchscreen_present = false;
+    if (CheckMouse() == 0)
+    {
+      mouse_connected = true;
+      mouse_active = true;
+      printf("Mouse Connected\n");
 
-//    if ((strcmp(DisplayType, "Browser") != 0) && (strcmp(DisplayType, "hdmi") != 0)
-//     && (strcmp(DisplayType, "hdmi480") != 0) && (strcmp(DisplayType, "hdmi720") != 0)
-//     && (strcmp(DisplayType, "hdmi1080") != 0))
-//    {  
-//      SetConfigParam(PATH_SCONFIG, "webcontrol", "enabled");
-//      SetConfigParam(PATH_SCONFIG, "display", "Browser");
-//      system ("/home/pi/rpidatv/scripts/set_display_config.sh");
-//      system ("sudo reboot now");
-//    }
+      // If display not previously set to hdmi, correct it
+      if ((strcmp(DisplayType, "hdmi") != 0) && (strcmp(DisplayType, "hdmi480") != 0)
+        && (strcmp(DisplayType, "hdmi720") != 0) && (strcmp(DisplayType, "hdmi1080") != 0))
+      {
+        strcpy(DisplayType, "hdmi720");
+        SetConfigParam(PATH_SCONFIG, "display", "hdmi720");
+        // need a linux command here to edit the cmdline.txt file and a reboot
+        //system ("/home/pi/rpidatv/scripts/set_display_config.sh");
+        //system ("sudo reboot now");
+      }
 
+      // And start the mouse listener thread
+      printf("Starting Mouse Thread\n");
+      pthread_create (&thmouse, NULL, &WaitMouseEvent, NULL);
+    }
+    else // No touchscreen or mouse, so check webcontrol is enabled
+    {
+      printf("Mouse not Connected\n");
 
-    handle_mouse();
+      SetConfigParam(PATH_SCONFIG, "webcontrol", "enabled");
+      webcontrol = true;
 
-
-
-
-
-    // Set Screen parameters
-    screenXmax = 799;
-    screenXmin = 0;
-    wscreen = 800;
-    screenYmax = 479;
-    screenYmin = 0;
-    hscreen = 480;
+      // If display not previously set to hdmi, correct it
+      if ((strcmp(DisplayType, "hdmi") != 0) && (strcmp(DisplayType, "hdmi480") != 0)
+        && (strcmp(DisplayType, "hdmi720") != 0) && (strcmp(DisplayType, "hdmi1080") != 0))
+      {
+        strcpy(DisplayType, "hdmi720");
+        SetConfigParam(PATH_SCONFIG, "display", "hdmi720");
+        // need a linux command here to edit the cmdline.txt file and a reboot
+        //system ("/home/pi/rpidatv/scripts/set_display_config.sh");
+        //system ("sudo reboot now");
+      }
+    }
   }
+  printf("Completed Screen and Mouse checks\n");
+
+  screenXmax = 799;
+  screenXmin = 0;
+  wscreen = 800;
+  screenYmax = 479;
+  screenYmin = 0;
+  hscreen = 480;
 
   // Calculate screen parameters
   scaleXvalue = ((float)(screenXmax - screenXmin)) / wscreen;
@@ -5447,7 +5463,7 @@ int main(void)
   DrawSettings();     // Start, Stop RBW, Ref level and Title
   UpdateWindow();     // Draw the buttons
 
-  while(true)                                                  // Start of main display loop
+  while(app_exit == false)                                                  // Start of main display loop
   {
     // transfer the data into correct buffer (unnecesary step)
     for (pixel = 0; pixel <= 512; pixel++)

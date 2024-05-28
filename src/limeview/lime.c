@@ -9,8 +9,7 @@
 #include <errno.h>
 #include <inttypes.h>
 #include <pthread.h>
-//#include <lime/LimeSuite.h>
-#include "/home/pi/LimeSuiteNG/src/include/lime/LimeSuite.h"
+#include <lime/LimeSuite.h>
 #include "lime.h"
 #include "../common/timing.h"
 #include "../common/buffer/buffer_circular.h"
@@ -63,7 +62,7 @@ void *lime_thread(void *arg)
   // Query and display the device details
   const lms_dev_info_t *device_info;
 
-  //double Temperature = 0;
+  double Temperature = 0;
 
   device_info = LMS_GetDeviceInfo(device);
 
@@ -74,8 +73,8 @@ void *lime_thread(void *arg)
   //printf(" - Protocol version: %s\n", device_info->protocolVersion);
   //printf("gateware target: %s\n", device_info->gatewareTargetBoard);
 
-  //LMS_GetChipTemperature(device, 0, &Temperature);
-  //printf(" - Temperature: %.0f°C\n", Temperature);
+  LMS_GetChipTemperature(device, 0, &Temperature);
+  printf(" - Temperature: %.0f°C\n", Temperature);
 
   // Initialize device with default configuration
   if (LMS_Init(device) != 0)

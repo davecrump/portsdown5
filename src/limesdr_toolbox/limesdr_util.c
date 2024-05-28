@@ -170,58 +170,58 @@ void WriteAnalogDC(lms_device_t *device, const uint16_t addr, int16_t value)
 	LMS_WriteLMSReg(device, addr, regValue | 0x8000);
 }
 
-int16_t LoadCal(lms_device_t *device, char *FileCalib)
-{
+//int16_t LoadCal(lms_device_t *device, char *FileCalib)
+//{
 
-	FILE *file = fopen(FileCalib, "r");
+//	FILE *file = fopen(FileCalib, "r");
 
-	//PLL tune same for Rx/Tx just switch channel A(Rx) / B(Tx)
-	uint16_t reg011D; //FRAC_SDM[15:0]
-	uint16_t reg011E; //INT_SDM & FRAC_SDM[19:16]
-	uint16_t div_loch;
-	uint16_t en_div2;
-	uint16_t sel_vco;
-	uint16_t csw_vco;
+//	//PLL tune same for Rx/Tx just switch channel A(Rx) / B(Tx)
+//	uint16_t reg011D; //FRAC_SDM[15:0]
+//	uint16_t reg011E; //INT_SDM & FRAC_SDM[19:16]
+//	uint16_t div_loch;
+//	uint16_t en_div2;
+//	uint16_t sel_vco;
+//	uint16_t csw_vco;
 
-	fscanf(file, "reg011D=%hu\n", &reg011D);
-	fscanf(file, "reg011E=%hu\n", &reg011E);
-	fscanf(file, "div_loch=%hu\n", &div_loch);
-	fscanf(file, "en_div2=%hu\n", &en_div2);
-	fscanf(file, "sel_vco=%hu\n", &sel_vco);
-	fscanf(file, "csw_vco=%hu\n", &csw_vco);
+//	fscanf(file, "reg011D=%hu\n", &reg011D);
+//	fscanf(file, "reg011E=%hu\n", &reg011E);
+//	fscanf(file, "div_loch=%hu\n", &div_loch);
+//	fscanf(file, "en_div2=%hu\n", &en_div2);
+//	fscanf(file, "sel_vco=%hu\n", &sel_vco);
+//	fscanf(file, "csw_vco=%hu\n", &csw_vco);
 
 	//restore results
 	
-	LMS_WriteLMSReg(device, 0x011D, reg011D);
-	LMS_WriteLMSReg(device, 0x011E, reg011E);
-	LMS_WriteParam(device, LMS7_DIV_LOCH, div_loch);
-	LMS_WriteParam(device, LMS7_EN_DIV2_DIVPROG, en_div2);
-	LMS_WriteParam(device, LMS7_SEL_VCO, sel_vco);
-	LMS_WriteParam(device, LMS7_CSW_VCO, csw_vco);
+//	LMS_WriteLMSReg(device, 0x011D, reg011D);
+//	LMS_WriteLMSReg(device, 0x011E, reg011E);
+//	LMS_WriteParam(device, LMS7_DIV_LOCH, div_loch);
+//	LMS_WriteParam(device, LMS7_EN_DIV2_DIVPROG, en_div2);
+//	LMS_WriteParam(device, LMS7_SEL_VCO, sel_vco);
+//	LMS_WriteParam(device, LMS7_CSW_VCO, csw_vco);
 	
 
 	// DC/IQ same for Rx/Tx just adjust the paramter names
-	uint16_t gcorri;
-	uint16_t gcorrq;
-	uint16_t phaseOffset;
-	int16_t dci;
-	int16_t dcq;
+//	uint16_t gcorri;
+//	uint16_t gcorrq;
+//	uint16_t phaseOffset;
+//	int16_t dci;
+//	int16_t dcq;
 
-	fscanf(file, "gcorri=%hu\n", &gcorri);
-	fscanf(file, "gcorrq=%hu\n", &gcorrq);
-	fscanf(file, "phaseOffset=%hu\n", &phaseOffset);
-	fscanf(file, "dci=%hd\n", &dci);
-	fscanf(file, "dcq=%hd\n", &dcq);
+//	fscanf(file, "gcorri=%hu\n", &gcorri);
+//	fscanf(file, "gcorrq=%hu\n", &gcorrq);
+//	fscanf(file, "phaseOffset=%hu\n", &phaseOffset);
+//	fscanf(file, "dci=%hd\n", &dci);
+//	fscanf(file, "dcq=%hd\n", &dcq);
 
-	 LMS_WriteParam(device,LMS7_DCMODE,1);
-	LMS_WriteParam(device,LMS7_PD_DCDAC_TXA,0);
-	LMS_WriteParam(device,LMS7_PD_DCCMP_TXA,0);
+//	 LMS_WriteParam(device,LMS7_DCMODE,1);
+//	LMS_WriteParam(device,LMS7_PD_DCDAC_TXA,0);
+//	LMS_WriteParam(device,LMS7_PD_DCCMP_TXA,0);
 	//restore results
-	LMS_WriteParam(device, LMS7_GCORRI_TXTSP, gcorri);
-	LMS_WriteParam(device, LMS7_GCORRQ_TXTSP, gcorrq);
-	LMS_WriteParam(device, LMS7_IQCORR_TXTSP, phaseOffset);
-	WriteAnalogDC(device, LMS7_DC_TXAI.address, dci);
-	WriteAnalogDC(device, LMS7_DC_TXAQ.address, dcq);
+//	LMS_WriteParam(device, LMS7_GCORRI_TXTSP, gcorri);
+//	LMS_WriteParam(device, LMS7_GCORRQ_TXTSP, gcorrq);
+//	LMS_WriteParam(device, LMS7_IQCORR_TXTSP, phaseOffset);
+//	WriteAnalogDC(device, LMS7_DC_TXAI.address, dci);
+//	WriteAnalogDC(device, LMS7_DC_TXAQ.address, dcq);
 
 	// DEBUG
     /*
@@ -238,58 +238,58 @@ int16_t LoadCal(lms_device_t *device, char *FileCalib)
 	fprintf(stderr, "dci=%hd\n", dci);
 	fprintf(stderr, "dcq=%hd\n", dcq);
     */
-	return 0;
-}
+//	return 0;
+//}
 
-int16_t SaveCal(lms_device_t *device, char *FileCalib)
-{
+//int16_t SaveCal(lms_device_t *device, char *FileCalib)
+//{
 
-	FILE *file = fopen(FileCalib, "w");
-	//PLL tune same for Rx/Tx just switch channel A(Rx) / B(Tx)
-	uint16_t reg011D; //FRAC_SDM[15:0]
-	uint16_t reg011E; //INT_SDM & FRAC_SDM[19:16]
-	uint16_t div_loch;
-	uint16_t en_div2;
-	uint16_t sel_vco;
-	uint16_t csw_vco;
+//	FILE *file = fopen(FileCalib, "w");
+//	//PLL tune same for Rx/Tx just switch channel A(Rx) / B(Tx)
+//	uint16_t reg011D; //FRAC_SDM[15:0]
+//	uint16_t reg011E; //INT_SDM & FRAC_SDM[19:16]
+//	uint16_t div_loch;
+//	uint16_t en_div2;
+//	uint16_t sel_vco;
+//	uint16_t csw_vco;
 
 	//readback results
-	LMS_ReadLMSReg(device, 0x011D, &reg011D);
-	LMS_ReadLMSReg(device, 0x011E, &reg011E);
-	LMS_ReadParam(device, LMS7_DIV_LOCH, &div_loch);
-	LMS_ReadParam(device, LMS7_EN_DIV2_DIVPROG, &en_div2);
-	LMS_ReadParam(device, LMS7_SEL_VCO, &sel_vco);
-	LMS_ReadParam(device, LMS7_CSW_VCO, &csw_vco);
+//	LMS_ReadLMSReg(device, 0x011D, &reg011D);
+//	LMS_ReadLMSReg(device, 0x011E, &reg011E);
+//	LMS_ReadParam(device, LMS7_DIV_LOCH, &div_loch);
+//	LMS_ReadParam(device, LMS7_EN_DIV2_DIVPROG, &en_div2);
+//	LMS_ReadParam(device, LMS7_SEL_VCO, &sel_vco);
+//	LMS_ReadParam(device, LMS7_CSW_VCO, &csw_vco);
 
 	// DC/IQ same for Rx/Tx just adjust the paramter names
-	uint16_t gcorri;
-	uint16_t gcorrq;
-	uint16_t phaseOffset;
-	int16_t dci;
-	int16_t dcq;
+//	uint16_t gcorri;
+//	uint16_t gcorrq;
+//	uint16_t phaseOffset;
+//	int16_t dci;
+//	int16_t dcq;
 
 	//readback results
-	LMS_ReadParam(device, LMS7_GCORRI_TXTSP, &gcorri);
-	LMS_ReadParam(device, LMS7_GCORRQ_TXTSP, &gcorrq);
-	LMS_ReadParam(device, LMS7_IQCORR_TXTSP, &phaseOffset);
-	dci = ReadAnalogDC(device, LMS7_DC_TXAI.address);
-	dcq = ReadAnalogDC(device, LMS7_DC_TXAQ.address);
+//	LMS_ReadParam(device, LMS7_GCORRI_TXTSP, &gcorri);
+//	LMS_ReadParam(device, LMS7_GCORRQ_TXTSP, &gcorrq);
+//	LMS_ReadParam(device, LMS7_IQCORR_TXTSP, &phaseOffset);
+//	dci = ReadAnalogDC(device, LMS7_DC_TXAI.address);
+//	dcq = ReadAnalogDC(device, LMS7_DC_TXAQ.address);
 
-	fprintf(file, "reg011D=%hu\n", reg011D);
-	fprintf(file, "reg011E=%hu\n", reg011E);
-	fprintf(file, "div_loch=%hu\n", div_loch);
-	fprintf(file, "en_div2=%hu\n", en_div2);
-	fprintf(file, "sel_vco=%hu\n", sel_vco);
-	fprintf(file, "csw_vco=%hu\n", csw_vco);
+//	fprintf(file, "reg011D=%hu\n", reg011D);
+//	fprintf(file, "reg011E=%hu\n", reg011E);
+//	fprintf(file, "div_loch=%hu\n", div_loch);
+//	fprintf(file, "en_div2=%hu\n", en_div2);
+//	fprintf(file, "sel_vco=%hu\n", sel_vco);
+//	fprintf(file, "csw_vco=%hu\n", csw_vco);
 
-	fprintf(file, "gcorri=%hu\n", gcorri);
-	fprintf(file, "gcorrq=%hu\n", gcorrq);
-	fprintf(file, "phaseOffset=%hu\n", phaseOffset);
-	fprintf(file, "dci=%hd\n", dci);
-	fprintf(file, "dcq=%hd\n", dcq);
+//	fprintf(file, "gcorri=%hu\n", gcorri);
+//	fprintf(file, "gcorrq=%hu\n", gcorrq);
+//	fprintf(file, "phaseOffset=%hu\n", phaseOffset);
+//	fprintf(file, "dci=%hd\n", dci);
+//	fprintf(file, "dcq=%hd\n", dcq);
 
-	return 0;
-}
+//	return 0;
+//}
 
 int SetGFIR(lms_device_t *device, int Upsample)
 {
@@ -602,9 +602,9 @@ int limesdr_init(const double sample_rate,
 	{
 
 		fprintf(stderr, "%s Library %s Firmware %s Gateware %s ", device_info->deviceName, LMS_GetLibraryVersion(), device_info->firmwareVersion, device_info->gatewareVersion);
-		float_type Temp;
-		LMS_GetChipTemperature(*device, 0, &Temp);
-		fprintf(stderr, "Temperature %.2f\n", Temp);
+		//float_type Temp;
+		//LMS_GetChipTemperature(*device, 0, &Temp);
+		//fprintf(stderr, "Temperature %.2f\n", Temp);
 	}
 	else
 	{
@@ -669,6 +669,7 @@ int limesdr_init(const double sample_rate,
 
 	if (limesdr_set_channel(freq, bandwidth_calibrating, gain, channel, antenna, is_tx, *device, WithCalibration) < 0)
 	{
+		fprintf(stderr, "limesdr_set_channel failed\n");
 		return -1;
 	}
 	if(!WithCalibration)

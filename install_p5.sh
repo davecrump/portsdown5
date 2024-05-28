@@ -98,28 +98,32 @@ echo "-------------------------------"
 echo "----- Installing Packages -----"
 echo "-------------------------------"
 
-sudo apt-get -y install git                              # For app download
+sudo apt-get -y install git                                     # For app download
   SUCCESS=$?; BuildLogMsg $SUCCESS "git install"
-sudo apt-get -y install cmake                            # For compiling
+sudo apt-get -y install cmake                                   # For compiling
   SUCCESS=$?; BuildLogMsg $SUCCESS "cmake install"
-sudo apt-get -y install fbi                              # For display of images
+sudo apt-get -y install fbi                                     # For display of images
   SUCCESS=$?; BuildLogMsg $SUCCESS "fbi install"
-sudo apt-get -y install libfftw3-dev                     # For bandviewers
+sudo apt-get -y install libfftw3-dev                            # For bandviewers
   SUCCESS=$?; BuildLogMsg $SUCCESS "libfftw3-dev install"
-sudo apt-get -y install nginx-light                      # For web access
+sudo apt-get -y install nginx-light                             # For web access
   SUCCESS=$?; BuildLogMsg $SUCCESS "libfcgi-dev install"
-sudo apt-get -y install libfcgi-dev                      # For web control
+sudo apt-get -y install libfcgi-dev                             # For web control
   SUCCESS=$?; BuildLogMsg $SUCCESS "nginx-light install"
-sudo apt-get -y install libjpeg-dev                      #
+sudo apt-get -y install libjpeg-dev                             #
   SUCCESS=$?; BuildLogMsg $SUCCESS "libjpeg-dev install"
-sudo apt-get -y install imagemagick                      # for captions
+sudo apt-get -y install imagemagick                             # for captions
   SUCCESS=$?; BuildLogMsg $SUCCESS "imagemagick install"
-sudo apt-get -y install libraspberrypi-dev               # for bcm_host
+sudo apt-get -y install libraspberrypi-dev                      # for bcm_host
   SUCCESS=$?; BuildLogMsg $SUCCESS "libraspberrypi-dev install"
-sudo apt-get -y install libpng-dev                          # for screen capture
+sudo apt-get -y install libpng-dev                              # for screen capture
   SUCCESS=$?; BuildLogMsg $SUCCESS "libpng-dev install"
-sudo apt-get -y install vlc                                 # for rx and replay
+sudo apt-get -y install vlc                                     # for rx and replay
   SUCCESS=$?; BuildLogMsg $SUCCESS "vlc install"
+sudo apt-get -y install ffmpeg                                  # for tx encoding
+  SUCCESS=$?; BuildLogMsg $SUCCESS "ffmpeg install"
+sudo apt-get -y install netcat-openbsd                          # For TS input
+  SUCCESS=$?; BuildLogMsg $SUCCESS "netcat install"
 
 echo
 echo "----------------------------------------"
@@ -220,11 +224,39 @@ echo "---------------------------------"
 echo "----- Compiling Portsdown 5 -----"
 echo "---------------------------------"
 
-cd /home/pi/portsdown/src/gui
+cd /home/pi/portsdown/src/portsdown
 make -j 4 -O
   SUCCESS=$?; BuildLogMsg $SUCCESS "Portsdown 5 compile"
-mv /home/pi/portsdown/src/gui/portsdown5 /home/pi/portsdown/bin/portsdown5
+mv /home/pi/portsdown/src/portsdown/portsdown5 /home/pi/portsdown/bin/portsdown5
 cd /home/pi
+
+# Compile LimeSDR Toolbox
+echo
+echo "-------------------------------------"
+echo "----- Compiling LimeSDR Toolbox -----"
+echo "-------------------------------------"
+
+# Compile dvb2iq first
+cd /home/pi/portsdown/src/limesdr_toolbox/libdvbmod/libdvbmod
+make -j 4 -O
+  SUCCESS=$?; BuildLogMsg $SUCCESS "libdvbmod compile"
+cd /home/pi/portsdown/src/limesdr_toolbox/libdvbmod/DvbTsToIQ
+make -j 4 -O
+  SUCCESS=$?; BuildLogMsg $SUCCESS "DvbTsToIQ compile"
+mv dvb2iq /home/pi/portsdown/bin/
+
+# and then LimeSDR toolbox
+cd /home/pi/portsdown/src/limesdr_toolbox/
+make -j 4 -O
+  SUCCESS=$?; BuildLogMsg $SUCCESS "LimeSDR Toolbox compile"
+make dvb
+  SUCCESS=$?; BuildLogMsg $SUCCESS "LimeSDR DVB compile"
+
+mv limesdr_send /home/pi/portsdown/bin/
+mv limesdr_dump /home/pi/portsdown/bin/
+mv limesdr_stopchannel /home/pi/portsdown/bin/
+mv limesdr_forward /home/pi/portsdown/bin/
+mv limesdr_dvb /home/pi/portsdown/bin/
 
 # Compile Lime BandViewer
 echo
