@@ -1,6 +1,10 @@
 [Unit]
 Description=Portsdown 5
+Requires=multi-user.target
+After=multi-user.target
+#After=network.target
 [Service]
+Environment=Display=:0
 ExecStart=/home/pi/portsdown/scripts/startup.sh
 User=pi
 Group=pi
