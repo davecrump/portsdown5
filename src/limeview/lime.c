@@ -9,7 +9,7 @@
 #include <errno.h>
 #include <inttypes.h>
 #include <pthread.h>
-#include <lime/LimeSuite.h>
+#include <limesuiteng/LimeSuite.h>
 #include "lime.h"
 #include "../common/timing.h"
 #include "../common/buffer/buffer_circular.h"

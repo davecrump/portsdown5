@@ -7,6 +7,8 @@
 sudo killall portsdown5 >/dev/null 2>/dev/null
 sudo killall limeview >/dev/null 2>/dev/null
 
+echo Compiling limeview.c
+
 cd /home/pi/portsdown/src/limeview
 
 touch limeview.c

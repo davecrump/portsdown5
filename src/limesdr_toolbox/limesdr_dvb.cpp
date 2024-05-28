@@ -316,6 +316,7 @@ bool RunWithFile(lms_stream_t *tx_stream, bool live, bool fpga)
 				meta.timestamp = 0;
 				meta.waitForTimestamp = false;
 				int nb_samples = LMS_SendStream(tx_stream, Frame, len, &meta, 1000);
+                printf("nb_samples = %d, len = %d\n", nb_samples, len);
 				if (nb_samples != len)
 					fprintf(stderr, "TimeOUT %d\n", nb_samples);
 			}
@@ -606,8 +607,6 @@ int main(int argc, char **argv)
     antenna = "BAND2";
   }
 
-  // printf("\n\nAntenna: %s\n", antenna);
-
 	double host_sample_rate;
 
 	//if (FPGAMapping)		SymbolRate = SymbolRate / 2;
@@ -617,6 +616,16 @@ int main(int argc, char **argv)
 		sample_rate = SymbolRate;
 
 	bandwidth_calibrating = SymbolRate * 1.35 * upsample;
+
+
+	printf("\nInit Parameters:\n\nsample_rate %f\n", sample_rate);
+
+	printf("bandwidth_calibrating %f\n", bandwidth_calibrating);
+
+	printf("gain %f\n", gain);
+
+	printf("Antenna: %s\n", antenna);
+
 	if (limesdr_init(sample_rate,
 					 freq,
 					 bandwidth_calibrating,
@@ -629,8 +638,12 @@ int main(int argc, char **argv)
 					 &host_sample_rate,
 					 WithCalibration) < 0)
 	{
+    	printf("Init Failed\n");    
 		return 1;
 	}
+
+
+    printf("Init Complete\n");    
 
     	// Set up GPIOs for output
 	uint8_t gpio_dir = 0x8F; // set the 4 LSBs and the MSB to write

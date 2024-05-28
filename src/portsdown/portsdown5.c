@@ -101,6 +101,8 @@ int web_y;                             // click y 0 - 480 from top
 bool webclicklistenerrunning = false;  // Used to only start thread if required
 char WebClickForAction[7] = "no";      // no/yes
 
+// Portsdown state variables
+char ScreenState[63] = "NormalMenu";
 
 bool test20 = false;
 bool test21 = false;
@@ -128,6 +130,10 @@ void *WaitMouseEvent(void * arg);
 void handle_mouse();
 void wait_touch();
 
+// Actually do useful things
+void ShowTitle();
+void redrawMenu();
+
 // Create the Menus
 int IsMenuButtonPushed();
 void CreateButtons();
@@ -136,8 +142,8 @@ void SetButtonStatus(int menu, int button_number, int Status);
 int GetButtonStatus(int menu, int button_number);
 void AmendButtonStatus(int ButtonIndex, int ButtonStatusIndex, char *Text, color_t *Color);
 void DrawButton(int menu, int button_number);
-void ShowTitle();
-void redrawMenu();
+void TransmitStop();
+void TransmitStart();
 void Define_Menu1();
 void Define_Menu2();
 void Define_Menu4();
@@ -819,6 +825,19 @@ void wait_touch()
 }
 
 
+void TransmitStop()
+{
+  system("/home/pi/portsdown/scripts/transmit/tx_stop.sh &");
+}
+
+
+void TransmitStart()
+{
+  strcpy(ScreenState, "TXwithMenu");
+  system("/home/pi/portsdown/scripts/transmit/tx.sh &");
+}
+
+
 // Takes the global scaledX and scaled Y and checks against each defined button on the current menu.
 // returns the button number, 0 - 29 or -1 for not pushed
 
@@ -1091,6 +1110,7 @@ void redrawMenu()
   publish();
 }
 
+
 void Define_Menu1()
 {
   strcpy(MenuTitle[1], "Portsdown 5 DATV Transceiver Main Menu");
@@ -1181,6 +1201,7 @@ void Define_Menu1()
   AddButtonStatus(1, 25,"Transmit^Select",&Blue);
   AddButtonStatus(1, 25,"Transmit^Select",&Blue);
   AddButtonStatus(1, 25,"Transmit^ON",&Red);
+  AddButtonStatus(1, 25,"Transmit^ON",&Red);
 
   AddButtonStatus(1, 26,"Receive^Menu",&Blue);
   AddButtonStatus(1, 26,"Receive^Menu",&Blue);
@@ -1248,6 +1269,27 @@ void waitForScreenAction()
 printf("Screen touched\n");
 
     // Handle contexts first
+
+    if (strcmp(ScreenState, "TXwithImage") == 0)
+    {
+      SetButtonStatus(1, 25, 0);
+      redrawMenu();
+      TransmitStop();
+      strcpy(ScreenState, "NormalMenu");
+      continue;  // All reset, and Menu displayed so go back and wait for next touch
+     }
+
+    // Now Sort TXwithMenu:
+    if (strcmp(ScreenState, "TXwithMenu") == 0)
+    {
+      SetButtonStatus(1, 25, 0);
+      redrawButton(1, 25);
+      TransmitStop();
+      strcpy(ScreenState, "NormalMenu");
+      continue;  // All reset, and Menu displayed so go back and wait for next touch
+    }
+
+
     {                                           // Normal context
       i = IsMenuButtonPushed();
 
@@ -1372,6 +1414,14 @@ printf("Screen touched\n");
             SetButtonStatus(1, 21, 0);
           }
           redrawMenu();
+          break;
+        case 25:                                                      // Transmit
+          if (strcmp(ScreenState, "NormalMenu") == 0)
+          {
+            TransmitStart();
+            SetButtonStatus(1, 25, 2);
+            redrawButton(1, 25);
+          }
           break;
         case 27:
           printf("MENU 2 \n");         // Tools Menu

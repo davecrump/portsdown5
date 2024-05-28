@@ -5414,7 +5414,6 @@ int main(void)
 
   printf("Profiling FFTs..\n");
   fftwf_import_wisdom_from_filename("/home/pi/.fftwf_wisdom");
-  printf(" - Main Band FFT\n");
   main_fft_init();
   fftwf_export_wisdom_to_filename("/home/pi/.fftwf_wisdom");
   printf("FFTs Done.\n");
