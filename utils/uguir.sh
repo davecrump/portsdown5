@@ -4,10 +4,17 @@
 
 # set -x
 
+if pgrep -x "startup.sh" >/dev/null
+then
+  ps -ef | grep startup.sh | grep -v grep | awk '{print $2}' | xargs kill
+fi
+
 sudo killall portsdown5 >/dev/null 2>/dev/null
-cd /home/pi/portsdown/src/gui
+cd /home/pi/portsdown/src/portsdown
 # make clean
 touch portsdown5.c
+
+echo Compiling portsdown5.c
 
 make -j 4 -O
 if [ $? != "0" ]; then
@@ -15,16 +22,22 @@ if [ $? != "0" ]; then
   echo "failed install"
   cd /home/pi
   exit
+else
+  echo
+  echo "Susccessful compile, starting portsdown5"
+  echo
 fi
-#sudo make install
-#cd ../
 
 cd /home/pi
-#reset
 
-mv /home/pi/portsdown/src/gui/portsdown5 /home/pi/portsdown/bin/portsdown5
+mv /home/pi/portsdown/src/portsdown/portsdown5 /home/pi/portsdown/bin/portsdown5
 
 /home/pi/portsdown/bin/portsdown5
+EXIT_CODE=$?
+
+reset
+
+echo Program returned exit code $EXIT_CODE
 
 
 

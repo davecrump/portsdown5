@@ -24,7 +24,8 @@
 #ifndef _LIMESDR_UTIL_H_
 #define _LIMESDR_UTIL_H_
 
-#include <lime/LimeSuite.h>
+//#include <lime/LimeSuite.h>
+#include "/home/pi/LimeSuiteNG/src/include/lime/LimeSuite.h"
 
 int limesdr_init( const double sample_rate,
 		  const unsigned int freq,
@@ -49,7 +50,7 @@ int limesdr_set_channel( const unsigned int freq,
 			 bool WithCalibration );
 			 
 int SetGFIR(lms_device_t* device,int Upsample);
-int16_t LoadCal(lms_device_t *device,char *FileCalib);
-int16_t SaveCal(lms_device_t *device,char *FileCalib);
+//int16_t LoadCal(lms_device_t *device,char *FileCalib);
+//int16_t SaveCal(lms_device_t *device,char *FileCalib);
 
 #endif /* !_LIMESDR_UTIL_H_ */

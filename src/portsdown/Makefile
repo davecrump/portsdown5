@@ -5,7 +5,7 @@ clean:
 	indent -linux -c 60 -brf -l 132
 
 INCLUDEFLAGS2=-lpthread -I/opt/vc/include -I/opt/vc/include/interface/vmcs_host/linux -I/opt/vc/include/interface/vcos/pthreads -I..
-LIBFLAGS2=-L/opt/vc/lib -lpthread -lrt -lm -ldl  -fcommon
+LIBFLAGS2=-L/opt/vc/lib -lpthread -lrt -lpng16 -lm -ldl  -fcommon
 
 portsdown5: portsdown5.c 
 	gcc -fdiagnostics-color -Wall $(INCLUDEFLAGS2) -o  portsdown5 \

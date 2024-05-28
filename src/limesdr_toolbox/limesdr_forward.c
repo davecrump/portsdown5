@@ -189,12 +189,12 @@ int main(int argc, char **argv)
 	LMS_SetGFIR(device, LMS_CH_RX, 0, LMS_GFIR3, true);
 	
 	uint16_t val;
-	LMS_ReadParam(device, LMS7_TX_MUX, &val);
-	fprintf(stderr, "Val =%x\n", val);
-	LMS_WriteParam(device, LMS7_TX_MUX, 2);
-	LMS_ReadParam(device, LMS7_TX_MUX, &val);
-	fprintf(stderr, "After Val =%x\n", val);
-	LMS_WriteParam(device, LMS7_TXWRCLK_MUX, 2);
+//	LMS_ReadParam(device, LMS7_TX_MUX, &val);
+//	fprintf(stderr, "Val =%x\n", val);
+//	LMS_WriteParam(device, LMS7_TX_MUX, 2);
+//	LMS_ReadParam(device, LMS7_TX_MUX, &val);
+//	fprintf(stderr, "After Val =%x\n", val);
+//	LMS_WriteParam(device, LMS7_TXWRCLK_MUX, 2);
 	
 
 	

@@ -38,7 +38,8 @@ int textSize= 1 ;
 extern bool mouse_active;                     // Only set with no touchscreen when mouse has first moved
 extern int mouse_x;                           // click x 0 - 799 from left
 extern int mouse_y;                           // click y 0 - 479 from bottom
-
+const int canvasXsize = 800;
+const int canvasYsize = 480;
 
 int32_t fbBytesPerPixel = 2;  // RGB565
 //int32_t fbBytesPerPixel = 4;  // RGBA8888
@@ -482,6 +483,26 @@ void LargeText (int xpos, int ypos, int sizeFactor, char*s, const font_t *font_p
 }
 
 
+void MsgBox4(char *message1, char *message2, char *message3, char *message4)
+{
+  // Display a 4-line message
+
+  const font_t *font_ptr = &font_dejavu_sans_32;
+  int txtht =  font_ptr->ascent;
+  int linepitch = (14 * txtht) / 10;
+
+  clearScreen(0, 0, 0);
+  TextMid(canvasXsize / 2, canvasYsize - (linepitch * 2), message1, font_ptr, 0, 0, 0, 255, 255, 255);
+  TextMid(canvasXsize / 2, canvasYsize - 2 * (linepitch * 2), message2, font_ptr, 0, 0, 0, 255, 255, 255);
+  TextMid(canvasXsize / 2, canvasYsize - 3 * (linepitch * 2), message3, font_ptr, 0, 0, 0, 255, 255, 255);
+  TextMid(canvasXsize / 2, canvasYsize - 4 * (linepitch * 2), message4, font_ptr, 0, 0, 0, 255, 255, 255);
+  //refreshMouseBackground();
+  //draw_cursor_foreground(mouse_x, mouse_y);
+  //UpdateWeb();
+
+}
+
+
 void rectangle(int xpos, int ypos, int xsize, int ysize, int r, int g, int b)
 {
   // xpos and y pos are 0 to screensize (479 799).  (0, 0) is bottom left
@@ -557,6 +578,32 @@ void clearScreen(uint8_t r, uint8_t g, uint8_t b)
   publish();
 }
 
+void clearBackBuffer(uint8_t r, uint8_t g, uint8_t b)
+{
+  int p;    // Pixel Memory offset
+  int x;    // x pixel count, 0 - 799
+  int y;    // y pixel count, 0 - 479
+
+  char gb;  // gggBBBbb RGB565 byte 2 (written first)
+  char rg;  // RRRrrGGG RGB565 byte 1 (written second)
+
+  gb = ((g & 0x1C) << 3) | (b  >> 3); // Take middle 3 Bits of G component and top 5 bits of Blue component
+  rg = (r & 0xF8) | (g >> 5);         // Take top 5 bits of Red component and top 3 bits of G component
+
+  for(y = 0; y < screenYsize; y++)
+  {
+    for(x = 0; x < screenXsize; x++)
+    {
+      p = (x + screenXsize * y) * 2;
+
+      //memset(fbp + p,     gb, 1); 
+      //memset(fbp + p + 1, rg, 1);
+      memset(back_fbp + p,     gb, 1); 
+      memset(back_fbp + p + 1, rg, 1);
+    }
+  }
+}
+
 void setPixel(int x, int y, uint8_t r, uint8_t g, uint8_t b)
 {
   int p;      // Pixel Memory offset
@@ -580,7 +627,7 @@ void setPixel(int x, int y, uint8_t r, uint8_t g, uint8_t b)
   }
   else
   {
-    printf("Error: Trying to write pixel outside screen bounds.\n");
+    printf("Error: setPixelTrying to write pixel outside screen bounds. %d, %d\n", x, inv_y);
   }
 }
 
@@ -672,6 +719,8 @@ screen_pixel_t waterfall_map(uint8_t value)
 void closeScreen(void)
 {
   munmap(fbp, screenSize);
+  munmap(cursor_fbp, screenSize);
+  munmap(back_fbp, screenSize);
   close(fbfd);
 }
 
@@ -730,7 +779,7 @@ int initScreen(void)
 void setCursorPixel(int x, int y, int level)
 {
   int p;  // Pixel Memory offset
-int inv_y;
+  int inv_y = 0;
   if ((x < 800) && (y < 480) && (x >= 0) && (y >= 0))
   {
     p=(x + screenXsize * y) * 2;
@@ -742,7 +791,6 @@ int inv_y;
     rg = (level & 0xF8) | (level >> 5);         // Take top 5 bits of Red component and top 3 bits of G component
 
     inv_y = 479 - y;
-
 
     p=(x + screenXsize * inv_y) * 2;
 
@@ -756,7 +804,7 @@ int inv_y;
   }
   else
   {
-    printf("Error: Trying to write pixel outside screen bounds.\n");
+    printf("Error: setCursorPixel Trying to write pixel outside screen bounds. %d, %d \n", x, inv_y);
   }
 }
 
@@ -904,7 +952,8 @@ void moveCursor(int new_x, int new_y)
   //memcpy(cursor_fbp, back_fbp, screenSize/4);
 
   // Paint the new mouse position into the cursor buffer
-  addCursor(mouse_x, mouse_y);
+  addCursor(new_x, new_y);
+  //printf("newX = %d, newY = %d\n", new_x, new_y);
 
   // Store the mouse position for next time
   old_x = stage_x;
@@ -1172,8 +1221,9 @@ void fb2png()
 
 void publish()
 {
-  //if (Mouse_active == true)
+  if (mouse_active == true)
   {
+    //printf("PUBLISH with mouse_active true\n");
     // Copy the back buffer to the cursor buffer
     memcpy(cursor_fbp, back_fbp, screenSize);
 
@@ -1182,6 +1232,60 @@ void publish()
 
     // copy the cursor buffer into the display framebuffer
     memcpy(fbp, cursor_fbp, screenSize);
+  }
+  else  // copy the backbuffer straight to the framebuffer
+  {
+    //printf("PUBLISH with mouse_active false\n");
+    // Copy the back buffer to the cursor buffer
+    memcpy(fbp, back_fbp, screenSize);
+  }
+}
+
+
+void publishRectangle(int x, int y, int w, int h)
+{
+  int xoffset;
+  int xlength;
+  int linebytes;
+  int yoffset;
+  int offset;
+  int yline;
+
+  // define the xoffset and xlength
+
+  xoffset = x * fbBytesPerPixel;
+  xlength = w * fbBytesPerPixel;
+  linebytes = screenXsize * fbBytesPerPixel;
+
+  // define the yoffset
+
+  yoffset = (479 - y) * screenXsize * fbBytesPerPixel;
+
+  if (mouse_active == true)
+  {
+    for (yline = 0; yline < h; yline++)
+    {
+      offset = yoffset - yline * linebytes + xoffset;
+
+//printf ("yline = %d, offset = %d\n", yline, offset);
+      // Copy the back buffer to the cursor buffer
+      memcpy(cursor_fbp + offset, back_fbp + offset, xlength);
+
+      // Paint the mouse into the cursor buffer
+      addCursor(mouse_x, mouse_y);
+
+      // copy the cursor buffer into the display framebuffer
+      memcpy(fbp + offset, cursor_fbp + offset, xlength);
+    }
+  }
+  else  // copy the backbuffer straight to the framebuffer
+  {
+    // Copy the back buffer to the cursor buffer
+    for (yline = 0; yline < h; yline++)
+    {
+      offset = yoffset - yline * linebytes + xoffset;
+      memcpy(fbp + offset, back_fbp + offset, xlength);
+    }
   }
 }
 

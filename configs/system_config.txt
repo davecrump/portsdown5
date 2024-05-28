@@ -1,10 +1,10 @@
 # Configuration Settings that apply to all apps, not just the TX or RX
 
 # startup: Portsdown_boot, Bandview_boot
-startup=Bandview_boot
+startup=Portsdown_boot
 
-# display: Browser
-display=Browser
+# display: Element14_7, dfrobot5, hdmi, hdmi480, hdmi720, hdmi1080
+display=hdmi720
 
 # touch: normal, inverted
 touch=inverted
