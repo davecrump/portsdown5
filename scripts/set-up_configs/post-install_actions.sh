@@ -29,7 +29,7 @@ DisplayUpdateMsg() {
 BUILD_STATUS="Success"
 
 # Check if LimeSuiteNG needs to be installed (requires reboot after config.txt amendments in Stage 1)
-if !(grep 'Installing LimeNET Micro DE' /home/pi/p5_initial_build_log.txt) then
+if (grep 'Installing LimeNET Micro DE' /home/pi/p5_initial_build_log.txt) then
 
   DisplayUpdateMsg "Build stage 2, step 1\nInstalling LimeSuiteNG"
 

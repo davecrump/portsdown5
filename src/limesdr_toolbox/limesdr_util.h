@@ -24,7 +24,7 @@
 #ifndef _LIMESDR_UTIL_H_
 #define _LIMESDR_UTIL_H_
 
-#include <limesuiteng/LimeSuite.h>
+#include <lime/LimeSuite.h>
 
 int limesdr_init( const double sample_rate,
 		  const unsigned int freq,
