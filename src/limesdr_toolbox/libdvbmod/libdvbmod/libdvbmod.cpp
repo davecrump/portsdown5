@@ -128,7 +128,8 @@ short *Dvbs2_get_MapIQ(int *Len)
 
 #define MAX_SYMBOLS_REMAINING 12
 	static short RemainingSymbolTab[MAX_SYMBOLS_REMAINING];
-	static int Remaining = 0;
+	//static int Remaining = 0;
+	static size_t Remaining = 0;
 	int shift = 0;
 	int index = 0;
 	//Fill the remaining first
@@ -165,7 +166,8 @@ short *Dvbs2_get_MapIQ(int *Len)
 				dibit = (FrameS2IQ[i].im == 23169) ? 2 : 3;
 				break;
 			default:
-				fprintf(stderr, "Unknwown symbol %d\n", FrameS2IQ[i].re);
+				fprintf(stderr, "Unknown symbol %d\n", FrameS2IQ[i].re);
+                dibit = 0; //gkq
 			}
 
 			package |= (dibit) << (shift * 2 + 4);
@@ -196,7 +198,8 @@ short *Dvbs2_get_MapIQ(int *Len)
 				dibit = (FrameS2IQ[i].im == 23169) ? 2 : 3;
 				break;
 			default:
-				fprintf(stderr, "Unknwown symbol %d\n", FrameS2IQ[i].re);
+				fprintf(stderr, "Unknown symbol %d\n", FrameS2IQ[i].re);
+                dibit = 0; //gkq
 			}
 			RemainingSymbolTab[i] = dibit;
 		}
@@ -241,7 +244,8 @@ short *Dvbs2_get_MapIQ(int *Len)
 				break;	
 				
 			default:
-				fprintf(stderr, "Unknwown symbol %d\n", FrameS2IQ[i].re);
+				fprintf(stderr, "Unknown symbol %d\n", FrameS2IQ[i].re);
+                dibit = 0; //gkq
 			}
 
 			package |= (dibit) << (shift * 3 + 4);
@@ -282,7 +286,8 @@ short *Dvbs2_get_MapIQ(int *Len)
 				break;	
 				
 			default:
-				fprintf(stderr, "Unknwown symbol %d\n", FrameS2IQ[i].re);
+				fprintf(stderr, "Unknown symbol %d\n", FrameS2IQ[i].re);
+                dibit = 0; //gkq
 			}
 
 			RemainingSymbolTab[i] = dibit;
@@ -303,9 +308,10 @@ sfcmplx m_8psk[8];
 void InitConstellation(void)
 {
 #define CP 0x7FFF
-	double r0, r1, r2, r3;
+	//double r0, r1, r2, r3;
+	double r1;
 	double m = 1.0;
-	r0 = 0.9; // I am not sure why this needs to be 0.9 but 32APSK does not work if == 1.0
+	//r0 = 0.9; // I am not sure why this needs to be 0.9 but 32APSK does not work if == 1.0
 	r1 = m;
 
 	// QPSK
@@ -338,10 +344,10 @@ void InitConstellation(void)
 }
 
 static uint8_t dvbs_dibit[DVBS_RS_BLOCK * 16];
-static sfcmplx dvbs_symbol[DVBS_RS_BLOCK * 16 * 4];
+//static sfcmplx dvbs_symbol[DVBS_RS_BLOCK * 16 * 4];
 static short *dvbs_symbols_map;
 
-static uint8_t InterMedBuffer[DVBS_RS_BLOCK * 16 * 4];
+//static uint8_t InterMedBuffer[DVBS_RS_BLOCK * 16 * 4];
 
 static int LenFrame = 0;
 static int m_Constellation = M_QPSK;
@@ -395,7 +401,8 @@ short *Dvbs_get_MapIQ(int *Len)
 
 #define MAX_SYMBOLS_REMAINING 12
 	static short RemainingSymbolTab[MAX_SYMBOLS_REMAINING];
-	static int Remaining = 0;
+	//static int Remaining = 0;
+	static size_t Remaining = 0;
 	int shift = 0;
 	int index = 0;
 	//Fill the remaining first
@@ -445,8 +452,8 @@ short *Dvbs_get_MapIQ(int *Len)
 	//short patern=0xFFF0 ;//110010000100
 	//short patern2=0x0000 ;//110010000100
 
-	static short patern = 0x5550;
-	static short patern2 = 0x7770;
+	//static short patern = 0x5550;
+	//static short patern2 = 0x7770;
 	//0xFFF0 ; //0x6660 zarb,en fetch12 semble perdre bit
 
 	static int debug = 0;

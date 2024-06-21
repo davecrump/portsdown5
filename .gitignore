@@ -6,3 +6,9 @@
 *.so
 *.a
 bin/*
+src/limesdr_toolbox/libdvbmod/DvbTsToIQ/dvb2iq
+src/limesdr_toolbox/limesdr_dump
+src/limesdr_toolbox/limesdr_dvb
+src/limesdr_toolbox/limesdr_forward
+src/limesdr_toolbox/limesdr_send
+

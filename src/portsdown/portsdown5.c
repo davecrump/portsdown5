@@ -63,6 +63,30 @@ int wscreen = 800;
 int wbuttonsize = 155; //(wscreen-25)/5;
 int hbuttonsize = 67; // hscreen/6 * 5 / 6;
 
+typedef struct
+{
+  char modulation[63];
+  char encoding[63];
+  char modeoutput[63];
+  char format[63];
+  char videosource[63];
+  float freqoutput;
+  uint16_t symbolrate;
+  uint16_t fec;
+} config_t;
+
+static config_t config = 
+{
+  .modulation = "S2QPSK",
+  .encoding = "H264",
+  .modeoutput = "LIMEMINI",
+  .format = "4:3",
+  .videosource = "CARD",
+  .freqoutput = 437.0,
+  .symbolrate = 333,
+  .fec = 23
+};
+
 int IndexButtonInArray=0;
 button_t ButtonArray[MAX_MENUS][MAX_BUTTON_ON_MENU];
 char MenuTitle[MAX_MENUS][63];
@@ -131,23 +155,57 @@ void handle_mouse();
 void wait_touch();
 
 // Actually do useful things
-void ShowTitle();
-void redrawMenu();
+void TransmitStop();
+void TransmitStart();
 
 // Create the Menus
 int IsMenuButtonPushed();
 void CreateButtons();
 int AddButtonStatus(int menu, int button_number, char *Text, color_t *Color);
 void SetButtonStatus(int menu, int button_number, int Status);
+void SelectInGroupOnMenu(int menu, int firstButton, int lastButton, int NumberButton, int Status);
+void SelectFromGroupOnMenu5(int menu, int firstButton, int Status, char *selection,
+  char *value1, char *value2, char *value3, char *value4, char *value5);
+void SelectFromGroupOnMenu4(int menu, int firstButton, int Status, char *selection,
+  char *value1, char *value2, char *value3, char *value4);
+void SelectFromGroupOnMenu3(int menu, int firstButton, int Status, char *selection,
+  char *value1, char *value2, char *value3);
+void SelectFromGroupOnMenu2(int menu, int firstButton, int Status, char *selection,
+  char *value1, char *value2);
+void SelectFromGroupOnMenu1(int menu, int firstButton, int Status, char *selection,
+  char *value1);
 int GetButtonStatus(int menu, int button_number);
-void AmendButtonStatus(int ButtonIndex, int ButtonStatusIndex, char *Text, color_t *Color);
+void AmendButtonStatus(int menu, int button_number, int ButtonStatusIndex, char *Text, color_t *Color);
 void DrawButton(int menu, int button_number);
-void TransmitStop();
-void TransmitStart();
+void redrawButton(int menu, int button_number);
+void ShowTitle();
+void redrawMenu();
 void Define_Menu1();
+void Highlight_Menu1();
 void Define_Menu2();
+void Highlight_Menu2();
 void Define_Menu4();
+void Highlight_Menu4();
+void Define_Menu7();
+void Highlight_Menu7();
+void Define_Menu11();
+void Highlight_Menu11();
+void Define_Menu12();
+void Highlight_Menu12();
+void Define_Menu13();
+void Highlight_Menu13();
+void Define_Menu14();
+void Highlight_Menu14();
+void Define_Menu15();
+void Highlight_Menu15();
 void Define_Menus();
+
+// Action Menu Buttons
+void selectTestEquip(int Button);
+void selectModulation(int NoButton);
+void selectEncoding(int Button);
+void selectOutput(int Button);
+void selectFormat(int Button);
 
 // Make things happen
 void waitForScreenAction();
@@ -339,7 +397,11 @@ void CheckConfigFile()
 
 void ReadSavedParams()
 {
-  //char response[63]="0";
+  char response[63]="0";
+
+  strcpy(response, "-");  // highlight null responses
+  GetConfigParam(PATH_PCONFIG, "modulation", response);
+  strcpy(config.modulation, response);
 
   //strcpy(PlotTitle, "-");  // this is the "do not display" response
   //GetConfigParam(PATH_CONFIG, "title", PlotTitle);
@@ -954,6 +1016,163 @@ int GetButtonStatus(int menu, int button_number)
 }
 
 
+//void SelectInGroupOnMenu(int Menu, int StartButton, int StopButton, int NumberButton, int Status)
+void SelectInGroupOnMenu(int menu, int firstButton, int lastButton, int NumberButton, int Status)
+{
+  int i;
+
+  for(i = firstButton; i <= lastButton ; i++)
+  {
+    if(i == NumberButton)
+    {
+      SetButtonStatus(menu, i, Status);
+    }
+    else
+    {
+      SetButtonStatus(menu, i, 0);
+    }
+  }
+}
+
+
+void SelectFromGroupOnMenu5(int menu, int firstButton, int Status, char *selection,
+  char *value1, char *value2, char *value3, char *value4, char *value5)
+{
+  int match = 0;
+  int newStatus = 0;
+
+  if (strcmp(selection, value1) == 0)
+  {
+    match = 0;
+    newStatus = Status;
+  }
+  else if (strcmp(selection, value2) == 0)
+  {
+    match = 1;
+    newStatus = Status;
+  }
+  else if (strcmp(selection, value3) == 0)
+  {
+    match = 2;
+    newStatus = Status;
+  }
+  else if (strcmp(selection, value4) == 0)
+  {
+    match = 3;
+    newStatus = Status;
+  }
+  else if (strcmp(selection, value5) == 0)
+  {
+    match = 4;
+    newStatus = Status;
+  }
+
+  SelectInGroupOnMenu(menu, firstButton, firstButton + 4, firstButton + match, newStatus);
+}
+
+
+void SelectFromGroupOnMenu4(int menu, int firstButton, int Status, char *selection,
+  char *value1, char *value2, char *value3, char *value4)
+{
+  int match = 0;
+  int newStatus = 0;
+
+  if (strcmp(selection, value1) == 0)
+  {
+    match = 0;
+    newStatus = Status;
+  }
+  else if (strcmp(selection, value2) == 0)
+  {
+    match = 1;
+    newStatus = Status;
+  }
+  else if (strcmp(selection, value3) == 0)
+  {
+    match = 2;
+    newStatus = Status;
+  }
+  else if (strcmp(selection, value4) == 0)
+  {
+    match = 3;
+    newStatus = Status;
+  }
+
+  SelectInGroupOnMenu(menu, firstButton, firstButton + 3, firstButton + match, newStatus);
+}
+
+
+void SelectFromGroupOnMenu3(int menu, int firstButton, int Status, char *selection,
+  char *value1, char *value2, char *value3)
+{
+  int match = 0;
+  int newStatus = 0;
+
+  if (strcmp(selection, value1) == 0)
+  {
+    match = 0;
+    newStatus = Status;
+  }
+  else if (strcmp(selection, value2) == 0)
+  {
+    match = 1;
+    newStatus = Status;
+  }
+  else if (strcmp(selection, value3) == 0)
+  {
+    match = 2;
+    newStatus = Status;
+  }
+
+  SelectInGroupOnMenu(menu, firstButton, firstButton + 2, firstButton + match, newStatus);
+}
+
+
+void SelectFromGroupOnMenu2(int menu, int firstButton, int Status, char *selection,
+  char *value1, char *value2)
+{
+  int match = 0;
+  int newStatus = 0;
+
+  if (strcmp(selection, value1) == 0)
+  {
+    match = 0;
+    newStatus = Status;
+  }
+  else if (strcmp(selection, value2) == 0)
+  {
+    match = 1;
+    newStatus = Status;
+  }
+
+  SelectInGroupOnMenu(menu, firstButton, firstButton + 1, firstButton + match, newStatus);
+}
+
+
+void SelectFromGroupOnMenu1(int menu, int firstButton, int Status, char *selection,
+  char *value1)
+{
+  int match = 0;
+  int newStatus = 0;
+
+  if (strcmp(selection, value1) == 0)
+  {
+    match = 0;
+    newStatus = Status;
+  }
+
+  SelectInGroupOnMenu(menu, firstButton, firstButton, firstButton + match, newStatus);
+}
+
+
+void AmendButtonStatus(int menu, int button_number, int ButtonStatusIndex, char *Text, color_t *Color)
+{
+  button_t *Button=&(ButtonArray[menu][button_number]);
+  strcpy(Button->Status[ButtonStatusIndex].Text, Text);
+  Button->Status[ButtonStatusIndex].Color=*Color;
+}
+
+
 void DrawButton(int menu, int button_number)
 {
   button_t *Button=&(ButtonArray[menu][button_number]);
@@ -1074,6 +1293,28 @@ void redrawMenu()
   {
     clearBackBuffer(0, 0, 0);
   }
+
+  switch(CurrentMenu)
+  {
+    case 1:
+      Highlight_Menu1();
+      break;
+    case 11:
+      Highlight_Menu11();
+      break;
+    case 12:
+      Highlight_Menu12();
+      break;
+    case 13:
+      Highlight_Menu13();
+      break;
+    case 14:
+      Highlight_Menu14();
+      break;
+    case 15:
+      Highlight_Menu15();
+      break;
+  }
   
   //if ((CurrentMenu != 38) && (CurrentMenu != 41)) // If not yes/no or the keyboard
   //{
@@ -1081,10 +1322,10 @@ void redrawMenu()
   //  clearScreen();  // Second clear screen sometimes required on return from fbi images
   //}
   // Draw the backgrounds for the smaller menus
-  if ((CurrentMenu >= 11) && (CurrentMenu <= 40))  // 10-button menus
-  {
-    rectangle(10, 12, wscreen - 18, hscreen * 2 / 6 + 12, 127, 127, 127);
-  }
+  //if ((CurrentMenu >= 11) && (CurrentMenu <= 40))  // 10-button menus
+  //{
+  //  rectangle(10, 12, wscreen - 18, hscreen * 2 / 6 + 12, 127, 127, 127);
+  //}
 
   // Draw each button in turn
 
@@ -1106,7 +1347,6 @@ void redrawMenu()
   //draw_cursor_foreground(mouse_x, mouse_y);
   //UpdateWeb();
   //image_complete = true;
-
   publish();
 }
 
@@ -1179,10 +1419,8 @@ void Define_Menu1()
   AddButtonStatus(1, 19," Lime Gain^88",&Blue);
   AddButtonStatus(1, 19," Lime Gain^88",&Green);
 
-  AddButtonStatus(1, 20, "Modulation^QPSK", &Blue);
+  AddButtonStatus(1, 20, "Modulation^ ", &Blue);
   AddButtonStatus(1, 20, "Modulation^QPSK", &Green);
-  AddButtonStatus(1, 20, "Modulation^QPSK", &Red);
-  AddButtonStatus(1, 20, "Modulation^QPSK", &Red);
 
   AddButtonStatus(1, 21, "Encoding^H264", &Blue);
   AddButtonStatus(1, 21, "Encoding^H264", &Green);
@@ -1218,12 +1456,171 @@ void Define_Menu1()
 }
 
 
+void Highlight_Menu1()
+{
+  // Display Correct Modulation on Button 20
+  if (strcmp(config.modulation, "DVBS") == 0)
+  {
+    AmendButtonStatus(1, 20, 0, "Modulation^DVB-S", &Blue);
+    AmendButtonStatus(1, 20, 1, "Modulation^DVB-S", &Green);
+  }
+  if (strcmp(config.modulation, "S2QPSK") == 0)
+  {
+    AmendButtonStatus(1, 20, 0, "Modulation^DVB-S2 QPSK", &Blue);
+    AmendButtonStatus(1, 20, 1, "Modulation^DVB-S2 QPSK", &Green);
+  }
+  if (strcmp(config.modulation, "8PSK") == 0)
+  {
+    AmendButtonStatus(1, 20, 0, "Modulation^DVB-S2 8PSK", &Blue);
+    AmendButtonStatus(1, 20, 1, "Modulation^DVB-S2 8PSK", &Green);
+  }
+  if (strcmp(config.modulation, "16APSK") == 0)
+  {
+    AmendButtonStatus(1, 20, 0, "Modulation^S2 16APSK", &Blue);
+    AmendButtonStatus(1, 20, 1, "Modulation^S2 16APSK", &Green);
+  }
+  if (strcmp(config.modulation, "32APSK") == 0)
+  {
+    AmendButtonStatus(1, 20, 0, "Modulation^S2 32APSK", &Blue);
+    AmendButtonStatus(1, 20, 1, "Modulation^S2 32APSK", &Green);
+  }
+
+  // Display Correct Encoding on Button 21
+  if (strcmp(config.encoding, "IPTS in") == 0)
+  {
+    AmendButtonStatus(1, 21, 0, "Encoding^IPTS in", &Blue);
+    AmendButtonStatus(1, 21, 1, "Encoding^IPTS in", &Green);
+  }
+  if (strcmp(config.encoding, "IPTS in H264") == 0)
+  {
+    AmendButtonStatus(1, 21, 0, "Encoding^IPTS in H264", &Blue);
+    AmendButtonStatus(1, 21, 1, "Encoding^IPTS in H264", &Green);
+  }
+  if (strcmp(config.encoding, "IPTS in H265") == 0)
+  {
+    AmendButtonStatus(1, 21, 0, "Encoding^IPTS in H265", &Blue);
+    AmendButtonStatus(1, 21, 1, "Encoding^IPTS in H265", &Green);
+  }
+  if (strcmp(config.encoding, "MPEG-2") == 0)
+  {
+    AmendButtonStatus(1, 21, 0, "Encoding^MPEG-2", &Blue);
+    AmendButtonStatus(1, 21, 1, "Encoding^MPEG-2", &Green);
+  }
+  if (strcmp(config.encoding, "H264") == 0)
+  {
+    AmendButtonStatus(1, 21, 0, "Encoding^H264", &Blue);
+    AmendButtonStatus(1, 21, 1, "Encoding^H264", &Green);
+  }
+  if (strcmp(config.encoding, "H265") == 0)
+  {
+    AmendButtonStatus(1, 21, 0, "Encoding^H265", &Blue);
+    AmendButtonStatus(1, 21, 1, "Encoding^H265", &Green);
+  }
+  if (strcmp(config.encoding, "H266") == 0)
+  {
+    AmendButtonStatus(1, 21, 0, "Encoding^H266", &Blue);
+    AmendButtonStatus(1, 21, 1, "Encoding^H266", &Green);
+  }
+  if (strcmp(config.encoding, "TS File") == 0)
+  {
+    AmendButtonStatus(1, 21, 0, "Encoding^from TS File", &Blue);
+    AmendButtonStatus(1, 21, 1, "Encoding^from TS File", &Green);
+  }
+
+  // Display Correct Output Device on Button 22
+  if (strcmp(config.modeoutput, "STREAMER") == 0)
+  {
+    AmendButtonStatus(1, 22, 0, "Output to^Streamer", &Blue);
+    AmendButtonStatus(1, 22, 1, "Output to^Streamer", &Green);
+  }
+  if (strcmp(config.modeoutput, "IPTSOUT") == 0)
+  {
+    AmendButtonStatus(1, 22, 0, "Output to^IPTS", &Blue);
+    AmendButtonStatus(1, 22, 1, "Output to^IPTS", &Green);
+  }
+  if (strcmp(config.modeoutput, "HDMI") == 0)
+  {
+    AmendButtonStatus(1, 22, 0, "Output to^HDMI", &Blue);
+    AmendButtonStatus(1, 22, 1, "Output to^HDMI", &Green);
+  }
+  if (strcmp(config.modeoutput, "PLUTO") == 0)
+  {
+    AmendButtonStatus(1, 22, 0, "Output to^Pluto", &Blue);
+    AmendButtonStatus(1, 22, 1, "Output to^Pluto", &Green);
+  }
+  if (strcmp(config.modeoutput, "PLUTOF5OEO") == 0)
+  {
+    AmendButtonStatus(1, 22, 0, "Output to^Pluto (F5OEO)", &Blue);
+    AmendButtonStatus(1, 22, 1, "Output to^Pluto (F5OEO)", &Green);
+  }
+  if (strcmp(config.modeoutput, "EXPRESS16") == 0)
+  {
+    AmendButtonStatus(1, 22, 0, "Output to^Express 16", &Blue);
+    AmendButtonStatus(1, 22, 1, "Output to^Express 16", &Green);
+  }
+  if (strcmp(config.modeoutput, "EXPRESS32") == 0)
+  {
+    AmendButtonStatus(1, 22, 0, "Output to^Express 32", &Blue);
+    AmendButtonStatus(1, 22, 1, "Output to^Express 32", &Green);
+  }
+  if (strcmp(config.modeoutput, "LIMEMINI") == 0)
+  {
+    AmendButtonStatus(1, 22, 0, "Output to^Lime Mini", &Blue);
+    AmendButtonStatus(1, 22, 1, "Output to^Lime Mini", &Green);
+  }
+  if (strcmp(config.modeoutput, "LIMEDVB") == 0)
+  {
+    AmendButtonStatus(1, 22, 0, "Output to^Lime DVB", &Blue);
+    AmendButtonStatus(1, 22, 1, "Output to^Lime DVB", &Green);
+  }
+  if (strcmp(config.modeoutput, "LIMEUSB") == 0)
+  {
+    AmendButtonStatus(1, 22, 0, "Output to^Lime USB", &Blue);
+    AmendButtonStatus(1, 22, 1, "Output to^Lime USB", &Green);
+  }
+  if (strcmp(config.modeoutput, "LIMEXTRX") == 0)
+  {
+    AmendButtonStatus(1, 22, 0, "Output to^Lime XTRX", &Blue);
+    AmendButtonStatus(1, 22, 1, "Output to^Lime XTRX", &Green);
+  }
+
+  // Display Correct Output Format on Button 23
+  if (strcmp(config.format, "4:3") == 0)
+  {
+    AmendButtonStatus(1, 23, 0, "Format^4:3", &Blue);
+    AmendButtonStatus(1, 23, 1, "Format^4:3", &Green);
+  }
+  if (strcmp(config.format, "16:9") == 0)
+  {
+    AmendButtonStatus(1, 23, 0, "Format^16:9", &Blue);
+    AmendButtonStatus(1, 23, 1, "Format^16:9", &Green);
+  }
+  if (strcmp(config.format, "720p") == 0)
+  {
+    AmendButtonStatus(1, 23, 0, "Format^720p", &Blue);
+    AmendButtonStatus(1, 23, 1, "Format^720p", &Green);
+  }
+  if (strcmp(config.format, "1080p") == 0)
+  {
+    AmendButtonStatus(1, 23, 0, "Format^1080p", &Blue);
+    AmendButtonStatus(1, 23, 1, "Format^1080p", &Green);
+  }
+}
+
+
 void Define_Menu2()
 {
   strcpy(MenuTitle[2], "Portsdown 5 DATV Receive Menu (8)");
 
   AddButtonStatus(2, 4, "Return to^Main Menu", &Blue);
 }
+
+
+void Highlight_Menu2()
+{
+
+}
+
 
 void Define_Menu4()
 {
@@ -1239,11 +1636,387 @@ void Define_Menu4()
 }
 
 
+void Highlight_Menu4()
+{
+
+}
+
+
+void Define_Menu7()
+{
+  strcpy(MenuTitle[7], "Portsdown 5 Test Equipment Menu (7)");
+
+  AddButtonStatus(7, 15, "LimeSDR^BandViewer", &Blue);
+  AddButtonStatus(7, 15, "LimeSDR^BandViewer", &Green);
+
+  AddButtonStatus(7, 16, "LimeSDR NG^BandViewer", &Blue);
+  AddButtonStatus(7, 16, "LimeSDR NG^BandViewer", &Green);
+
+  //AddButtonStatus(7, 17, "720p^720x1280", &Blue);
+  //AddButtonStatus(7, 17, "720p^720x1280", &Green);
+
+  //AddButtonStatus(7, 18, "1080p^1080x1920", &Blue);
+  //AddButtonStatus(7, 18, "1080p^1080x1920", &Green);
+
+  AddButtonStatus(7, 4, "Return to^Main Menu", &DBlue);
+}
+
+
+void Highlight_Menu7()
+{
+
+}
+
+
+void Define_Menu11()
+{
+  strcpy(MenuTitle[11], "Modulation Selection Menu (11)");
+
+  AddButtonStatus(11, 15, "DVB-S^QPSK", &Blue);
+  AddButtonStatus(11, 15, "DVB-S^QPSK", &Green);
+
+  AddButtonStatus(11, 16, "DVB-S2^QPSK", &Blue);
+  AddButtonStatus(11, 16, "DVB-S2^QPSK", &Green);
+
+  AddButtonStatus(11, 17, "DVB-S2^8PSK", &Blue);
+  AddButtonStatus(11, 17, "DVB-S2^8PSK", &Green);
+
+  AddButtonStatus(11, 18, "DVB-S2^16APSK", &Blue);
+  AddButtonStatus(11, 18, "DVB-S2^16APSK", &Green);
+
+  AddButtonStatus(11, 19, "DVB-S2^32APSK", &Blue);
+  AddButtonStatus(11, 19, "DVB-S2^32APSK", &Green);
+
+  AddButtonStatus(11, 10, "DVB-T", &Grey);
+
+  AddButtonStatus(11, 11, "Carrier", &Grey);
+
+  AddButtonStatus(11, 5, "Pilots^Off", &Grey);
+  AddButtonStatus(11, 5, "Pilots^On", &Grey);
+
+  AddButtonStatus(11, 6, "Long^Frames", &Grey);
+  AddButtonStatus(11, 6, "Short^Frames", &Grey);
+
+  AddButtonStatus(11, 4, "Return to^Main Menu", &DBlue);
+}
+
+
+void Highlight_Menu11()
+{
+  SelectFromGroupOnMenu5(11, 15, 1, config.modulation, "DVBS", "S2QPSK", "8PSK", "16APSK", "32APSK");
+}
+
+
+void Define_Menu12()
+{
+  strcpy(MenuTitle[12], "Video Encoding Selection Menu (12)");
+
+  AddButtonStatus(12, 10, "IPTS in", &Blue);
+  AddButtonStatus(12, 10, "IPTS in", &Green);
+
+  AddButtonStatus(12, 11, "Raw IPTS in^H264", &Blue);
+  AddButtonStatus(12, 11, "Raw IPTS in^H264", &Green);
+
+  AddButtonStatus(12, 12, "Raw IPTS in^H265", &Blue);
+  AddButtonStatus(12, 12, "Raw IPTS in^H265", &Green);
+
+  AddButtonStatus(12, 15, "MPEG-2", &Blue);
+  AddButtonStatus(12, 15, "MPEG-2", &Green);
+
+  AddButtonStatus(12, 16, "H264", &Blue);
+  AddButtonStatus(12, 16, "H264", &Green);
+
+  AddButtonStatus(12, 17, "H265", &Blue);
+  AddButtonStatus(12, 17, "H265", &Green);
+
+  //AddButtonStatus(12, 18, "H266", &Blue);
+  //AddButtonStatus(12, 18, "H266", &Green);
+
+  AddButtonStatus(12, 19, "TS File", &Blue);
+  AddButtonStatus(12, 19, "TS File", &Green);
+
+  AddButtonStatus(12, 4, "Return to^Main Menu", &DBlue);
+}
+
+
+void Highlight_Menu12()
+{
+  SelectFromGroupOnMenu3(12, 10, 1, config.encoding, "IPTS in", "IPTS in H264", "IPTS in H265");
+  SelectFromGroupOnMenu5(12, 15, 1, config.encoding, "MPEG-2", "H264", "H265", "H266", "TS File");
+}
+
+
+void Define_Menu13()
+{
+  strcpy(MenuTitle[13], "Output Device Selection Menu (13)");
+
+  AddButtonStatus(13, 5, "BATC^Streamer", &Blue);
+  AddButtonStatus(13, 5, "BATC^Streamer", &Green);
+
+  AddButtonStatus(13, 6, "IPTS^Out", &Blue);
+  AddButtonStatus(13, 6, "IPTS^Out", &Green);
+
+  AddButtonStatus(13, 7, "HDMI^Source", &Blue);
+  AddButtonStatus(13, 7, "HDMI^Source", &Green);
+
+  AddButtonStatus(13, 10, "Pluto^Raw", &Blue);
+  AddButtonStatus(13, 10, "Pluto^Raw", &Green);
+
+  AddButtonStatus(13, 11, "Pluto^F5OEO", &Blue);
+  AddButtonStatus(13, 11, "Pluto^F5OEO", &Green);
+
+  AddButtonStatus(13, 12, "DATV Express^16 bit", &Blue);
+  AddButtonStatus(13, 12, "DATV Express^16 bit", &Green);
+
+  AddButtonStatus(13, 13, "DATV Express^32 bit", &Blue);
+  AddButtonStatus(13, 13, "DATV Express^32 bit", &Green);
+
+  AddButtonStatus(13, 15, "LimeSDR^Mini", &Blue);
+  AddButtonStatus(13, 15, "LimeSDR^Mini", &Green);
+
+  AddButtonStatus(13, 16, "LimeSDR^DVB Firmware", &Blue);
+  AddButtonStatus(13, 16, "LimeSDR^DVB Firmware", &Green);
+
+  AddButtonStatus(13, 17, "LimeSDR^USB", &Blue);
+  AddButtonStatus(13, 17, "LimeSDR^USB", &Green);
+
+  AddButtonStatus(13, 18, "LimeSDR^PCI XTRX", &Blue);
+  AddButtonStatus(13, 18, "LimeSDR^PCI XTRX", &Green);
+
+  AddButtonStatus(13, 4, "Return to^Main Menu", &DBlue);
+}
+
+
+void Highlight_Menu13()
+{
+  SelectFromGroupOnMenu3(13, 5, 1, config.modeoutput, "STREAMER", "IPTSOUT", "HDMI");
+  SelectFromGroupOnMenu4(13, 10, 1, config.modeoutput, "PLUTO", "PLUTOF5OEO", "EXPRESS16", "EXPRESS32");
+  SelectFromGroupOnMenu4(13, 15, 1, config.modeoutput, "LIMEMINI", "LIMEDVB", "LIMEUSB", "LIMEXTRX");
+}
+
+void Define_Menu14()
+{
+  strcpy(MenuTitle[14], "Video Format Selection Menu (14)");
+
+  AddButtonStatus(14, 15, "4:3^576x768", &Blue);
+  AddButtonStatus(14, 15, "4:3^576x768", &Green);
+
+  AddButtonStatus(14, 16, "16:9^576x1024", &Blue);
+  AddButtonStatus(14, 16, "16:9^576x1024", &Green);
+
+  AddButtonStatus(14, 17, "720p^720x1280", &Blue);
+  AddButtonStatus(14, 17, "720p^720x1280", &Green);
+
+  AddButtonStatus(14, 18, "1080p^1080x1920", &Blue);
+  AddButtonStatus(14, 18, "1080p^1080x1920", &Green);
+
+  AddButtonStatus(14, 4, "Return to^Main Menu", &DBlue);
+}
+
+
+void Highlight_Menu14()
+{
+  SelectFromGroupOnMenu4(14, 15, 1, config.format, "4:3", "16:9", "720p", "1080p");
+}
+
+void Define_Menu15()
+{
+  strcpy(MenuTitle[15], "Video Source Selection Menu (15)");
+
+  AddButtonStatus(15, 15, "Pi Camera", &Blue);
+  AddButtonStatus(15, 15, "Pi Camera", &Green);
+
+  AddButtonStatus(15, 16, "Web Cam", &Blue);
+  AddButtonStatus(15, 16, "Web Cam", &Green);
+
+  AddButtonStatus(15, 17, "ATEM USB", &Blue);
+  AddButtonStatus(15, 17, "ATEM USB", &Green);
+
+  //AddButtonStatus(15, 18, "1080p^1080x1920", &Blue);
+  //AddButtonStatus(15, 18, "1080p^1080x1920", &Green);
+
+  AddButtonStatus(15, 4, "Return to^Main Menu", &DBlue);
+}
+
+
+void Highlight_Menu15()
+{
+  SelectFromGroupOnMenu3(15, 15, 1, config.videosource, "PiCam", "WebCam", "ATEMUSB");
+}
+
+// PiCam    WebCam ATEMUSB 
+// CompVid  HDMI
+// TestCard Contest
+
+
 void Define_Menus()
 {
   Define_Menu1();
   Define_Menu2();
   Define_Menu4();
+  Define_Menu7();
+  Define_Menu11();
+  Define_Menu12();
+  Define_Menu13();
+  Define_Menu14();
+  Define_Menu15();
+}
+
+void selectTestEquip(int Button)   // Test Equipment
+{
+  switch(Button)
+  {
+    case 15:                             // LimeSDR BandViewer
+      cleanexit(136);
+      break;
+    case 16:                             // LimeSDR NG BandViewer
+      cleanexit(151);
+      break;
+  }
+}
+
+
+void selectModulation(int Button)  // Transmitter Modulation
+{
+  switch(Button)
+  {
+    case 15:
+      strcpy(config.modulation, "DVBS");
+      break;
+    case 16:
+      strcpy(config.modulation, "S2QPSK");
+      break;
+    case 17:
+      strcpy(config.modulation, "8PSK");
+      break;
+    case 18:
+      strcpy(config.modulation, "16APSK");
+      break;
+    case 19:
+      strcpy(config.modulation, "32APSK");
+      break;
+  }
+
+  SetConfigParam(PATH_PCONFIG, "modulation", config.modulation);
+}
+
+
+void selectEncoding(int Button)  // Transmitter Encoding
+{
+  switch(Button)
+  {
+    case 10:
+      strcpy(config.encoding, "IPTS in");
+      break;
+    case 11:
+      strcpy(config.encoding, "IPTS in H264");
+      break;
+    case 12:
+      strcpy(config.encoding, "IPTS in H265");
+      break;
+    case 15:
+      strcpy(config.encoding, "MPEG-2");
+      break;
+    case 16:
+      strcpy(config.encoding, "H264");
+      break;
+    case 17:
+      strcpy(config.encoding, "H265");
+      break;
+//    case 18:
+//      strcpy(config.encoding, "H266");
+//      break;
+    case 19:
+      strcpy(config.encoding, "TS File");
+      break;
+  }
+
+  SetConfigParam(PATH_PCONFIG, "encoding", config.encoding);
+}
+
+
+void selectOutput(int Button)          // Transmitter output device
+{
+  switch(Button)
+  {
+    case 5:
+      strcpy(config.modeoutput, "STREAMER");
+      break;
+    case 6:
+      strcpy(config.modeoutput, "IPTSOUT");
+      break;
+    case 7:
+      strcpy(config.modeoutput, "HDMI");
+      break;
+    case 10:
+      strcpy(config.modeoutput, "PLUTO");
+      break;
+    case 11:
+      strcpy(config.modeoutput, "PLUTOF5OEO");
+      break;
+    case 12:
+      strcpy(config.modeoutput, "EXPRESS16");
+      break;
+    case 13:
+      strcpy(config.modeoutput, "EXPRESS32");
+      break;
+    case 15:
+      strcpy(config.modeoutput, "LIMEMINI");
+      break;
+    case 16:
+      strcpy(config.modeoutput, "LIMEDVB");
+      break;
+    case 17:
+      strcpy(config.modeoutput, "LIMEUSB");
+      break;
+    case 18:
+      strcpy(config.modeoutput, "LIMEXTRX");
+      break;
+  }
+  SetConfigParam(PATH_PCONFIG, "modeoutput", config.modeoutput);
+}
+
+
+void selectFormat(int Button)  // Transmitter image format
+{
+  switch(Button)
+  {
+    case 15:
+      strcpy(config.format, "4:3");
+      break;
+    case 16:
+      strcpy(config.format, "16:9");
+      break;
+    case 17:
+      strcpy(config.format, "720p");
+      break;
+    case 18:
+      strcpy(config.format, "1080p");
+      break;
+  }
+
+  SetConfigParam(PATH_PCONFIG, "format", config.format);
+}
+
+void selectVideosource(int Button)  // Transmitter Video Source
+{
+  switch(Button)
+  {
+    case 15:
+      strcpy(config.videosource, "PiCam");
+      break;
+    case 16:
+      strcpy(config.videosource, "WebCam");
+      break;
+    case 17:
+      strcpy(config.videosource, "ATEMUSB");
+      break;
+   // case 18:
+   //   strcpy(config.format, "1080p");
+   //   break;
+  }
+
+  SetConfigParam(PATH_PCONFIG, "videosource", config.videosource);
 }
 
 
@@ -1266,7 +2039,6 @@ void waitForScreenAction()
       // Wait here until screen touched
       if (getTouchSample(&rawX, &rawY) == 0) continue;
     //}
-printf("Screen touched\n");
 
     // Handle contexts first
 
@@ -1353,6 +2125,11 @@ printf("Screen touched\n");
           clearScreen(0, 0, 0);
           cleanexit(136);
           break;
+        case 2:                                                      // Test Equipment
+          printf("MENU 7 \n");                                       // Modulation Menu
+          CurrentMenu = 7;
+          redrawMenu();
+          break;
         case 5:
         case 6:
         case 7:
@@ -1388,31 +2165,29 @@ printf("Screen touched\n");
           }
           redrawMenu();
           break;
-        case 20:                                                      // Test with redraw button
-          if (test20 == false)
-          {
-            test20 = true;
-            SetButtonStatus(1, 20, 2);
-            redrawButton(1, 20);
-          }
-          else
-          {
-            test20 = false;
-            SetButtonStatus(1, 20, 0);
-            redrawButton(1, 20);
-          }
+        case 20:                                                      // Select Modulation
+          printf("MENU 11 \n");                                       // Modulation Menu
+          CurrentMenu = 11;
+          redrawMenu();
           break;
-        case 21:                                                      // Test with Menu refresh
-          if (test21 == false)
-          {
-            test21 = true;
-            SetButtonStatus(1, 21, 2);
-          }
-          else
-          {
-            test21 = false;
-            SetButtonStatus(1, 21, 0);
-          }
+        case 21:                                                      // Select Encoding
+          printf("MENU 12 \n");                                       // Encoding Menu
+          CurrentMenu = 12;
+          redrawMenu();
+          break;
+        case 22:                                                      // Select Output device
+          printf("MENU 13 \n");                                       // Output Menu
+          CurrentMenu = 13;
+          redrawMenu();
+          break;
+        case 23:                                                      // Select Output video format
+          printf("MENU 14 \n");                                       // Format Menu
+          CurrentMenu = 14;
+          redrawMenu();
+          break;
+        case 24:                                                      // Select Video Source
+          printf("MENU 15 \n");                                       // Video Source Menu
+          CurrentMenu = 15;
           redrawMenu();
           break;
         case 25:                                                      // Transmit
@@ -1471,9 +2246,161 @@ printf("Screen touched\n");
           break;
         }
       }
+      if (CurrentMenu == 7)            // Test Equipment Menu
+      {
+        printf("Menu %d, Button %d\n", CallingMenu, i);
+        CallingMenu = 7;
+        switch (i)
+        {
+        case 4:                        // Back to Main Menu
+          printf("MENU 1 \n");
+          CurrentMenu = 1;
+          redrawMenu();
+          break;
+        case 15:
+        case 16:
+        //case 17:
+        //case 18:
+        //case 19:
+          selectTestEquip(i);          // Select test equip
+          redrawMenu();                // Show 
+          usleep(500000);
+          CurrentMenu = 1;
+          redrawMenu();                // and return to menu 1
+          break;
+        }
+      }
+      if (CurrentMenu == 11)           // Modulation Selection Menu
+      {
+        printf("Menu %d, Button %d\n", CallingMenu, i);
+        CallingMenu = 11;
+        switch (i)
+        {
+        case 4:                        // Back to Main Menu
+          printf("MENU 1 \n");
+          CurrentMenu = 1;
+          redrawMenu();
+          break;
+        case 15:
+        case 16:
+        case 17:
+        case 18:
+        case 19:
+          selectModulation(i);         // Select Modulation type
+          redrawMenu();                // Show 
+          usleep(500000);
+          CurrentMenu = 1;
+          redrawMenu();                // and return to menu 1
+          break;
+        }
+      }
+      if (CurrentMenu == 12)           // Encoding Selection Menu
+      {
+        printf("Menu %d, Button %d\n", CallingMenu, i);
+        CallingMenu = 12;
+        switch (i)
+        {
+        case 4:                        // Back to Main Menu
+          printf("MENU 1 \n");
+          CurrentMenu = 1;
+          redrawMenu();
+          break;
+        case 10:
+        case 11:
+        case 12:
+        case 15:
+        case 16:
+        case 17:
+        case 18:
+        case 19:
+          selectEncoding(i);            // Select Encoding type
+          redrawMenu();                // Show 
+          usleep(500000);
+          CurrentMenu = 1;
+          redrawMenu();                // and return to menu 1
+          break;
+        }
+      }
+      if (CurrentMenu == 13)           // Output Device Selection Menu
+      {
+        printf("Menu %d, Button %d\n", CallingMenu, i);
+        CallingMenu = 13;
+        switch (i)
+        {
+        case 4:                        // Back to Main Menu
+          printf("MENU 1 \n");
+          CurrentMenu = 1;
+          redrawMenu();
+          break;
+        case 5:
+        case 6:
+        case 7:
+        case 10:
+        case 11:
+        case 12:
+        case 13:
+        case 15:
+        case 16:
+        case 17:
+        case 18:
+          selectOutput(i);             // Select Output Device
+          redrawMenu();                // Show 
+          usleep(500000);
+          CurrentMenu = 1;
+          redrawMenu();                // and return to menu 1
+          break;
+        }
+      }
+      if (CurrentMenu == 14)           // Video format Selection Menu
+      {
+        printf("Menu %d, Button %d\n", CallingMenu, i);
+        CallingMenu = 14;
+        switch (i)
+        {
+        case 4:                        // Back to Main Menu
+          printf("MENU 1 \n");
+          CurrentMenu = 1;
+          redrawMenu();
+          break;
+        case 15:
+        case 16:
+        case 17:
+        case 18:
+          selectFormat(i);             // Select Output format
+          redrawMenu();                // Show 
+          usleep(500000);
+          CurrentMenu = 1;
+          redrawMenu();                // and return to menu 1
+          break;
+        }
+      }
+      if (CurrentMenu == 15)           // Video Source Menu
+      {
+        printf("Menu %d, Button %d\n", CallingMenu, i);
+        CallingMenu = 15;
+        switch (i)
+        {
+        case 4:                        // Back to Main Menu
+          printf("MENU 1 \n");
+          CurrentMenu = 1;
+          redrawMenu();
+          break;
+        case 15:
+        case 16:
+        case 17:
+        //case 18:
+          selectVideosource(i);             // Select Video Source
+          redrawMenu();                // Show 
+          usleep(500000);
+          CurrentMenu = 1;
+          redrawMenu();                // and return to menu 1
+          break;
+        }
+      }
     }
   }
 }
+
 
 static void cleanexit(int exit_code)
 {
@@ -1613,6 +2540,8 @@ int main(int argc, char **argv)
   CreateButtons();
 
   Define_Menus();
+
+  ReadSavedParams();
 
   clearScreen(255, 255, 255);
 

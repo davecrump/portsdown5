@@ -58,4 +58,14 @@ chmod +x install_p5.sh
 ./install_p5.sh -d
 ```
 
+To load a version from your own GitHub repo (github.com/your_account/portsdown5), cut, paste and amend the following lines:
+```sh
+wget https://github.com//your_account/portsdown5/raw/main/install_p5
+chmod +x install_p5.sh
+./install_p5.sh -u your_account
+```
+
+To pause the installation at the first reboot, add the parameter -w (or --wait) like this ./install_p5.sh -w
+
+To install for a LimeNET Micro 2.0 DE, aded the parameter -x (or --xtrx).
 

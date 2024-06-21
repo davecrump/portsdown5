@@ -2,7 +2,7 @@
 
 # Portsdown 5 Install by davecrump on 20240508
 
-
+# Define function to write messages to build log
 BuildLogMsg() {
   if [[ "$1" != "0" ]]; then
     echo $(date -u) "Build Fail    " "$2" | sudo tee -a /home/pi/p5_initial_build_log.txt  > /dev/null
@@ -43,16 +43,63 @@ if [ $? != 0 ]; then
   fi
 fi
 
-if [ "$1" == "-d" ]; then
-  GIT_SRC="davecrump";
-  echo
+# Parse the arguments
+GIT_SRC="britishamateurtelevisionclub";  # default
+LMNDE="false"                            # don't load LimeSuiteNG and LimeNET Micro 2.0 DE specifics unless requested
+WAIT="false"                             # Go straight into reboot unless requested
+POSITIONAL_ARGS=()
+
+while [[ $# -gt 0 ]]; do
+  case $1 in
+    -d|--development)
+      if [[ "$GIT_SRC" == "britishamateurtelevisionclub" ]]; then
+        GIT_SRC="davecrump"
+      fi
+      shift # past argument
+      ;;
+    -w|--wait)
+      WAIT="true"
+      shift # past argument
+      ;;
+    -x|--xtrx)
+      LMNDE="true" 
+      shift # past argument
+      ;;
+    -u|--user)
+      shift # past argument
+      echo user"$1"
+      GIT_SRC=$1
+      shift # past argument
+      ;;
+    -*|--*)
+      echo "Unknown option $1"
+      echo "Valid options:"
+      echo "-d or --development          Build Portsdown 5 from development repository"
+      echo "-w or --wait                 Wait at the end of Stage 1 of the build before reboot"
+      echo "-x or --xtrx                 Include the files and modules for the LimeNET Micro 2.0 DE"
+      echo "-u or --user githubname      Build Portsdown 5 from githubname/portsdown5 repository"
+      exit 1
+      ;;
+    *)
+      POSITIONAL_ARGS+=("$1") # save positional arg
+      shift # past argument
+      ;;
+  esac
+done
+set -- "${POSITIONAL_ARGS[@]}" # restore positional parameters
+
+# Act on arguments
+if [ "$GIT_SRC" == "davecrump" ]; then
   echo "--------------------------------------------------------"
   echo "----- Installing development version of Portsdown 5-----"
   echo "--------------------------------------------------------"
   echo $(date -u) "Installing Dev Version" | sudo tee -a /home/pi/p5_initial_build_log.txt  > /dev/null
-elif [ "$1" == "-u" -a ! -z "$2" ]; then
-  GIT_SRC="$2"
-  echo
+elif [ "GIT_SRC" == "britishamateurtelevisionclub" ] then;
+  echo "-------------------------------------------------------------"
+  echo "----- Installing BATC Production version of Portsdown 5 -----"
+  echo "-------------------------------------------------------------"
+  echo $(date -u) "Installing Production Version" | sudo tee -a /home/pi/p5_initial_build_log.txt  > /dev/null
+else
   echo "WARNING: Installing ${GIT_SRC} development version, press enter to continue or 'q' to quit."
   read -n1 -r -s key;
   if [[ $key == q ]]; then
@@ -60,14 +107,18 @@ elif [ "$1" == "-u" -a ! -z "$2" ]; then
   fi
   echo "ok!";
   echo $(date -u) "Installing ${GIT_SRC} Version" | sudo tee -a /home/pi/p5_initial_build_log.txt  > /dev/null
-else
-  GIT_SRC="britishamateurtelevisionclub";
-  echo
-  echo "----------------------------------------------------------------"
-  echo "----- Installing BATC Production version of Portsdown 4 NG -----"
-  echo "----------------------------------------------------------------"
-  echo $(date -u) "Installing Production Version" | sudo tee -a /home/pi/p5_initial_build_log.txt  > /dev/null
 fi
+if [ "$LMNDE" == "true" ]; then
+  echo
+  echo Installing extras for LimeNET Micro DE 2.0
+  echo $(date -u) "Installing LimeNET Micro DE 2.0" | sudo tee -a /home/pi/p5_initial_build_log.txt  > /dev/null
+fi
+if [ "$WAIT" == "true" ]; then
+  echo
+  echo Manual reboot before Install Stage 2 requested.
+  echo $(date -u) "Manual reboot before Install Stage 2 requested" | sudo tee -a /home/pi/p5_initial_build_log.txt  > /dev/null
+fi
+
 
 # Update the package manager
 echo
@@ -125,82 +176,45 @@ sudo apt-get -y install ffmpeg                                  # for tx encodin
 sudo apt-get -y install netcat-openbsd                          # For TS input
   SUCCESS=$?; BuildLogMsg $SUCCESS "netcat install"
 
+# Amend /boot/firmware/cmdline.txt and /boot/firmware/config.txt
 echo
-echo "----------------------------------------"
-echo "-----    Installing LimeSuiteNG    -----"
-echo "----------------------------------------"
+echo "-----------------------------------------------"
+echo "----- Amending cmdline.txt and config.txt -----"
+echo "-----------------------------------------------"
 
-git clone https://github.com/myriadrf/LimeSuiteNG        # Download LimeSuiteNG
-  SUCCESS=$?; BuildLogMsg $SUCCESS "git clone LimeSuiteNG"
+# Rotate the touchscreen display to the normal orientation 
+if !(grep video=DSI-1 /boot/firmware/cmdline.txt) then
+  sudo sed -i '1s,$, video=DSI-1:800x480M@60\,rotate=180,' /boot/firmware/cmdline.txt
+fi
 
-# Dependencies from install_dependencies.sh
-# build-essential and cmake already installed
+# Set the default HDMI 0 output to 720p60
+if !(grep video=HDMI-A-1 /boot/firmware/cmdline.txt) then
+  sudo sed -i '1s,$, video=HDMI-A-1:1280x720M@60,' /boot/firmware/cmdline.txt
+fi
 
-sudo apt-get -y install --no-install-recommends linux-headers-generic
-  SUCCESS=$?; BuildLogMsg $SUCCESS "linux-headers-generic install"
+# Disable the splash screen
+if !(grep -E '^disable_splash' /boot/firmware/config.txt) then
+  sudo sh -c "echo disable_splash=1 >> /boot/firmware/config.txt"
+fi
 
-sudo apt-get -y install --no-install-recommends libsoapysdr-dev
-  SUCCESS=$?; BuildLogMsg $SUCCESS "libsoapysdr-dev install"
+# If required, add the specific parameters for LimeSDR XTRX and LMN 2.0 DE
+if [ "$LMNDE" == "true" ]; then
+  sudo sh -c "echo dtoverlay=pcie-32bit-dma >> /boot/firmware/config.txt"
+  sudo sh -c "echo dtparam=spi=on >> /boot/firmware/config.txt"
+  sudo sh -c "echo dtoverlay=spi1-2cs,cs0_pin=18,cs1_pin=17 >> /boot/firmware/config.txt"
+  sudo sh -c "echo dtparam=i2c_vc=on >> /boot/firmware/config.txt"
+  sudo sh -c "echo dtoverlay=i2c-rtc,pcf85063a,i2c_csi_dsi >> /boot/firmware/config.txt"
+fi
 
-sudo apt-get -y install --no-install-recommends libusb-1.0-0-dev
-  SUCCESS=$?; BuildLogMsg $SUCCESS "libusb-1.0-0-dev install"
+# Stop the cursor flashing on the touchscreen
+if !(grep global_cursor_default /boot/firmware/cmdline.txt) then
+  sudo sed -i '1s,$, vt.global_cursor_default=0,' /boot/firmware/cmdline.txt
+fi
 
-sudo apt-get -y install --no-install-recommends libwxgtk3.2-dev
-  SUCCESS=$?; BuildLogMsg $SUCCESS "libwxgtk3.2-dev install"
+# Install the command-line aliases
+echo "alias ugui='/home/pi/portsdown/utils/uguir.sh'" >> /home/pi/.bash_aliases
+echo "alias stop='/home/pi/portsdown/utils/stop.sh'"  >> /home/pi/.bash_aliases
 
-cd LimeSuiteNG
-
-cmake -B build
-  SUCCESS=$?; BuildLogMsg $SUCCESS "LimeSuiteNG cmake"
-
-cd build
-
-make -j 4 -O
-  SUCCESS=$?; BuildLogMsg $SUCCESS "LimeSuiteNG make"
-
-sudo make install
-  SUCCESS=$?; BuildLogMsg $SUCCESS "LimeSuiteNG make install"
-
-sudo ldconfig
-  SUCCESS=$?; BuildLogMsg $SUCCESS "LimeSuiteNG ldconfig"
-
-# Install LimeSuite 23.11 as at 8 May 2024
-# Commit 9dce3b6a6bd66537a2249ad27101345d31aafc89
-#echo
-#echo "--------------------------------------"
-#echo "----- Installing LimeSuite 22.09 -----"
-#echo "--------------------------------------"
-
-#wget https://github.com/myriadrf/LimeSuite/archive/9dce3b6a6bd66537a2249ad27101345d31aafc89.zip -O master.zip
-#  SUCCESS=$?; BuildLogMsg $SUCCESS "LimeSuite download"
-
-# Copy into place
-#unzip -o master.zip
-#cp -f -r LimeSuite-9dce3b6a6bd66537a2249ad27101345d31aafc89 LimeSuite
-#rm -rf LimeSuite-9dce3b6a6bd66537a2249ad27101345d31aafc89
-#rm master.zip
-
-# Compile LimeSuite
-#cd LimeSuite/
-#mkdir dirbuild
-#cd dirbuild/
-#cmake ../
-#  SUCCESS=$?; BuildLogMsg $SUCCESS "LimeSuite cmake"
-#make -j 4 -O
-#  SUCCESS=$?; BuildLogMsg $SUCCESS "LimeSuite make"
-#sudo make install
-#sudo ldconfig
-#cd /home/pi
-
-# Install udev rules for LimeSuite
-#cd LimeSuite/udev-rules
-#chmod +x install.sh
-#sudo /home/pi/LimeSuite/udev-rules/install.sh
-#  SUCCESS=$?; BuildLogMsg $SUCCESS "LimeSuite udev rules"
-#cd /home/pi	
-
-# Record the LimeSuite Version	
-#echo "9dce3b6" >/home/pi/LimeSuite/commit_tag.txt
 
 # Download the previously selected version of Portsdown 5
 echo
@@ -230,11 +244,51 @@ make -j 4 -O
 mv /home/pi/portsdown/src/portsdown/portsdown5 /home/pi/portsdown/bin/portsdown5
 cd /home/pi
 
-# Compile LimeSDR Toolbox
+
+# Install LimeSuite 23.11 as at 8 May 2024
+# Commit 9dce3b6a6bd66537a2249ad27101345d31aafc89
 echo
-echo "-------------------------------------"
-echo "----- Compiling LimeSDR Toolbox -----"
-echo "-------------------------------------"
+echo "--------------------------------------"
+echo "----- Installing LimeSuite 22.09 -----"
+echo "--------------------------------------"
+
+wget https://github.com/myriadrf/LimeSuite/archive/9dce3b6a6bd66537a2249ad27101345d31aafc89.zip -O master.zip
+  SUCCESS=$?; BuildLogMsg $SUCCESS "LimeSuite download"
+
+# Copy into place
+unzip -o master.zip
+cp -f -r LimeSuite-9dce3b6a6bd66537a2249ad27101345d31aafc89 LimeSuite
+rm -rf LimeSuite-9dce3b6a6bd66537a2249ad27101345d31aafc89
+rm master.zip
+
+# Compile LimeSuite
+cd LimeSuite/
+mkdir dirbuild
+cd dirbuild/
+cmake ../
+  SUCCESS=$?; BuildLogMsg $SUCCESS "LimeSuite cmake"
+make -j 4 -O
+  SUCCESS=$?; BuildLogMsg $SUCCESS "LimeSuite make"
+sudo make install
+sudo ldconfig
+cd /home/pi
+
+# Install udev rules for LimeSuite
+#cd LimeSuite/udev-rules
+#chmod +x install.sh
+#sudo /home/pi/LimeSuite/udev-rules/install.sh
+#  SUCCESS=$?; BuildLogMsg $SUCCESS "LimeSuite udev rules"
+#cd /home/pi	
+
+# Record the LimeSuite Version	
+echo "9dce3b6" >/home/pi/LimeSuite/commit_tag.txt
+
+
+# Compile legacy LimeSDR Toolbox
+echo
+echo "--------------------------------------------"
+echo "----- Compiling Legacy LimeSDR Toolbox -----"
+echo "--------------------------------------------"
 
 # Compile dvb2iq first
 cd /home/pi/portsdown/src/limesdr_toolbox/libdvbmod/libdvbmod
@@ -258,11 +312,11 @@ mv limesdr_stopchannel /home/pi/portsdown/bin/
 mv limesdr_forward /home/pi/portsdown/bin/
 mv limesdr_dvb /home/pi/portsdown/bin/
 
-# Compile Lime BandViewer
+# Compile Legacy Lime BandViewer
 echo
-echo "-------------------------------------"
-echo "----- Compiling Lime BandViewer -----"
-echo "-------------------------------------"
+echo "--------------------------------------------"
+echo "----- Compiling Legacy Lime BandViewer -----"
+echo "--------------------------------------------"
 
 cd /home/pi/portsdown/src/limeview
 make -j 4 -O
@@ -280,25 +334,6 @@ sudo cp /home/pi/portsdown/scripts/set-up_configs/portsdown.service /etc/systemd
 sudo systemctl daemon-reload
 sudo systemctl enable portsdown
 
-# Rotate the touchscreen display to the normal orientation 
-if !(grep video=DSI-1 /boot/firmware/cmdline.txt) then
-  sudo sed -i '1s,$, video=DSI-1:800x480M@60\,rotate=180,' /boot/firmware/cmdline.txt
-fi
-
-# Set the default HDMI 0 output to 720p60
-if !(grep video=HDMI-A-1 /boot/firmware/cmdline.txt) then
-  sudo sed -i '1s,$, video=HDMI-A-1:1280x720M@60,' /boot/firmware/cmdline.txt
-fi
-
-# Disable the flash screen
-if !(grep disable_splash /boot/firmware/config.txt) then
-  sudo sh -c "echo disable_splash=1 >> /boot/firmware/config.txt"
-fi
-
-# Stop the cursor flashing on the touchscreen
-if !(grep global_cursor_default /boot/firmware/cmdline.txt) then
-  sudo sed -i '1s,$, vt.global_cursor_default=0,' /boot/firmware/cmdline.txt
-fi
 
 # Configure the nginx web server
 cp -r /home/pi/portsdown/scripts/set-up_configs/webroot /home/pi/webroot
@@ -318,38 +353,47 @@ mkdir /home/pi/snaps
 # Set the image index number to 0
 echo "0" > /home/pi/snaps/snap_index.txt
 
-# Install the command-line aliases
-echo "alias ugui='/home/pi/portsdown/utils/uguir.sh'"  >> /home/pi/.bash_aliases
-
-# Record the Version Number
-head -c 9 /home/pi/portsdown/version_history.txt > /home/pi/portsdown/configs/installed_version.txt
-echo -e "\n" >> /home/pi/portsdown/configs/installed_version.txt
-echo "Version number" | sudo tee -a /home/pi/p5_initial_build_log.txt  > /dev/null
-head -c 9 /home/pi/portsdown/version_history.txt | sudo tee -a /home/pi/p5_initial_build_log.txt  > /dev/null
-
 echo
 echo "SD Card Serial:"
 cat /sys/block/mmcblk0/device/cid
 
+# Create file to trigger install on next reboot
+touch /home/pi/portsdown/.post-install_actions
+cd /home/pi
 
 if [ "$BUILD_STATUS" == "Fail" ] ; then
+  echo $(date -u) " Build stage 1 fail" | sudo tee -a /home/pi/p5_initial_build_log.txt  > /dev/null
   echo
-  echo "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
-  echo "!!!!!  Build complete with errors   !!!!!!!!"
-  echo "!!!!!  Read log below for details   !!!!!!!!"
-  echo "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
+  echo "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
+  echo "!!!!!   Build stage 1 complete with errors   !!!!!!!"
+  echo "!!!!!       Read log below for details       !!!!!!!"
+  echo "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
   echo
   cat /home/pi/p5_initial_build_log.txt
   echo
-  echo enter sudo reboot now to manually reboot
+  echo Enter sudo reboot now to manually reboot and run stage 2 anyway
+  echo 
   exit
 else
   echo
-  echo "------------------------------------------"
-  echo "-----  Successful build, no errors   -----"
-  echo "-----                                -----"
-  echo "-----         Rebooting now          -----"
-  echo "------------------------------------------"
+  echo "--------------------------------------------"
+  echo "-----  Successful stage 1, no errors   -----"
+  echo "-----                                  -----"
+  echo "-----           Rebooting now          -----"
+  echo "--------------------------------------------"
+
+  if [ "$WAIT" == "true" ]; then;                 ## Wait for key press before reboot
+    echo "-----                                  -----"
+    echo "-----       Waiting for Reboot         -----"
+    echo "--------------------------------------------"
+    echo
+    read -p "Press any key to reboot for stage 2 of the installation"
+  fi
+
+  echo "-----                                  -----"
+  echo "-----           Rebooting now          -----"
+  echo "--------------------------------------------"
+
   sudo reboot now
 fi
 

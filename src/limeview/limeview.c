@@ -25,6 +25,7 @@
 #include "../common/timing.h"
 #include "../common/buffer/buffer_circular.h"
 #include "../common/ffunc.h"
+#include "../common/LMNspi/LMNspi.h"
 
 pthread_t thbutton;
 pthread_t thwebclick;                  //  Listens for clicks from web interface
@@ -5294,6 +5295,11 @@ int main(void)
     memset(&sa, 0, sizeof(sa));
     sa.sa_handler = terminate;
     sigaction(i, &sa, NULL);
+  }
+
+  if (true) // check for LimeXTRX here and enable the fan, LNA and OPA
+  {
+    LMNspi();
   }
 
   // Check the display type in the config file

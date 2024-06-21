@@ -1,8 +1,8 @@
 #! /bin/bash
 
-# Reload LimeSuiteNG from GitHub
+# Recompile LimeSDR toolbox
 
-set -x
+# set -x
 
 /home/pi/portsdown/bin/limesdr_stopchannel
 
@@ -13,6 +13,8 @@ touch limesdr_util.c
 touch limesdr_dvb.cpp
 touch limesdr_send.c
 touch limesdr_stopchannel.c
+touch limesdr_dump.c
+touch limesdr_forward.c
 
 make -j 4 -O
 
