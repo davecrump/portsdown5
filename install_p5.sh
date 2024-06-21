@@ -94,7 +94,7 @@ if [ "$GIT_SRC" == "davecrump" ]; then
   echo "----- Installing development version of Portsdown 5-----"
   echo "--------------------------------------------------------"
   echo $(date -u) "Installing Dev Version" | sudo tee -a /home/pi/p5_initial_build_log.txt  > /dev/null
-elif [ "GIT_SRC" == "britishamateurtelevisionclub" ] then;
+elif [ "GIT_SRC" == "britishamateurtelevisionclub" ]; then
   echo "-------------------------------------------------------------"
   echo "----- Installing BATC Production version of Portsdown 5 -----"
   echo "-------------------------------------------------------------"
@@ -105,7 +105,7 @@ else
   if [[ $key == q ]]; then
     exit 1;
   fi
-  echo "ok!";
+  echo "ok!"
   echo $(date -u) "Installing ${GIT_SRC} Version" | sudo tee -a /home/pi/p5_initial_build_log.txt  > /dev/null
 fi
 if [ "$LMNDE" == "true" ]; then
@@ -215,6 +215,8 @@ fi
 echo "alias ugui='/home/pi/portsdown/utils/uguir.sh'" >> /home/pi/.bash_aliases
 echo "alias stop='/home/pi/portsdown/utils/stop.sh'"  >> /home/pi/.bash_aliases
 
+echo
+echo "Amendments made"
 
 # Download the previously selected version of Portsdown 5
 echo
@@ -382,7 +384,7 @@ else
   echo "-----           Rebooting now          -----"
   echo "--------------------------------------------"
 
-  if [ "$WAIT" == "true" ]; then;                 ## Wait for key press before reboot
+  if [ "$WAIT" == "true" ]; then                 ## Wait for key press before reboot
     echo "-----                                  -----"
     echo "-----       Waiting for Reboot         -----"
     echo "--------------------------------------------"
