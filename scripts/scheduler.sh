@@ -130,6 +130,7 @@ ChooseBandViewerSDR()
 # 148  Exit from portsdown gui requesting start of Pluto NF Meter
 # 149  Exit from portsdown gui requesting start of Pluto Noise Meter
 # 150  Run the Meteor Viewer
+# 151  Exit from gui requesting start of LimeSDR BandViewer
 # 160  Shutdown from GUI
 # 192  Reboot from GUI
 # 193  Rotate 7 inch and reboot
@@ -248,7 +249,6 @@ echo $GUI_RETURN_CODE
       GUI_RETURN_CODE="129"
     ;;
     136)
-      sleep 1
       /home/pi/portsdown/bin/limeview
       GUI_RETURN_CODE="$?"
     ;;
@@ -419,6 +419,10 @@ echo $GUI_RETURN_CODE
       if [ $GUI_RETURN_CODE != 129 ] && [ $GUI_RETURN_CODE != 160 ]; then     # Not Portsdown and not shutdown
         GUI_RETURN_CODE=150                         # So restart meteorview        
       fi
+    ;;
+    151)
+      /home/pi/portsdown/bin/limeviewng
+      GUI_RETURN_CODE="$?"
     ;;
     160)
       sleep 1

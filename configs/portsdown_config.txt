@@ -1,7 +1,7 @@
 modulation=S2QPSK
-encoding=H264
-modeoutput=LIMEMINI
-format=4:3
+encoding=720p
+modeoutput=HDMI
+format=1080p
 videosource=CARD
 freqoutput=437
 symbolrate=333

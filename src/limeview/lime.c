@@ -9,10 +9,11 @@
 #include <errno.h>
 #include <inttypes.h>
 #include <pthread.h>
-#include <limesuiteng/LimeSuite.h>
+#include <lime/LimeSuite.h>
+
 #include "lime.h"
 #include "../common/timing.h"
-#include "../common/buffer/buffer_circular.h"
+//#include "buffer/buffer_circular.h"
 
 lime_fft_buffer_t lime_fft_buffer;
 
@@ -61,8 +62,7 @@ void *lime_thread(void *arg)
 
   // Query and display the device details
   const lms_dev_info_t *device_info;
-
-  double Temperature = 0;
+  double Temperature;
 
   device_info = LMS_GetDeviceInfo(device);
 

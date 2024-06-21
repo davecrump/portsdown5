@@ -25,7 +25,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "limesdr_util.h"
-//#include "/home/pi/LimeSuiteNG/src/include/lime/LimeSuite.h"
+#include <lime/LimeSuite.h>
 
 int main(int argc, char** argv)
 {

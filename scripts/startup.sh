@@ -59,9 +59,9 @@ whoami >> /home/pi/startuplog.txt
 echo "the ssh client is-"$SSH_CLIENT"-" >> /home/pi/startuplog.txt
 
 # If this is the first reboot after install, sort out the sdrplay api and subsequent makes
-#if [ -f /home/pi/rpidatv/.post-install_actions ]; then
-#  /home/pi/rpidatv/scripts/post-install_actions.sh
-#fi
+if [ -f /home/pi/portsdown/.post-install_actions ]; then
+  /home/pi/portsdown/scripts/set-up_configs/post-install_actions.sh
+fi
 
 # Read the desired start-up behaviour
 MODE_STARTUP=$(get_config_var startup $SCONFIGFILE)

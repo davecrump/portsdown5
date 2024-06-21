@@ -1,0 +1,18 @@
+title=Portsdown LimeSDR Band Viewer
+centrefreq=146000
+span=20480
+limegain=70
+mode=spectrum
+pfreq1=146500
+pfreq2=437000
+pfreq3=748000
+pfreq4=1255000
+pfreq5=2409000
+wfallbase=-70
+wfallrange=30
+wfalltimespan=30
+tracetype=single
+freqoffset=0
+baselineshift=0
+baseline20db=-55
+

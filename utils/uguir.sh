@@ -32,7 +32,9 @@ cd /home/pi
 
 mv /home/pi/portsdown/src/portsdown/portsdown5 /home/pi/portsdown/bin/portsdown5
 
-/home/pi/portsdown/bin/portsdown5
+/home/pi/portsdown/scripts/scheduler.sh --dubug
+
+# /home/pi/portsdown/bin/portsdown5
 EXIT_CODE=$?
 
 reset

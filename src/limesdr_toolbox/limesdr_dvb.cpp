@@ -42,8 +42,7 @@
 #include <sys/socket.h>
 #include <unistd.h>
 #include <stdio.h>
-#include <netinet/in.h> /* IPPROTO_IP, sockaddr_in, htons(), 
-htonl() */
+#include <netinet/in.h> /* IPPROTO_IP, sockaddr_in, htons(), htonl() */
 #include <arpa/inet.h>  /* inet_addr() */
 #include <netdb.h>
 #else
