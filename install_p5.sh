@@ -135,6 +135,13 @@ sudo apt-get update --allow-releaseinfo-change
 sudo apt-get -y remove apt-listchanges
   SUCCESS=$?; BuildLogMsg $SUCCESS "remove apt-listchanges"
 
+# Exit here if /var/lib/dpkg/lock-frontend is not available yet
+if [[ "$SUCCESS" != "0" ]]; then
+  echo
+  echo "Early error (probably a locked file).  Nothing changed on card, so please try again"
+  exit
+fi
+
 # Upgrade the distribution
 echo
 echo "-----------------------------------"
@@ -155,6 +162,10 @@ sudo apt-get -y install cmake                                   # For compiling
   SUCCESS=$?; BuildLogMsg $SUCCESS "cmake install"
 sudo apt-get -y install fbi                                     # For display of images
   SUCCESS=$?; BuildLogMsg $SUCCESS "fbi install"
+sudo apt-get -y install libusb-1.0-0-dev                        # For LimeSuite
+  SUCCESS=$?; BuildLogMsg $SUCCESS "libusb-1.0-0-dev"
+sudo apt-get -y install linux-headers-generic                   # For LimeSuite
+  SUCCESS=$?; BuildLogMsg $SUCCESS "linux-headers-generic install"
 sudo apt-get -y install libfftw3-dev                            # For bandviewers
   SUCCESS=$?; BuildLogMsg $SUCCESS "libfftw3-dev install"
 sudo apt-get -y install nginx-light                             # For web access
@@ -276,11 +287,11 @@ sudo ldconfig
 cd /home/pi
 
 # Install udev rules for LimeSuite
-#cd LimeSuite/udev-rules
-#chmod +x install.sh
-#sudo /home/pi/LimeSuite/udev-rules/install.sh
-#  SUCCESS=$?; BuildLogMsg $SUCCESS "LimeSuite udev rules"
-#cd /home/pi	
+cd LimeSuite/udev-rules
+chmod +x install.sh
+sudo /home/pi/LimeSuite/udev-rules/install.sh
+  SUCCESS=$?; BuildLogMsg $SUCCESS "LimeSuite udev rules"
+cd /home/pi	
 
 # Record the LimeSuite Version	
 echo "9dce3b6" >/home/pi/LimeSuite/commit_tag.txt
@@ -389,7 +400,7 @@ else
     echo "-----       Waiting for Reboot         -----"
     echo "--------------------------------------------"
     echo
-    read -p "Press any key to reboot for stage 2 of the installation"
+    read -p "Press enter to reboot for stage 2 of the installation"
   fi
 
   echo "-----                                  -----"
