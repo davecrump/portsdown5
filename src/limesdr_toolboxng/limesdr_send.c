@@ -26,7 +26,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <signal.h>
-#include "limesdr_util.h"
+#include "limesdr_utilng.h"
 
 // Global variable used by the signal handler and capture/encoding loop
 static int want_quit = 0;

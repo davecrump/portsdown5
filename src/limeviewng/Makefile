@@ -28,4 +28,6 @@ limeviewng: limeviewng.c
 install:
 	cp limeviewng ../../bin/
 
-
+# -lbcm_host -ljpeg 
+# 		screen.c \
+# 		../common/temperature.c \

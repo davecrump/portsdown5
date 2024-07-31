@@ -33,6 +33,8 @@ static lms_device_t* device = NULL;
 void *lime_thread(void *arg)
 {
   bool *exit_requested = (bool *)arg;
+  int AntRequested = 0;
+  int AntFound;
 
   // Find devices
   int n;
@@ -59,10 +61,19 @@ void *lime_thread(void *arg)
     return NULL;
   }
 
+//LMS_Reset(device);
+
+  // Initialize device with default configuration
+  if (LMS_Init(device) != 0)
+  {
+    LMS_Close(device);
+    return NULL;
+  }
+
   // Query and display the device details
   const lms_dev_info_t *device_info;
 
-  double Temperature = 0;
+  double Temperature;
 
   device_info = LMS_GetDeviceInfo(device);
 
@@ -74,14 +85,7 @@ void *lime_thread(void *arg)
   printf(" - gateware target: %s\n", device_info->gatewareTargetBoard);
 
   LMS_GetChipTemperature(device, 0, &Temperature);
-  printf(" - Temperature: %.0f°C\n", Temperature);
-
-  // Initialize device with default configuration
-  if (LMS_Init(device) != 0)
-  {
-    LMS_Close(device);
-    return NULL;
-  }
+  printf(" - Temperature: %.2f°C\n", Temperature);
 
   // Enable the RX channel
   if (LMS_EnableChannel(device, LMS_CH_RX, 0, true) != 0)
@@ -111,18 +115,22 @@ void *lime_thread(void *arg)
   // Set the initial sample rate and decimation
   if (bandwidth < 200000.0)                    // 100 kHz bandwidth
   {
+    printf("Set init sample rate:     LMS_SetSampleRate(device, %.1f, 32)\n", bandwidth);
     LMS_SetSampleRate(device, bandwidth, 32);
   }
   else if (bandwidth < 400000.0)              // 200 kHz bandwidth
   {
+    printf("Set init sample rate:     LMS_SetSampleRate(device, %.1f, 16)\n", bandwidth);
     LMS_SetSampleRate(device, bandwidth, 16);
   }
   else if (bandwidth < 1000000.0)             // 500 kHz bandwidth
   {
+    printf("Set init sample rate:     LMS_SetSampleRate(device, %.1f, 8)\n", bandwidth);
     LMS_SetSampleRate(device, bandwidth, 8);
   }
   else                                       // 1 - 20 MHz bandwidth
   {
+    printf("Set init sample rate:     LMS_SetSampleRate(device, %.1f, 4)\n", bandwidth);
     LMS_SetSampleRate(device, bandwidth, 4);
   }
 
@@ -132,9 +140,13 @@ void *lime_thread(void *arg)
     fprintf(stderr, "Warning : LMS_GetSampleRate() : %s\n", LMS_GetLastErrorMessage());
     return NULL;
   }
-  printf("Lime RX Samplerate: Host: %.1fKs, RF: %.1fKs\n", (sr_host/1000.0), (sr_rf/1000.0));
+  //printf("Lime RX Samplerate: Host: %.1fKs, RF: %.1fKs\n", (sr_host/1000.0), (sr_rf/1000.0));
+  printf("Check sample rates:       LMS_GetSampleRate(device, LMS_CH_RX, 0, &sr_host, &sr_rf)\n");
+  printf("                                                                   sr_host = %.1f\n", sr_host);
+  printf("                                                                             sr_rf = %.1f\n", sr_rf);
 
   // Set the RX gain
+  printf("Setting initial gain:     LMS_SetNormalizedGain(device, LMS_CH_RX, 0, %.2f)\n", gain);
   if (LMS_SetNormalizedGain(device, LMS_CH_RX, 0, gain) != 0)  // gain is 0  to 1.0
   {
     LMS_Close(device);
@@ -142,6 +154,7 @@ void *lime_thread(void *arg)
   }
 
   // Perform the initial calibration
+  printf("Intitial calibration:     LMS_Calibrate(device, LMS_CH_RX, 0, %.1f, 0)\n", bandwidth);
   if (LMS_Calibrate(device, LMS_CH_RX, 0, bandwidth, 0) < 0)
   {
     fprintf(stderr, "LMS_Calibrate() : %s\n", LMS_GetLastErrorMessage());
@@ -154,7 +167,8 @@ void *lime_thread(void *arg)
   // Report the actual LO Frequency
   double rxfreq = 0;
   LMS_GetLOFrequency(device, LMS_CH_RX, 0, &rxfreq);
-  printf("RXFREQ after cal = %f\n", rxfreq);
+  printf("Checking LO frequency:    LMS_GetLOFrequency(device, LMS_CH_RX, 0, &rxfreq) returns %.1f\n", rxfreq);
+
 
   // Antenna is set automatically by LimeSuite for LimeSDR Mini
   // but needs setting for LimeSDR USB and LimeSDR XTRX.  Options:
@@ -179,18 +193,26 @@ void *lime_thread(void *arg)
   {
     if (frequency_actual_rx >= 1200000000)
     {
+      printf("Setting Antenna:          LMS_SetAntenna(device, LMS_CH_RX, 0, 1)\n");
       LMS_SetAntenna(device, LMS_CH_RX, 0, 1); //LNA_H
     }
     else
     {
+      printf("Setting Antenna:          LMS_SetAntenna(device, LMS_CH_RX, 0, 2)\n");
       LMS_SetAntenna(device, LMS_CH_RX, 0, 2); //LNA_L
     }
   }
+  // Set correct Antenna port for LimeSDR Mini:
+  if ((strcmp(device_info->deviceName, "LimeSDR-Mini") == 0) || (strcmp(device_info->deviceName, "LimeSDR-Mini_v2")) == 0)
+  {
+    printf("Setting Antenna:          LMS_SetAntenna(device, LMS_CH_RX, 0, 3)\n");
+    LMS_SetAntenna(device, LMS_CH_RX, 0, 3); //LNA_W
+  }
 
-  int AntFound;
   AntFound = LMS_GetAntenna(device, LMS_CH_RX, 0);
-  printf("Antenna %d %s selected\n", AntFound, antlist[AntFound]);
+  printf("Checking Antenna:         LMS_GetAntenna(device, LMS_CH_RX, 0) returns %d %s\n", AntFound, antlist[AntFound]);
 
+  printf("Setting bandwidth:        LMS_SetLPFBW(device, LMS_CH_RX, 0, %.1f)\n", (bandwidth * 1.2));
   // Set the Analog LPF bandwidth (minimum of device is 1.4 MHz)
   // Note that for LimeSuiteNG, gain must be reset after setting bandwidth
   if (LMS_SetLPFBW(device, LMS_CH_RX, 0, (bandwidth * 1.2)) != 0)
@@ -200,8 +222,10 @@ void *lime_thread(void *arg)
     return NULL;
   }
 
+  printf("Setting gain:             LMS_SetNormalizedGain(device, LMS_CH_RX, 0, %.2f)\n", gain);
   LMS_SetNormalizedGain(device, LMS_CH_RX, 0, gain);
 
+  printf("Disabling Test Signals:   LMS_SetTestSignal(device, LMS_CH_RX, 0, LMS_TESTSIG_NONE, 0, 0)\n");
   // Disable test signals generation in RX channel
   if (LMS_SetTestSignal(device, LMS_CH_RX, 0, LMS_TESTSIG_NONE, 0, 0) != 0)
   {
@@ -219,6 +243,12 @@ void *lime_thread(void *arg)
   rx_stream.throughputVsLatency = 0.5;
   rx_stream.isTx = false; //RX channel
   rx_stream.dataFmt = LMS_FMT_F32;
+  printf("Setting up the stream:    LMS_SetupStream(device, &rx_stream)\n");
+  printf("                                                  rx_stream.channel = 0\n");
+  printf("                                                  rx_stream.fifoSize = 1024 * 1024;\n");
+  printf("                                                  rx_stream.throughputVsLatency = 0.5\n");
+  printf("                                                  rx_stream.isTx = false\n");
+  printf("                                                  rx_stream.dataFmt = LMS_FMT_F32\n");
   if (LMS_SetupStream(device, &rx_stream) != 0)
   {
     LMS_Close(device);
@@ -231,6 +261,7 @@ void *lime_thread(void *arg)
   float *buffer;
   buffer = malloc(buffersize * 2 * sizeof(float)); //buffer to hold complex values (2*samples))
 
+  printf("Starting the stream:      LMS_StartStream(&rx_stream)\n");
   // Start streaming
   if (LMS_StartStream(&rx_stream) != 0)
   {
@@ -241,12 +272,12 @@ void *lime_thread(void *arg)
 
 
       // Stop the stream
-      LMS_StopStream(&rx_stream);
+      //LMS_StopStream(&rx_stream);
 
-      LMS_SetupStream(device, &rx_stream);
+      //LMS_SetupStream(device, &rx_stream);
     
       // Restart the stream
-      LMS_StartStream(&rx_stream);
+      //LMS_StartStream(&rx_stream);
 
 
   // Streaming
@@ -257,17 +288,9 @@ void *lime_thread(void *arg)
   //uint64_t last_stats = 0;
 
   int samplesRead = 0;
-  //lms_stream_status_t status;
-
-#if 0
-  bool monotonic_started = false;
-  uint64_t samples_total = 0;
-  uint64_t start_monotonic = 0;
-#endif
-
-  //uint32_t samples_rx_transferred = samplesRead / 2.0;
 
   // Calibrate again now all settings settled
+  printf("Calibrate again:          LMS_Calibrate(device, LMS_CH_RX, 0, %.1f, 0)\n", bandwidth);
   LMS_Calibrate(device, LMS_CH_RX, 0, bandwidth, 0);
 
   while(false == *exit_requested) 
@@ -284,29 +307,31 @@ void *lime_thread(void *arg)
 
     // Deal with parameter changes
 
+    /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
     // Frequency
     if (NewFreq == true)
     {
+      printf("Frequncy Change requested\n");
+      printf("Setting LO frequency:     LMS_SetLOFrequency(device, LMS_CH_RX, 0, %.1f)\n", frequency_actual_rx);
       LMS_SetLOFrequency(device, LMS_CH_RX, 0, frequency_actual_rx);
-
-      LMS_GetLOFrequency(device, LMS_CH_RX, 0, &rxfreq);
-      printf("Requested frequency  = %.1f, RXFREQ reported = %.1f\n", frequency_actual_rx, rxfreq);
 
       // Calibrate on significant frequency change
       if ((frequency_actual_rx > (1.1 * CalFreq)) || (frequency_actual_rx < (0.9 * CalFreq)))
       {
         // Pause to let frequency settle
         usleep(10000); 
+        printf("Calibrate again:          LMS_Calibrate(device, LMS_CH_RX, 0, %.1f, 0)\n", bandwidth);
         LMS_Calibrate(device, LMS_CH_RX, 0, bandwidth, 0);
         CalFreq = frequency_actual_rx;
       }
       NewFreq = false;
 
       LMS_GetLOFrequency(device, LMS_CH_RX, 0, &rxfreq);
-      printf("RXFREQ after cal = %f\n", rxfreq);
+      printf("Checking LO frequency:    LMS_GetLOFrequency(device, LMS_CH_RX, 0, &rxfreq) returns %.1f\n", rxfreq);
 
       // Set correct Antenna port for LimeSDR_ USB or LimeSDR XTRX:
-      if (strcmp(device_info->deviceName, "LimeSDR-USB") ==0)
+      if (strcmp(device_info->deviceName, "LimeSDR-USB") == 0)
       {
         if (frequency_actual_rx >= 2e9)
         {
@@ -328,14 +353,22 @@ void *lime_thread(void *arg)
           LMS_SetAntenna(device, LMS_CH_RX, 0, 2); //LNA_L
         }
       }
+
+      // Set correct Antenna port for LimeSDR Mini:
+      if ((strcmp(device_info->deviceName, "LimeSDR-Mini") == 0) || (strcmp(device_info->deviceName, "LimeSDR-Mini_v2")) == 0)
+      {
+        printf("Setting Antenna:          LMS_SetAntenna(device, LMS_CH_RX, 0, 3)\n");
+        LMS_SetAntenna(device, LMS_CH_RX, 0, 3); //LNA_W
+      }
       AntFound = LMS_GetAntenna(device, LMS_CH_RX, 0);
-      printf("Antenna %d %s selected\n", AntFound, antlist[AntFound]);
+      printf("Checking Antenna:         LMS_GetAntenna(device, LMS_CH_RX, 0) returns %d %s\n", AntFound, antlist[AntFound]);
     }
 
     // Calibration requested
     if (NewCal == true)
     {
       LMS_SetLOFrequency(device, LMS_CH_RX, 0, frequency_actual_rx);
+      printf("Calibrate again:          LMS_Calibrate(device, LMS_CH_RX, 0, %.1f, 0)\n", bandwidth);
       LMS_Calibrate(device, LMS_CH_RX, 0, bandwidth, 0);
       CalFreq = frequency_actual_rx;
       NewCal = false;
@@ -346,100 +379,113 @@ void *lime_thread(void *arg)
 
     if (NewGain == true)
     {
+      printf("\nChange of gain to %.2f requested\n", gain);
+      printf("Setting gain:             LMS_SetNormalizedGain(device, LMS_CH_RX, 0, %.2f)\n", gain);
       LMS_SetNormalizedGain(device, LMS_CH_RX, 0, gain);
 
       // Pause to let gain settle
       usleep(10000); 
+      printf("New calibration:          LMS_Calibrate(device, LMS_CH_RX, 0, %.1f, 0)\n", bandwidth);
       LMS_Calibrate(device, LMS_CH_RX, 0, bandwidth, 0);
       CalFreq = frequency_actual_rx;
 
-//if (AntRequested <= 2)
-//{
-//  AntRequested++;
-//}
-//else
-//{
-//  AntRequested = 1;
-//}
+if (false)  // Set true fro antenna switch testing
+{
+  if (AntRequested <= 2)
+  {
+    AntRequested++;
+  }
+  else
+  {
+    AntRequested = 0;
+  }
 
+  int SetResult = LMS_SetAntenna(device, LMS_CH_RX, 0, AntRequested);
 
-//printf("Antenna requested = %d, LMS_SetAntenna returns %d, Antenna %d selected\n", AntRequested, SetResult, AntFound);
-
+  AntFound = LMS_GetAntenna(device, LMS_CH_RX, 0);
+  printf("Antenna requested = %d, LMS_SetAntenna returns %d, Antenna %d %s selected\n", AntRequested, SetResult, AntFound, antlist[AntFound]);
+}
       NewGain = false;
     }
+
+    ////////////////////////////////////////////////////////////////////////////////////////////////////
 
     // Change of span (sample rate and decimation)
     if (NewSpan == true)
     {
-      int return_value;
+      printf("\nChange of Sample rate to %.1f requested\n", bandwidth);
+
       // Stop the stream
+      printf("Stopping stream:          LMS_StopStream(&rx_stream)\n");
       LMS_StopStream(&rx_stream);
 
-      // Set the new bandwidth
-      if (bandwidth * 1.2 < 5000000.0)
-      {
-        LMS_SetLPFBW(device, LMS_CH_RX, 0, 10000000.0);
-      }
-      else
-      {
-        LMS_SetLPFBW(device, LMS_CH_RX, 0, (bandwidth * 1.2));
-      }
-
-//bandwidth = 2100000;
-
-      printf("Calling LMS_SetSampleRate\n");
+      printf("Amend the bandwidth:      LMS_SetLPFBW(device, LMS_CH_RX, 0, %.1f)\n", bandwidth * 1.2);
+      LMS_SetLPFBW(device, LMS_CH_RX, 0, (bandwidth * 1.2));
 
       // Set the new sample rate with the correct decimation
       if (bandwidth < 200000.0)
       {
-        return_value = LMS_SetSampleRate(device, bandwidth, 32);
-        printf("Called LMS_SetSampleRate(device, %1.f, 32) returned %d\n", bandwidth, return_value);      
+        printf("Amend sample rate:        LMS_SetSampleRate(device, %.1f, 32)\n", bandwidth);
+        LMS_SetSampleRate(device, bandwidth, 32);
       }
       else if (bandwidth < 400000.0)
       {
-        return_value = LMS_SetSampleRate(device, bandwidth, 16);
-        printf("Called LMS_SetSampleRate(device, %1.f, 16) returned %d\n", bandwidth, return_value);      
+        printf("Amend sample rate:        LMS_SetSampleRate(device, %.1f, 16)\n", bandwidth);
+        LMS_SetSampleRate(device, bandwidth, 16);
       }
       else if (bandwidth < 1000000.0)
       {
-        return_value = LMS_SetSampleRate(device, bandwidth, 8);
-        printf("Called LMS_SetSampleRate(device, %1.f, 8) returned %d\n", bandwidth, return_value);      
+        printf("Amend sample rate:        LMS_SetSampleRate(device, %.1f, 8)\n", bandwidth);
+        LMS_SetSampleRate(device, bandwidth, 8);
       }
       else
       {
-        return_value = LMS_SetSampleRate(device, bandwidth, 4);
-        printf("Called LMS_SetSampleRate(device, %1.f, 4) returned %d\n", bandwidth, return_value);      
+        printf("Amend sample rate:        LMS_SetSampleRate(device, %.1f, 4)\n", bandwidth);
+        LMS_SetSampleRate(device, bandwidth, 4);
       }
 
-      LMS_DestroyStream(device, &rx_stream);
 
-      LMS_SetupStream(device, &rx_stream);
-         
-      // Restart the stream
-      LMS_StartStream(&rx_stream);
-
-      // Calibrate after a pause
-      usleep(10000); 
-      //LMS_Calibrate(device, LMS_CH_RX, 0, bandwidth, 0);
-
-      // Print sample rate for debug
       if (LMS_GetSampleRate(device, LMS_CH_RX, 0, &sr_host, &sr_rf) < 0)
       {
         fprintf(stderr, "Warning : LMS_GetSampleRate() : %s\n", LMS_GetLastErrorMessage());
         return NULL;
       }
-      printf("Lime RX Samplerate: Host: %.1fKs, RF: %.1fKs\n", (sr_host/1000.0), (sr_rf/1000.0));
+
+      printf("Check sample rates:       LMS_GetSampleRate(device, LMS_CH_RX, 0, &sr_host, &sr_rf)\n");
+      printf("                          sr_host = %.1f\n", sr_host);
+      printf("                          sr_rf = %.1f\n", sr_rf);
+
+      printf("Destroy old stream:       LMS_DestroyStream(device, &rx_stream)\n");
+      LMS_DestroyStream(device, &rx_stream);
+
+      printf("Set up the new stream:    LMS_SetupStream(device, &rx_stream)\n");
+      LMS_SetupStream(device, &rx_stream);
+
+      // Gain needs to be reset after stream stop/start in LimeSuiteNG
+      //printf("Resetting gain:           LMS_SetNormalizedGain(device, LMS_CH_RX, 0, %.2f)\n", gain);
+      //LMS_SetNormalizedGain(device, LMS_CH_RX, 0, gain);
+         
+      // Restart the stream
+      printf("Restart the stream:       LMS_StartStream(&rx_stream)\n");
+      LMS_StartStream(&rx_stream);
+
+      // Calibrate after a pause
+      usleep(10000); 
+      printf("Calibrate again:          LMS_Calibrate(device, LMS_CH_RX, 0, %.1f, 0)\n", bandwidth);
+      LMS_Calibrate(device, LMS_CH_RX, 0, bandwidth, 0);
+
+      // Print sample rate for debug
+      //if (LMS_GetSampleRate(device, LMS_CH_RX, 0, &sr_host, &sr_rf) < 0)
+      //{
+      //  fprintf(stderr, "Warning : LMS_GetSampleRate() : %s\n", LMS_GetLastErrorMessage());
+      //  return NULL;
+      //}
+      //printf("Lime RX Samplerate: Host: %.1fKs, RF: %.1fKs\n", (sr_host/1000.0), (sr_rf/1000.0));
 
       NewSpan = false;
     }
 
-#if 0
-    if(!monotonic_started)
-    {
-      start_monotonic = monotonic_ms();
-      monotonic_started = true;
-    }
-#endif
+    ////////////////////////////////////////////////////////////////////////////////////////////////////
 
     // Copy out buffer for Band FFT
 

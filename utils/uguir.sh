@@ -24,7 +24,7 @@ if [ $? != "0" ]; then
   exit
 else
   echo
-  echo "Susccessful compile, starting portsdown5"
+  echo "Successful compile, starting Portsdown 5"
   echo
 fi
 
@@ -34,10 +34,9 @@ mv /home/pi/portsdown/src/portsdown/portsdown5 /home/pi/portsdown/bin/portsdown5
 
 /home/pi/portsdown/scripts/scheduler.sh --dubug
 
-# /home/pi/portsdown/bin/portsdown5
 EXIT_CODE=$?
 
-reset
+#reset
 
 echo Program returned exit code $EXIT_CODE
 
