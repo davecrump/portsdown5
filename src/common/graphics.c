@@ -1105,24 +1105,30 @@ void fb2png()
   int32_t i;
 
   // Dimensions from initscreen()
-  pngWidth = screenXsize;
-  pngHeight = screenYsize;
+  
+
+  //pngWidth = screenXsize;
+  //pngHeight = screenYsize;
+  pngWidth = 800;
+  pngHeight = 480;
+
 
   pngBytesPerPixel = 3;
   pngPitch = pngBytesPerPixel * pngWidth;
 
   void *pngImagePtr = malloc(pngPitch * pngHeight);
 
-  fbPitch = fbBytesPerPixel  * pngWidth;
+  //fbPitch = fbBytesPerPixel  * pngWidth;
+  fbPitch = fbBytesPerPixel  * screenXsize;
 
   uint32_t fbXoffset;
   uint32_t fbYoffset;
 
   for (j = 0 ; j < pngHeight ; j++)       // For each line
   {
-    fbYoffset = j * fbPitch;              // calculate framebuffer offset at left hand end of line
+    fbYoffset = j * fbPitch;              // calculate input framebuffer offset at left hand end of line
 
-    for (i = 0 ; i < pngWidth ; i++)      // for each pixel
+    for (i = 0 ; i < pngWidth ; i++)      // for each pixel in the output png
     {
       char gb;    // gggBBBbb RGB565 byte 2 (written first)
       char rg;    // RRRrrGGG RGB565 byte 1 (written second)
@@ -1130,7 +1136,7 @@ void fb2png()
       char g;
       char b;
 
-      fbXoffset = i * fbBytesPerPixel;    // calculate the framebuffer offset for the pixel
+      fbXoffset = i * fbBytesPerPixel;    // calculate the input framebuffer offset for the pixel
 
       uint8_t *pngPixelPtr = pngImagePtr + (i * pngBytesPerPixel) + (j * pngPitch);  // Set the png pointer
 

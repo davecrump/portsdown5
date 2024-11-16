@@ -59,7 +59,7 @@ htonl() */
 #include <time.h>
 #include <sys/ioctl.h>
 
-#include "limesdr_util.h"
+#include "limesdr_utilng.h"
 
 FILE *input, *output;
 enum
@@ -715,90 +715,83 @@ int main(int argc, char **argv)
 		fprintf(stderr, "LMS_SetupStream() : %s\n", LMS_GetLastErrorMessage());
 		return 1;
 	}
-	if (SetGFIR(device, upsample) < 0)
-	{
-		fprintf(stderr, "SetGFIR() : %s\n", LMS_GetLastErrorMessage());
-		return -1;
-	}
 
-	if (upsample > 1)
-		LMS_SetGFIR(device, LMS_CH_TX, 0, LMS_GFIR3, true);
-	else
-		LMS_SetGFIR(device, LMS_CH_TX, 0, LMS_GFIR3, false);
+printf("Calling SetGFIR(device, %d\n", upsample);
+  if (SetGFIR(device, upsample) < 0)
+  {
+    fprintf(stderr, "SetGFIR() : %s\n", LMS_GetLastErrorMessage());
+    return -1;
+  }
 
-	/*if (isapipe)
-	{
-			static unsigned char BufferDummyTS[BUFFER_SIZE*10];	
-		int nin=0xffff;
-		while(nin>BUFFER_SIZE*10)
-		{
-			int ret = ioctl(fileno(input), FIONREAD, &nin);
-			fread(BufferDummyTS,1,BUFFER_SIZE*10,input);
-			fprintf(stderr,"Init Pipein=%d\n",nin);
-		}	
-		
-	}
-*/
+  if (upsample > 1)
+  {
+    LMS_SetGFIR(device, LMS_CH_TX, 0, LMS_GFIR3, true);
+  }
+  else
+  {
+    LMS_SetGFIR(device, LMS_CH_TX, 0, LMS_GFIR3, false);
+  }
 
-	//int DebugCount = 0;
-	//bool FirstTx = true;
-	//bool Transition = true;
-	LMS_StartStream(&tx_stream);
-	LMS_SetNormalizedGain(device, LMS_CH_TX, channel, gain);
+  //int DebugCount = 0;
+  //bool FirstTx = true;
+  //bool Transition = true;
+  LMS_StartStream(&tx_stream);
+  LMS_SetNormalizedGain(device, LMS_CH_TX, channel, gain);
 
-	// Set PTT
-	if (gpio_band < 128)
-	{
-		 gpio_band = gpio_band + 128;
-	}
+  // Set PTT
+  if (gpio_band < 128)
+  {
+    gpio_band = gpio_band + 128;
+  }
 
-	// Set PTT on
-   	if (LMS_GPIOWrite(device, &gpio_band, 1)!=0) //1 byte buffer is enough to write 8 GPIO pins on LimeSDR-USB
-    	{
-		fprintf(stderr, "LMS_SetupStream() : %s\n", LMS_GetLastErrorMessage());
-		return 1;
-    	}
+  // Set PTT on
+  if (LMS_GPIOWrite(device, &gpio_band, 1)!=0) //1 byte buffer is enough to write 8 GPIO pins on LimeSDR-USB
+  {
+    fprintf(stderr, "LMS_SetupStream() : %s\n", LMS_GetLastErrorMessage());
+    return 1;
+  }
 
-	// Set  Fan on
-   	LMS_WriteFPGAReg(device, 0xCC, 0x01);  // Enable manual fan control
-        LMS_WriteFPGAReg(device, 0xCD, 0x01);  // Turn fan on
+  // Set  Fan on
+  LMS_WriteFPGAReg(device, 0xCC, 0x01);  // Enable manual fan control
+  LMS_WriteFPGAReg(device, 0xCD, 0x01);  // Turn fan on
 
-	while (!want_quit)
-	{
+  // Main loop
+  while (!want_quit)
+  {
+    RunWithFile(&tx_stream, isapipe, FPGAMapping);
 
-		RunWithFile(&tx_stream, isapipe, FPGAMapping);
+    lms_stream_status_t Status;
+    LMS_GetStreamStatus(&tx_stream, &Status);
+    if (Status.fifoFilledCount < Status.fifoSize * 0.25)
+    {
+      //while(Status.fifoFilledCount<Status.fifoSize*0.9)
+      {
+        LMS_GetStreamStatus(&tx_stream, &Status);
+        NullFiller(&tx_stream, 10, FPGAMapping);
+        //fprintf(stderr,"Underflow %d/%d\n",Status.fifoFilledCount,Status.fifoSize);
+      }
+    }
 
-		lms_stream_status_t Status;
-		LMS_GetStreamStatus(&tx_stream, &Status);
-		if (Status.fifoFilledCount < Status.fifoSize * 0.25)
-		{
-			//while(Status.fifoFilledCount<Status.fifoSize*0.9)
-			{
-				LMS_GetStreamStatus(&tx_stream, &Status);
-				NullFiller(&tx_stream, 10, FPGAMapping);
-				//fprintf(stderr,"Underflow %d/%d\n",Status.fifoFilledCount,Status.fifoSize);
-			}
-		}
+    //if (DebugCount % 1000 == 0)
+    //{
+    //	fprintf(stderr, "Fifo =%d/%d dropped %d underrun %d overrun %d Link=%f \n", Status.fifoFilledCount, Status.fifoSize, Status.droppedPackets,
+    //    Status.underrun, Status.overrun, Status.linkRate);
+    //}
+    //DebugCount++;
+  }
 
-		//if (DebugCount % 1000 == 0)
-		//{
-		//	fprintf(stderr, "Fifo =%d/%d dropped %d underrun %d overrun %d Link=%f \n", Status.fifoFilledCount, Status.fifoSize, Status.droppedPackets, Status.underrun, Status.overrun, Status.linkRate);
-		//}
-		//DebugCount++;
-	}
+  // Set PTT off
+  gpio_band = gpio_band - 128;
+  LMS_GPIOWrite(device, &gpio_band, 1);
 
-	// Set PTT off
-	gpio_band = gpio_band - 128;
-	LMS_GPIOWrite(device, &gpio_band, 1);
+  // Set  Fan auto
+  LMS_WriteFPGAReg(device, 0xCC, 0x00);  // Enable auto fan control
 
-	// Set  Fan auto
-   	LMS_WriteFPGAReg(device, 0xCC, 0x00);  // Enable auto fan control
+  LMS_SetNormalizedGain(device, LMS_CH_TX, channel, 0);
+  LMS_StopStream(&tx_stream);
+  LMS_DestroyStream(device, &tx_stream);
+  LMS_EnableChannel(device, LMS_CH_TX, channel, false);
+  LMS_Close(device);
 
-	LMS_SetNormalizedGain(device, LMS_CH_TX, channel, 0);
-	LMS_StopStream(&tx_stream);
-	LMS_DestroyStream(device, &tx_stream);
-	LMS_EnableChannel(device, LMS_CH_TX, channel, false);
-	LMS_Close(device);
-
-	return 0;
+  return 0;
 }

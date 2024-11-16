@@ -36,33 +36,30 @@ int limesdr_set_channel(const unsigned int freq,
 						bool WithCalibration)
 
 {
+		int nb_antenna = LMS_GetAntennaList(device, is_tx, channel, NULL);
+		lms_name_t list[nb_antenna];
 
-//		int nb_antenna = LMS_GetAntennaList(device, is_tx, channel, NULL);
-//		int nb_antenna = 2;// = LMS_GetAntennaList(device, is_tx, 1, NULL);
-//		lms_name_t list[nb_antenna];
-
-//		LMS_GetAntennaList(device, is_tx, channel, list);
-//		int antenna_found = 0;
-//		int i;
+		LMS_GetAntennaList(device, is_tx, channel, list);
+		int antenna_found = 0;
+		int i;
 				
-//		for (i = 0; i < nb_antenna; i++)
-//		{
-//			if (strcmp(list[i], antenna) == 0)
-//			{
-//				antenna_found = 1;
-//				if (LMS_SetAntenna(device, is_tx, channel, i) < 0)
-//				{
-//					fprintf(stderr, "LMS_SetAntenna() : %s\n", LMS_GetLastErrorMessage());
-//					return -1;
-//				}
-//			}
-//		}
-//		if (antenna_found == 0)
-//		{
-//			fprintf(stderr, "ERROR: unable to found antenna : %s\n", antenna);
-//			return -1;
-//		}
-printf("antenna ignored\n");
+		for (i = 0; i < nb_antenna; i++)
+		{
+			if (strcmp(list[i], antenna) == 0)
+			{
+				antenna_found = 1;
+				if (LMS_SetAntenna(device, is_tx, channel, i) < 0)
+				{
+					fprintf(stderr, "LMS_SetAntenna() : %s\n", LMS_GetLastErrorMessage());
+					return -1;
+				}
+			}
+		}
+		if (antenna_found == 0)
+		{
+			fprintf(stderr, "ERROR: unable to found antenna : %s\n", antenna);
+			return -1;
+		}
 
   if (LMS_SetLOFrequency(device, is_tx, channel, freq) < 0)
   {

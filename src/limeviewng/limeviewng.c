@@ -498,7 +498,7 @@ void ReadSavedParams()
   else
   {
     webcontrol = false;
-    system("cp /home/pi/rpidatv/scripts/images/web_not_enabled.png /home/pi/tmp/screen.png");
+    system("cp /home/pi/portsdown/images/web_not_enabled.png /home/pi/tmp/screen.png");
   }
 
   GetConfigParam(PATH_SCONFIG, "touch", response);
@@ -658,8 +658,6 @@ void *WebClickListener(void * arg)
 {
   while (webcontrol)
   {
-    //(void)argc;
-	//return ffunc_run(ProgramName);
 	ffunc_run(ProgramName);
   }
   webclicklistenerrunning = false;
@@ -899,7 +897,7 @@ void UpdateWeb()
 
   if(webcontrol == true)
   {
-    //system("/home/pi/rpidatv/scripts/single_screen_grab_for_web.sh &");
+    system("/home/pi/portsdown/scripts/single_screen_grab_for_web.sh &");
   }
 }
 

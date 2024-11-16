@@ -13,7 +13,6 @@
 
 #include "lime.h"
 #include "../common/timing.h"
-//#include "buffer/buffer_circular.h"
 
 lime_fft_buffer_t lime_fft_buffer;
 
@@ -82,6 +81,8 @@ void *lime_thread(void *arg)
     LMS_Close(device);
     return NULL;
   }
+  LMS_GetChipTemperature(device, 0, &Temperature);
+  printf(" - Temperature: %.0f°C\n", Temperature);
 
   // Enable the RX channel
   if (LMS_EnableChannel(device, LMS_CH_RX, 0, true) != 0)
@@ -334,13 +335,6 @@ void *lime_thread(void *arg)
       NewSpan = false;
     }
 
-#if 0
-    if(!monotonic_started)
-    {
-      start_monotonic = monotonic_ms();
-      monotonic_started = true;
-    }
-#endif
 
     // Copy out buffer for Band FFT
 
@@ -362,16 +356,7 @@ void *lime_thread(void *arg)
       break;
     }
 
-#if 0
-    uint32_t head, tail, capacity, occupied;
-    buffer_circular_stats(&buffer_circular_iq_main, &head, &tail, &capacity, &occupied);
-    printf(" - Head: %d, Tail: %d, Capacity: %d, Occupied: %d\n", head, tail, capacity, occupied);
-#endif
 
-#if 0
-        samples_total += samplesRead;
-        printf("Lime samplerate: %.3f (total: %lld\n", (float)(samples_total * 1000) / (monotonic_ms() - start_monotonic), samples_total);
-#endif
   }  // end of streaming loop.  8k samples each iteration
 
   // Stop streaming

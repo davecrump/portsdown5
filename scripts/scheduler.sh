@@ -204,7 +204,7 @@ esac
 
 while [ "$GUI_RETURN_CODE" -gt 127 ] || [ "$GUI_RETURN_CODE" -eq 0 ];  do
 
-echo $GUI_RETURN_CODE
+# echo $GUI_RETURN_CODE
 
   case "$GUI_RETURN_CODE" in
     0)

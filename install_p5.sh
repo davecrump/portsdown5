@@ -186,6 +186,8 @@ sudo apt-get -y install ffmpeg                                  # for tx encodin
   SUCCESS=$?; BuildLogMsg $SUCCESS "ffmpeg install"
 sudo apt-get -y install netcat-openbsd                          # For TS input
   SUCCESS=$?; BuildLogMsg $SUCCESS "netcat install"
+#sudo apt-get -y install libgmock-dev                            # For LimeSuiteNG 
+# SUCCESS=$?; BuildLogMsg $SUCCESS "libgmock-dev install"
 
 # Amend /boot/firmware/cmdline.txt and /boot/firmware/config.txt
 echo
@@ -324,6 +326,18 @@ mv limesdr_dump /home/pi/portsdown/bin/
 mv limesdr_stopchannel /home/pi/portsdown/bin/
 mv limesdr_forward /home/pi/portsdown/bin/
 mv limesdr_dvb /home/pi/portsdown/bin/
+
+# Compile Framebuffer capture utility
+echo
+echo "-------------------------------------------------"
+echo "----- Compiling Framebuffer Capture Utility -----"
+echo "-------------------------------------------------"
+
+cd /home/pi/portsdown/src/fb2png
+make -j 4 -O
+  SUCCESS=$?; BuildLogMsg $SUCCESS "fb2png compile"
+
+mv /home/pi/portsdown/src/fb2png/fb2png /home/pi/portsdown/bin/fb2png
 
 # Compile Legacy Lime BandViewer
 echo

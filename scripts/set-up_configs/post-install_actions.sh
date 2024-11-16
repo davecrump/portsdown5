@@ -75,6 +75,8 @@ if (grep 'Installing LimeNET Micro DE' /home/pi/p5_initial_build_log.txt) then
 
   cd /home/pi
 
+  export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/home/pi/LimeSuiteNG/build/lib/
+
   # Compile Legacy Lime BandViewer
   echo
   echo "----------------------------------------"

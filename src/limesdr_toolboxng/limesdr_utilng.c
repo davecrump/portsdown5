@@ -21,7 +21,7 @@
   ===========================================================================
 */
 
-#include "limesdr_util.h"
+#include "limesdr_utilng.h"
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
@@ -37,32 +37,61 @@ int limesdr_set_channel(const unsigned int freq,
 
 {
 
-//		int nb_antenna = LMS_GetAntennaList(device, is_tx, channel, NULL);
-//		int nb_antenna = 2;// = LMS_GetAntennaList(device, is_tx, 1, NULL);
-//		lms_name_t list[nb_antenna];
+  const lms_dev_info_t *device_info;
 
-//		LMS_GetAntennaList(device, is_tx, channel, list);
-//		int antenna_found = 0;
-//		int i;
+  double Temperature = 0;
+
+  device_info = LMS_GetDeviceInfo(device);
+
+  printf(" - Hardware: v%s, Firmware: v%s, Gateware: v%s\n", device_info->hardwareVersion, device_info->firmwareVersion,
+          device_info->gatewareVersion);
+
+  printf(" - Protocol version: %s\n", device_info->protocolVersion);
+  printf(" - gateware target: %s\n", device_info->gatewareTargetBoard);
+
+  LMS_GetChipTemperature(device, 0, &Temperature);
+  printf(" - Temperature: %.0f°C\n", Temperature);
+
+  int nb_antenna = LMS_GetAntennaList(device, is_tx, channel, NULL);
+  lms_name_t list[nb_antenna];
+
+  LMS_GetAntennaList(device, is_tx, channel, list);
+
+  int i;
 				
-//		for (i = 0; i < nb_antenna; i++)
-//		{
-//			if (strcmp(list[i], antenna) == 0)
-//			{
-//				antenna_found = 1;
-//				if (LMS_SetAntenna(device, is_tx, channel, i) < 0)
-//				{
-//					fprintf(stderr, "LMS_SetAntenna() : %s\n", LMS_GetLastErrorMessage());
-//					return -1;
-//				}
-//			}
-//		}
-//		if (antenna_found == 0)
-//		{
-//			fprintf(stderr, "ERROR: unable to found antenna : %s\n", antenna);
-//			return -1;
-//		}
-printf("antenna ignored\n");
+  for (i = 0; i < nb_antenna; i++)
+  {
+    printf("Antenna %d %s\n", i, list[i]);
+  }
+
+  // Set correct Antenna port
+  if (strcmp(device_info->deviceName, "LimeSDR XTRX") == 0)
+  {
+    if (freq >= 1200000000)
+    {
+      printf("Setting Antenna:          LMS_SetAntenna(device, is_tx, channel, 1)\n");
+      LMS_SetAntenna(device, is_tx, channel, 1); //LNA_H
+    }
+    else
+    {
+      printf("Setting Antenna:          LMS_SetAntenna(device, is_tx, channel, 2)\n");
+      LMS_SetAntenna(device, is_tx, channel, 2); //LNA_L
+    }
+  }
+  if ((strcmp(device_info->deviceName, "LimeSDR-Mini") == 0) || (strcmp(device_info->deviceName, "LimeSDR-Mini_v2")) == 0)
+  {
+    if (freq >= 2000000000)
+    {
+      printf("Setting Antenna:          LMS_SetAntenna(device, is_tx, channel, 1)\n");
+      LMS_SetAntenna(device, is_tx, channel, 1); //LNA_W
+    }
+    else
+    {
+      printf("Setting Antenna:          LMS_SetAntenna(device, is_tx, channel, 2)\n");
+      LMS_SetAntenna(device, is_tx, channel, 2); //LNA_W
+    }
+  }
+
 
   if (LMS_SetLOFrequency(device, is_tx, channel, freq) < 0)
   {
@@ -392,8 +421,18 @@ int SetGFIR(lms_device_t *device, int Upsample)
 		xcoeffs = xcoeffs4;
 	if (xcoeffs != NULL)
 	{
+printf("Setting Coefficients\n");
+
 		if (LMS_SetGFIRCoeff(device, LMS_CH_TX, 0, LMS_GFIR3, xcoeffs, 119) < 0)
 			fprintf(stderr, "Unable to set coeff GFIR3");
+
+double readout[127];
+LMS_GetGFIRCoeff(device, LMS_CH_TX, 0, LMS_GFIR3, readout);
+for (int i = 0; i < 119; i++)
+{
+  printf("Coeff[%d] = %.10f\n", i, readout[i]);
+}
+
 		return (LMS_SetGFIR(device, LMS_CH_TX, 0, LMS_GFIR3, true));
 	}
 	else

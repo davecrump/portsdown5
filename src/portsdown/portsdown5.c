@@ -21,6 +21,7 @@
 #include "../common/graphics.h"
 #include "../common/timing.h"
 #include "../common/hardware.h"
+#include "../common/ffunc.h"
 
 #define PATH_PCONFIG "/home/pi/portsdown/configs/portsdown_config.txt"
 #define PATH_SCONFIG "/home/pi/portsdown/configs/system_config.txt"
@@ -73,6 +74,7 @@ typedef struct
   float freqoutput;
   uint16_t symbolrate;
   uint16_t fec;
+  uint16_t limegain;
 } config_t;
 
 static config_t config = 
@@ -81,10 +83,11 @@ static config_t config =
   .encoding = "H264",
   .modeoutput = "LIMEMINI",
   .format = "4:3",
-  .videosource = "CARD",
-  .freqoutput = 437.0,
+  .videosource = "TestCard",
+  .freqoutput = 437.00,
   .symbolrate = 333,
-  .fec = 23
+  .fec = 23,
+  .limegain = 88
 };
 
 int IndexButtonInArray=0;
@@ -131,8 +134,18 @@ char ScreenState[63] = "NormalMenu";
 bool test20 = false;
 bool test21 = false;
 
+// Lime gain calibration for 0 to -21 dB
+int limeGainSet[25] = {100, 99, 97, 96, 95,
+                        93, 92, 90, 89, 88,
+                        0,  85, 83, 81, 80,
+                        79, 78, 76, 75, 74,
+                        73, 71};
+
+
+
 // Threads
-pthread_t thtouchscreen;               //  listens to the touchscreen   
+pthread_t thtouchscreen;               //  listens to the touchscreen
+pthread_t thwebclick;                  //  Listens for clicks from web interface
 pthread_t thmouse;                     //  Listens to the mouse
 
 // ******************* Function Prototypes **********************************//
@@ -152,6 +165,9 @@ int getTouchSample(int *rawX, int *rawY);
 void *WaitTouchscreenEvent(void * arg);
 void *WaitMouseEvent(void * arg);
 void handle_mouse();
+void *WebClickListener(void * arg);
+void parseClickQuerystring(char *query_string, int *x_ptr, int *y_ptr);
+FFUNC touchscreenClick(ffunc_session_t * session);
 void wait_touch();
 
 // Actually do useful things
@@ -198,6 +214,16 @@ void Define_Menu14();
 void Highlight_Menu14();
 void Define_Menu15();
 void Highlight_Menu15();
+void Define_Menu16();
+void Highlight_Menu16();
+void Define_Menu17();
+void Highlight_Menu17();
+void Define_Menu18();
+void Highlight_Menu18();
+void Define_Menu19();
+void Highlight_Menu19();
+void Define_Menu20();
+void Highlight_Menu20();
 void Define_Menus();
 
 // Action Menu Buttons
@@ -206,8 +232,14 @@ void selectModulation(int NoButton);
 void selectEncoding(int Button);
 void selectOutput(int Button);
 void selectFormat(int Button);
+void selectVideosource(int Button);
+void selectFreqoutput(int Button);
+void selectFEC(int Button);
+void selectBand(int Button);
+void selectGain(int Button);
 
 // Make things happen
+void UpdateWeb();
 void waitForScreenAction();
 static void cleanexit(int exit_code);
 static void terminate(int dummy);
@@ -399,9 +431,62 @@ void ReadSavedParams()
 {
   char response[63]="0";
 
+  // Portsdown Config File
+
   strcpy(response, "-");  // highlight null responses
   GetConfigParam(PATH_PCONFIG, "modulation", response);
   strcpy(config.modulation, response);
+
+  strcpy(response, "-");  // highlight null responses
+  GetConfigParam(PATH_PCONFIG, "encoding", response);
+  strcpy(config.encoding, response);
+
+  strcpy(response, "-");  // highlight null responses
+  GetConfigParam(PATH_PCONFIG, "modeoutput", response);
+  strcpy(config.modeoutput, response);
+
+  strcpy(response, "-");  // highlight null responses
+  GetConfigParam(PATH_PCONFIG, "format", response);
+  strcpy(config.format, response);
+
+  strcpy(response, "-");  // highlight null responses
+  GetConfigParam(PATH_PCONFIG, "videosource", response);
+  strcpy(config.videosource, response);
+
+  strcpy(response, "0");  // highlight null responses
+  GetConfigParam(PATH_PCONFIG, "freqoutput", response);
+  config.freqoutput = atof(response);
+
+  strcpy(response, "0");  // highlight null responses
+  GetConfigParam(PATH_PCONFIG, "symbolrate", response);
+  config.symbolrate = atoi(response);
+
+  strcpy(response, "0");  // highlight null responses
+  GetConfigParam(PATH_PCONFIG, "fec", response);
+  config.fec = atoi(response);
+
+  // Band?
+
+  strcpy(response, "0");  // highlight null responses
+  GetConfigParam(PATH_PCONFIG, "limegain", response);
+  config.limegain = atoi(response);
+
+  // System Config File
+
+  strcpy(response, "disabled");   
+  GetConfigParam(PATH_SCONFIG, "webcontrol", response);
+  if (strcmp(response, "enabled") == 0)
+  {
+    webcontrol = true;
+    pthread_create (&thwebclick, NULL, &WebClickListener, NULL);
+    webclicklistenerrunning = true;
+  }
+  else
+  {
+    webcontrol = false;
+    system("cp /home/pi/portsdown/images/web_not_enabled.png /home/pi/tmp/screen.png");
+  }
+
 
   //strcpy(PlotTitle, "-");  // this is the "do not display" response
   //GetConfigParam(PATH_CONFIG, "title", PlotTitle);
@@ -475,11 +560,11 @@ int getTouchScreenDetails(int *screenXmin,int *screenXmax,int *screenYmin,int *s
   int abs[6] = {0};
 
   ioctl(fd, EVIOCGNAME(sizeof(name)), name);
-  //printf("Input device name: \"%s\"\n", name);
+  printf("Input device name: \"%s\"\n", name);
 
   memset(bit, 0, sizeof(bit));
   ioctl(fd, EVIOCGBIT(0, EV_MAX), bit[0]);
-  //printf("Supported events:\n");
+  printf("Supported events:\n");
 
   int i,j,k;
   int IsAtouchDevice=0;
@@ -487,14 +572,14 @@ int getTouchScreenDetails(int *screenXmin,int *screenXmax,int *screenYmin,int *s
   {
     if (test_bit(i, bit[0]))
     {
-      //printf("  Event type %d (%s)\n", i, events[i] ? events[i] : "?");
+      printf("  Event type %d (%s)\n", i, events[i] ? events[i] : "?");
       if (!i) continue;
       ioctl(fd, EVIOCGBIT(i, KEY_MAX), bit[i]);
       for (j = 0; j < KEY_MAX; j++)
       {
         if (test_bit(j, bit[i]))
         {
-          //printf("    Event code %d (%s)\n", j, names[i] ? (names[i][j] ? names[i][j] : "?") : "?");
+          printf("    Event code %d (%s)\n", j, names[i] ? (names[i][j] ? names[i][j] : "?") : "?");
           if(j==330) IsAtouchDevice=1;
           if (i == EV_ABS)
           {
@@ -503,7 +588,7 @@ int getTouchScreenDetails(int *screenXmin,int *screenXmax,int *screenYmin,int *s
             {
               if ((k < 3) || abs[k])
               {
-                //printf("     %s %6d\n", absval[k], abs[k]);
+                printf("     %s %6d\n", absval[k], abs[k]);
                 if (j == 0)
                 {
                   if ((strcmp(absval[k],"Min  ")==0)) *screenXmin =  abs[k];
@@ -600,13 +685,13 @@ int getTouchSampleThread(int *rawX, int *rawY)
       {
         if (touch_inverted == true)
         {
-          scaledX = 799 - *rawX;
-          scaledY = *rawY;
+          scaledX = *rawX;
+          scaledY = 479 - *rawY;
         }
         else
         {
-          scaledX = *rawX;
-          scaledY = *rawY;  // ////////////////////////////// This needs testing!!
+          scaledX = 799 - *rawX;
+          scaledY = *rawY; // ////////////////////////////// This needs testing!!
         }
         printf("7 inch Touchscreen Touch Event: rawX = %d, rawY = %d scaledX = %d, scaledY = %d\n", *rawX, *rawY, scaledX, scaledY);
         return 1;
@@ -702,7 +787,9 @@ int getTouchSample(int *rawX, int *rawY)
     else if ((webcontrol == true) && (strcmp(WebClickForAction, "yes") == 0))
     {
       *rawX = web_x;
-      *rawY = web_y;
+      *rawY = 480 - web_y;
+      scaledX = web_x;
+      scaledY = 480 - web_y;
       strcpy(WebClickForAction, "no");
       printf("Web rawX = %d, rawY = %d\n", *rawX, *rawY);
       return 1;
@@ -719,7 +806,6 @@ int getTouchSample(int *rawX, int *rawY)
     {
       *rawX = web_x;
       *rawY = web_y;
-      //*rawPressure = 0;
       VirtualTouch = false;
       printf("False Touch prompted by other event\n");
       return 1;
@@ -861,11 +947,74 @@ void *WebClickListener(void * arg)
   {
     //(void)argc;
 	//return ffunc_run(ProgramName);
-//	ffunc_run(ProgramName);
+	ffunc_run(ProgramName);
   }
   webclicklistenerrunning = false;
   printf("Exiting WebClickListener\n");
   return NULL;
+}
+
+
+void parseClickQuerystring(char *query_string, int *x_ptr, int *y_ptr)
+{
+  char *query_ptr = strdup(query_string),
+  *tokens = query_ptr,
+  *p = query_ptr;
+
+  while ((p = strsep (&tokens, "&\n")))
+  {
+    char *var = strtok (p, "="),
+         *val = NULL;
+    if (var && (val = strtok (NULL, "=")))
+    {
+      if(strcmp("x", var) == 0)
+      {
+        *x_ptr = atoi(val);
+      }
+      else if(strcmp("y", var) == 0)
+      {
+        *y_ptr = atoi(val);
+      }
+    }
+  }
+}
+
+
+FFUNC touchscreenClick(ffunc_session_t * session)
+{
+  ffunc_str_t payload;
+
+  if( (webcontrol == false) || ffunc_read_body(session, &payload) )
+  {
+    if( webcontrol == false)
+    {
+      return;
+    }
+
+    ffunc_write_out(session, "Status: 200 OK\r\n");
+    ffunc_write_out(session, "Content-Type: text/plain\r\n\r\n");
+    ffunc_write_out(session, "%s\n", "click received.");
+    fprintf(stderr, "Received click POST: %s (%ld)\n", payload.data?payload.data:"", payload.len);
+
+    int x = -1;
+    int y = -1;
+    parseClickQuerystring(payload.data, &x, &y);
+    //printf("After Parse: x: %d, y: %d\n", x, y);
+
+    if((x >= 0) && (y >= 0))
+    {
+      web_x = x;                 // web_x is a global int
+      web_y = y;                 // web_y is a global int
+      strcpy(WebClickForAction, "yes");
+      //printf("Web Click Event x: %d, y: %d\n", web_x, web_y);
+    }
+  }
+  else
+  {
+    ffunc_write_out(session, "Status: 400 Bad Request\r\n");
+    ffunc_write_out(session, "Content-Type: text/plain\r\n\r\n");
+    ffunc_write_out(session, "%s\n", "payload not found.");
+  }
 }
 
 
@@ -1314,6 +1463,21 @@ void redrawMenu()
     case 15:
       Highlight_Menu15();
       break;
+    case 16:
+      Highlight_Menu16();
+      break;
+    case 17:
+      Highlight_Menu17();
+      break;
+    case 18:
+      Highlight_Menu18();
+      break;
+    case 19:
+      Highlight_Menu19();
+      break;
+    case 20:
+      Highlight_Menu20();
+      break;
   }
   
   //if ((CurrentMenu != 38) && (CurrentMenu != 41)) // If not yes/no or the keyboard
@@ -1345,7 +1509,7 @@ void redrawMenu()
   //}
   //refreshMouseBackground();
   //draw_cursor_foreground(mouse_x, mouse_y);
-  //UpdateWeb();
+  UpdateWeb();
   //image_complete = true;
   publish();
 }
@@ -1413,11 +1577,11 @@ void Define_Menu1()
   AddButtonStatus(1, 17, "  FEC  ^2/3", &Blue);
   AddButtonStatus(1, 17, "  FEC  ^2/3", &Green);
 
-  AddButtonStatus(1, 18,"Band/Tvtr^70cm",&Blue);
-  AddButtonStatus(1, 18,"Band/Tvtr^70cm",&Green);
+  AddButtonStatus(1, 18, "Band/Tvtr^70cm",&Blue);
+  AddButtonStatus(1, 18, "Band/Tvtr^70cm",&Green);
 
-  AddButtonStatus(1, 19," Lime Gain^88",&Blue);
-  AddButtonStatus(1, 19," Lime Gain^88",&Green);
+  AddButtonStatus(1, 19, "Lime Gain^88",&Blue);
+  AddButtonStatus(1, 19, "Lime Gain^88",&Green);
 
   AddButtonStatus(1, 20, "Modulation^ ", &Blue);
   AddButtonStatus(1, 20, "Modulation^QPSK", &Green);
@@ -1458,6 +1622,12 @@ void Define_Menu1()
 
 void Highlight_Menu1()
 {
+  char freqLabel[63];
+  char srLabel[63];
+  char limegainLabel[63];
+  bool isLime = false;
+  char fecLabel[63];
+
   // Display Correct Modulation on Button 20
   if (strcmp(config.modulation, "DVBS") == 0)
   {
@@ -1532,56 +1702,73 @@ void Highlight_Menu1()
   {
     AmendButtonStatus(1, 22, 0, "Output to^Streamer", &Blue);
     AmendButtonStatus(1, 22, 1, "Output to^Streamer", &Green);
+    isLime = false;
   }
   if (strcmp(config.modeoutput, "IPTSOUT") == 0)
   {
     AmendButtonStatus(1, 22, 0, "Output to^IPTS", &Blue);
     AmendButtonStatus(1, 22, 1, "Output to^IPTS", &Green);
+    isLime = false;
   }
   if (strcmp(config.modeoutput, "HDMI") == 0)
   {
     AmendButtonStatus(1, 22, 0, "Output to^HDMI", &Blue);
     AmendButtonStatus(1, 22, 1, "Output to^HDMI", &Green);
+    isLime = false;
   }
   if (strcmp(config.modeoutput, "PLUTO") == 0)
   {
     AmendButtonStatus(1, 22, 0, "Output to^Pluto", &Blue);
     AmendButtonStatus(1, 22, 1, "Output to^Pluto", &Green);
+    isLime = false;
   }
   if (strcmp(config.modeoutput, "PLUTOF5OEO") == 0)
   {
     AmendButtonStatus(1, 22, 0, "Output to^Pluto (F5OEO)", &Blue);
     AmendButtonStatus(1, 22, 1, "Output to^Pluto (F5OEO)", &Green);
+    isLime = false;
   }
   if (strcmp(config.modeoutput, "EXPRESS16") == 0)
   {
     AmendButtonStatus(1, 22, 0, "Output to^Express 16", &Blue);
     AmendButtonStatus(1, 22, 1, "Output to^Express 16", &Green);
+    isLime = false;
   }
   if (strcmp(config.modeoutput, "EXPRESS32") == 0)
   {
     AmendButtonStatus(1, 22, 0, "Output to^Express 32", &Blue);
     AmendButtonStatus(1, 22, 1, "Output to^Express 32", &Green);
+    isLime = false;
   }
   if (strcmp(config.modeoutput, "LIMEMINI") == 0)
   {
     AmendButtonStatus(1, 22, 0, "Output to^Lime Mini", &Blue);
     AmendButtonStatus(1, 22, 1, "Output to^Lime Mini", &Green);
+    isLime = true;
   }
   if (strcmp(config.modeoutput, "LIMEDVB") == 0)
   {
     AmendButtonStatus(1, 22, 0, "Output to^Lime DVB", &Blue);
     AmendButtonStatus(1, 22, 1, "Output to^Lime DVB", &Green);
+    isLime = true;
   }
   if (strcmp(config.modeoutput, "LIMEUSB") == 0)
   {
     AmendButtonStatus(1, 22, 0, "Output to^Lime USB", &Blue);
     AmendButtonStatus(1, 22, 1, "Output to^Lime USB", &Green);
+    isLime = true;
   }
   if (strcmp(config.modeoutput, "LIMEXTRX") == 0)
   {
     AmendButtonStatus(1, 22, 0, "Output to^Lime XTRX", &Blue);
     AmendButtonStatus(1, 22, 1, "Output to^Lime XTRX", &Green);
+    isLime = true;
+  }
+  if (strcmp(config.modeoutput, "LIMEMINING") == 0)
+  {
+    AmendButtonStatus(1, 22, 0, "Output to^Lime Mini NG", &Blue);
+    AmendButtonStatus(1, 22, 1, "Output to^Lime Mini NG", &Green);
+    isLime = true;
   }
 
   // Display Correct Output Format on Button 23
@@ -1604,6 +1791,93 @@ void Highlight_Menu1()
   {
     AmendButtonStatus(1, 23, 0, "Format^1080p", &Blue);
     AmendButtonStatus(1, 23, 1, "Format^1080p", &Green);
+  }
+
+  // Display source on button 24
+  if (strcmp(config.videosource, "PiCam") == 0)
+  {
+    AmendButtonStatus(1, 24, 0, "Source^Pi Cam", &Blue);
+    AmendButtonStatus(1, 24, 1, "Source^Pi Cam", &Green);
+  }
+  if (strcmp(config.videosource, "webCam") == 0)
+  {
+    AmendButtonStatus(1, 24, 0, "Source^Web Cam", &Blue);
+    AmendButtonStatus(1, 24, 1, "Source^Web Cam", &Green);
+  }
+  if (strcmp(config.videosource, "ATEMUSB") == 0)
+  {
+    AmendButtonStatus(1, 24, 0, "Source^ATEM USB", &Blue);
+    AmendButtonStatus(1, 24, 1, "Source^ATEM USB", &Green);
+  }
+  if (strcmp(config.videosource, "TestCard") == 0)
+  {
+    AmendButtonStatus(1, 24, 0, "Source^Test Card", &Blue);
+    AmendButtonStatus(1, 24, 1, "Source^Test Card", &Green);
+  }
+  
+  // Display frequency on button 15
+  snprintf(freqLabel, 60, "Freq^%.2f", config.freqoutput);
+  AmendButtonStatus(1, 15, 0, freqLabel, &Blue);
+  AmendButtonStatus(1, 15, 1, freqLabel, &Green);
+
+  // Display SR on button 16
+  snprintf(srLabel, 60, "Sym Rate^%d", config.symbolrate);
+  AmendButtonStatus(1, 16, 0, srLabel, &Blue);
+  AmendButtonStatus(1, 16, 1, srLabel, &Green);
+
+  // Display FEC on button 17
+  switch(config.fec)
+  {
+    case 14:
+      strcpy(fecLabel, "FEC^1/4");
+      break;
+    case 13:
+      strcpy(fecLabel, "FEC^1/3");
+      break;
+    case 12:
+      strcpy(fecLabel, "FEC^1/2");
+      break;
+    case 35:
+      strcpy(fecLabel, "FEC^3/5");
+      break;
+    case 23:
+      strcpy(fecLabel, "FEC^2/3");
+      break;
+    case 34:
+      strcpy(fecLabel, "FEC^3/4");
+      break;
+    case 56:
+      strcpy(fecLabel, "FEC^5/6");
+      break;
+    case 78:
+      strcpy(fecLabel, "FEC^7/8");
+      break;
+    case 89:
+      strcpy(fecLabel, "FEC^8/9");
+      break;
+    case 910:
+      strcpy(fecLabel, "FEC^9/10");
+      break;
+  }
+  AmendButtonStatus(1, 17, 0, fecLabel, &Blue);
+  AmendButtonStatus(1, 17, 1, fecLabel, &Green);
+
+  // Display Band on button 18
+  //snprintf(srLabel, 60, "Sym Rate^%d", config.symbolrate);
+  //AmendButtonStatus(1, 16, 0, srLabel, &Blue);
+  //AmendButtonStatus(1, 16, 1, srLabel, &Green);
+
+  // Display Gain on button 19
+  if (isLime)
+  {
+    snprintf(limegainLabel, 60, "Lime Gain^%d", config.limegain);
+    AmendButtonStatus(1, 19, 0, limegainLabel, &Blue);
+    AmendButtonStatus(1, 19, 1, limegainLabel, &Green);
+  }
+  else
+  {
+    AmendButtonStatus(1, 19, 0, "Gain", &Blue);
+    AmendButtonStatus(1, 19, 1, "Gain", &Green);
   }
 }
 
@@ -1756,8 +2030,8 @@ void Define_Menu13()
   AddButtonStatus(13, 6, "IPTS^Out", &Blue);
   AddButtonStatus(13, 6, "IPTS^Out", &Green);
 
-  AddButtonStatus(13, 7, "HDMI^Source", &Blue);
-  AddButtonStatus(13, 7, "HDMI^Source", &Green);
+  AddButtonStatus(13, 7, "HDMI^Screen", &Blue);
+  AddButtonStatus(13, 7, "HDMI^Screen", &Green);
 
   AddButtonStatus(13, 10, "Pluto^Raw", &Blue);
   AddButtonStatus(13, 10, "Pluto^Raw", &Green);
@@ -1783,6 +2057,9 @@ void Define_Menu13()
   AddButtonStatus(13, 18, "LimeSDR^PCI XTRX", &Blue);
   AddButtonStatus(13, 18, "LimeSDR^PCI XTRX", &Green);
 
+  AddButtonStatus(13, 19, "LimeSDR^Mini NG", &Blue);
+  AddButtonStatus(13, 19, "LimeSDR^Mini NG", &Green);
+
   AddButtonStatus(13, 4, "Return to^Main Menu", &DBlue);
 }
 
@@ -1791,24 +2068,24 @@ void Highlight_Menu13()
 {
   SelectFromGroupOnMenu3(13, 5, 1, config.modeoutput, "STREAMER", "IPTSOUT", "HDMI");
   SelectFromGroupOnMenu4(13, 10, 1, config.modeoutput, "PLUTO", "PLUTOF5OEO", "EXPRESS16", "EXPRESS32");
-  SelectFromGroupOnMenu4(13, 15, 1, config.modeoutput, "LIMEMINI", "LIMEDVB", "LIMEUSB", "LIMEXTRX");
+  SelectFromGroupOnMenu5(13, 15, 1, config.modeoutput, "LIMEMINI", "LIMEDVB", "LIMEUSB", "LIMEXTRX", "LIMEMINING");
 }
 
 void Define_Menu14()
 {
   strcpy(MenuTitle[14], "Video Format Selection Menu (14)");
 
-  AddButtonStatus(14, 15, "4:3^576x768", &Blue);
-  AddButtonStatus(14, 15, "4:3^576x768", &Green);
+  AddButtonStatus(14, 15, "4:3^768x576", &Blue);
+  AddButtonStatus(14, 15, "4:3^768x576", &Green);
 
-  AddButtonStatus(14, 16, "16:9^576x1024", &Blue);
-  AddButtonStatus(14, 16, "16:9^576x1024", &Green);
+  AddButtonStatus(14, 16, "16:9^1024x576", &Blue);
+  AddButtonStatus(14, 16, "16:9^1024x576", &Green);
 
-  AddButtonStatus(14, 17, "720p^720x1280", &Blue);
-  AddButtonStatus(14, 17, "720p^720x1280", &Green);
+  AddButtonStatus(14, 17, "720p^1280x720", &Blue);
+  AddButtonStatus(14, 17, "720p^1280x720", &Green);
 
-  AddButtonStatus(14, 18, "1080p^1080x1920", &Blue);
-  AddButtonStatus(14, 18, "1080p^1080x1920", &Green);
+  AddButtonStatus(14, 18, "1080p^1920x1080", &Blue);
+  AddButtonStatus(14, 18, "1080p^1920x1080", &Green);
 
   AddButtonStatus(14, 4, "Return to^Main Menu", &DBlue);
 }
@@ -1822,6 +2099,9 @@ void Highlight_Menu14()
 void Define_Menu15()
 {
   strcpy(MenuTitle[15], "Video Source Selection Menu (15)");
+
+  AddButtonStatus(15, 10, "Test Card", &Blue);
+  AddButtonStatus(15, 10, "Test Card", &Green);
 
   AddButtonStatus(15, 15, "Pi Camera", &Blue);
   AddButtonStatus(15, 15, "Pi Camera", &Green);
@@ -1842,11 +2122,383 @@ void Define_Menu15()
 void Highlight_Menu15()
 {
   SelectFromGroupOnMenu3(15, 15, 1, config.videosource, "PiCam", "WebCam", "ATEMUSB");
+  SelectFromGroupOnMenu1(15, 10, 1, config.videosource, "TestCard");
 }
 
-// PiCam    WebCam ATEMUSB 
-// CompVid  HDMI
-// TestCard Contest
+
+void Define_Menu16()
+{
+  strcpy(MenuTitle[16], "Transmit Frequency Selection Menu (16)");
+
+  AddButtonStatus(16, 20, "71 MHz", &Blue);
+  AddButtonStatus(16, 20, "71 MHz", &Green);
+
+  AddButtonStatus(16, 21, "146.5 MHz", &Blue);
+  AddButtonStatus(16, 21, "146.5 MHz", &Green);
+
+  AddButtonStatus(16, 22, "437 MHz", &Blue);
+  AddButtonStatus(16, 22, "437 MHz", &Green);
+
+  AddButtonStatus(16, 23, "1249 MHz", &Blue);
+  AddButtonStatus(16, 23, "1249 MHz", &Green);
+
+  AddButtonStatus(16, 24, "1255 MHz", &Blue);
+  AddButtonStatus(16, 24, "1255 MHz", &Green);
+
+  AddButtonStatus(16, 15, "435 MHz", &Blue);
+  AddButtonStatus(16, 15, "435 MHz", &Green);
+
+  AddButtonStatus(16, 16, "436 MHz", &Blue);
+  AddButtonStatus(16, 16, "436 MHz", &Green);
+
+  AddButtonStatus(16, 17, "436.5 MHz", &Blue);
+  AddButtonStatus(16, 17, "436.5 MHz", &Green);
+
+  AddButtonStatus(16, 18, "438 MHz", &Blue);
+  AddButtonStatus(16, 18, "438 MHz", &Green);
+
+  AddButtonStatus(16, 19, "2395 MHz", &Blue);
+  AddButtonStatus(16, 19, "2395 MHz", &Green);
+
+  AddButtonStatus(16, 10, "10494.75^2405.25", &Blue);
+  AddButtonStatus(16, 10, "10494.75^2405.25", &Green);
+
+  AddButtonStatus(16, 11, "10495.25^2405.75", &Blue);
+  AddButtonStatus(16, 11, "10495.25^2405.75", &Green);
+
+  AddButtonStatus(16, 12, "10495.75^2406.25", &Blue);
+  AddButtonStatus(16, 12, "10495.75^2406.25", &Green);
+
+  AddButtonStatus(16, 13, "10496.25^2406.75", &Blue);
+  AddButtonStatus(16, 13, "10496.25^2406.75", &Green);
+
+  AddButtonStatus(16, 14, "10496.75^2407.25", &Blue);
+  AddButtonStatus(16, 14, "10496.75^2407.25", &Green);
+
+  AddButtonStatus(16, 5, "10497.25^2407.75", &Blue);
+  AddButtonStatus(16, 5, "10497.25^2407.75", &Green);
+
+  AddButtonStatus(16, 6, "10497.75^2408.25", &Blue);
+  AddButtonStatus(16, 6, "10497.75^2408.25", &Green);
+
+  AddButtonStatus(16, 7, "10498.25^2408.75", &Blue);
+  AddButtonStatus(16, 7, "10498.25^2408.75", &Green);
+
+  AddButtonStatus(16, 8, "10498.75^2409.25", &Blue);
+  AddButtonStatus(16, 8, "10498.75^2409.25", &Green);
+
+  AddButtonStatus(16, 9, "10499.25^2409.75", &Blue);
+  AddButtonStatus(16, 9, "10499.25^2409.75", &Green);
+
+  AddButtonStatus(16, 0, "425 MHz", &Blue);
+  AddButtonStatus(16, 0, "425 MHz", &Green);
+
+  AddButtonStatus(16, 1, "431.5 MHz", &Blue);
+  AddButtonStatus(16, 1, "431.5 MHz", &Green);
+
+  AddButtonStatus(16, 2, "1256 MHz", &Blue);
+  AddButtonStatus(16, 2, "1256 MHz", &Green);
+
+  AddButtonStatus(16, 3, "Keyboard", &Blue);
+  AddButtonStatus(16, 3, "Keyboard", &Green);
+
+  AddButtonStatus(16, 4, "Return to^Main Menu", &DBlue);
+}
+
+
+void Highlight_Menu16()
+{
+  char freqAsText[63];
+  snprintf(freqAsText, 60, "%.2f", config.freqoutput);
+
+  SelectFromGroupOnMenu5(16, 20, 1, freqAsText, "71.00", "146.50", "437.00", "1249.00", "1255.00");
+  SelectFromGroupOnMenu5(16, 15, 1, freqAsText, "435.00", "436.00", "436.50", "438.00", "2395.00");
+  SelectFromGroupOnMenu5(16, 10, 1, freqAsText, "2405.25", "2405.75", "2406.25", "2406.75", "2407.25");
+  SelectFromGroupOnMenu5(16, 5, 1, freqAsText, "2407.75", "2408.25", "2408.75", "2409.25", "2409.75");
+  SelectFromGroupOnMenu3(16, 0, 1, freqAsText, "425.00", "431.50", "1256.00");
+}
+
+void Define_Menu17()
+{
+  strcpy(MenuTitle[17], "Transmit Symbol Rate Menu (17)");
+
+  AddButtonStatus(17, 20, "125", &Blue);
+  AddButtonStatus(17, 20, "125", &Green);
+
+  AddButtonStatus(17, 21, "250", &Blue);
+  AddButtonStatus(17, 21, "250", &Green);
+
+  AddButtonStatus(17, 22, "333", &Blue);
+  AddButtonStatus(17, 22, "333", &Green);
+
+  AddButtonStatus(17, 23, "500", &Blue);
+  AddButtonStatus(17, 23, "500", &Green);
+
+  AddButtonStatus(17, 24, "1000", &Blue);
+  AddButtonStatus(17, 24, "1000", &Green);
+
+  AddButtonStatus(17, 15, "1500", &Blue);
+  AddButtonStatus(17, 15, "1500", &Green);
+
+  AddButtonStatus(17, 16, "2000", &Blue);
+  AddButtonStatus(17, 16, "2000", &Green);
+
+  AddButtonStatus(17, 17, "3000", &Blue);
+  AddButtonStatus(17, 17, "3000", &Green);
+
+  AddButtonStatus(17, 18, "4000", &Blue);
+  AddButtonStatus(17, 18, "4000", &Green);
+
+  AddButtonStatus(17, 4, "Return to^Main Menu", &DBlue);
+}
+
+
+void Highlight_Menu17()
+{
+  char SRAsText[63];
+  snprintf(SRAsText, 60, "%d", config.symbolrate);
+
+  SelectFromGroupOnMenu5(17, 20, 1, SRAsText, "125", "250", "333", "500", "1000");
+  SelectFromGroupOnMenu4(17, 15, 1, SRAsText, "1500", "2000", "3000", "4000");
+}
+
+
+void Define_Menu18()
+{
+  strcpy(MenuTitle[18], "Transmit FEC Menu (18)");
+
+  AddButtonStatus(18, 20, "FEC 1/4", &Blue);
+  AddButtonStatus(18, 20, "FEC 1/4", &Green);
+  AddButtonStatus(18, 20, "FEC 1/4", &Grey);
+
+  AddButtonStatus(18, 21, "FEC 1/3", &Blue);
+  AddButtonStatus(18, 21, "FEC 1/3", &Green);
+  AddButtonStatus(18, 21, "FEC 1/3", &Grey);
+
+  AddButtonStatus(18, 22, "FEC 1/2", &Blue);
+  AddButtonStatus(18, 22, "FEC 1/2", &Green);
+  AddButtonStatus(18, 22, "FEC 1/2", &Grey);
+
+  AddButtonStatus(18, 23, "FEC 3/5", &Blue);
+  AddButtonStatus(18, 23, "FEC 3/5", &Green);
+  AddButtonStatus(18, 23, "FEC 3/5", &Grey);
+
+  AddButtonStatus(18, 24, "FEC 2/3", &Blue);
+  AddButtonStatus(18, 24, "FEC 2/3", &Green);
+  AddButtonStatus(18, 24, "FEC 2/3", &Grey);
+
+  AddButtonStatus(18, 15, "FEC 3/4", &Blue);
+  AddButtonStatus(18, 15, "FEC 3/4", &Green);
+  AddButtonStatus(18, 15, "FEC 3/4", &Grey);
+
+  AddButtonStatus(18, 16, "FEC 5/6", &Blue);
+  AddButtonStatus(18, 16, "FEC 5/6", &Green);
+  AddButtonStatus(18, 16, "FEC 5/6", &Grey);
+
+  AddButtonStatus(18, 17, "FEC 7/8", &Blue);
+  AddButtonStatus(18, 17, "FEC 7/8", &Green);
+  AddButtonStatus(18, 17, "FEC 7/8", &Grey);
+
+  AddButtonStatus(18, 18, "FEC 8/9", &Blue);
+  AddButtonStatus(18, 18, "FEC 8/9", &Green);
+  AddButtonStatus(18, 18, "FEC 8/9", &Grey);
+
+  AddButtonStatus(18, 19, "FEC 9/10", &Blue);
+  AddButtonStatus(18, 19, "FEC 9/10", &Green);
+  AddButtonStatus(18, 19, "FEC 9/10", &Grey);
+
+  AddButtonStatus(18, 4, "Return to^Main Menu", &DBlue);
+}
+
+void Highlight_Menu18()
+{
+  char FECText[63];
+  int i;
+
+  for (i = 15; i < 25; i++)
+  {
+    SetButtonStatus(18, i, 0);   // reset all buttons to blue
+  }
+
+  snprintf(FECText, 60, "%d", config.fec);
+  SelectFromGroupOnMenu5(18, 20, 1, FECText, "14", "13", "12", "35", "23");
+  SelectFromGroupOnMenu5(18, 15, 1, FECText, "34", "56", "78", "89", "910");
+
+  // Now grey out illegal FECs
+  if (strcmp(config.modulation, "S2QPSK") == 0)
+  {
+    SetButtonStatus(18, 17, 2);   // 7/8 grey
+  }
+  else if (strcmp(config.modulation, "8PSK") == 0)
+  {
+    SetButtonStatus(18, 20, 2);   // 1/4 grey
+    SetButtonStatus(18, 21, 2);   // 1/3 grey
+    SetButtonStatus(18, 22, 2);   // 1/2 grey
+    SetButtonStatus(18, 17, 2);   // 7/8 grey
+  }
+  else if (strcmp(config.modulation, "16APSK") == 0)
+  {
+    SetButtonStatus(18, 20, 2);   // 1/4 grey
+    SetButtonStatus(18, 21, 2);   // 1/3 grey
+    SetButtonStatus(18, 22, 2);   // 1/2 grey
+    SetButtonStatus(18, 23, 2);   // 3/5 grey
+    SetButtonStatus(18, 17, 2);   // 7/8 grey
+  }
+  else if (strcmp(config.modulation, "32APSK") == 0)
+  {
+    SetButtonStatus(18, 20, 2);   // 1/4 grey
+    SetButtonStatus(18, 21, 2);   // 1/3 grey
+    SetButtonStatus(18, 22, 2);   // 1/2 grey
+    SetButtonStatus(18, 23, 2);   // 3/5 grey
+    SetButtonStatus(18, 24, 2);   // 2/3 grey
+    SetButtonStatus(18, 17, 2);   // 7/8 grey
+  }
+  else if ((strcmp(config.modulation, "DVBS") == 0) || (strcmp(config.modulation, "DVBT") == 0))
+  {
+    SetButtonStatus(18, 20, 2);   // 1/4 grey
+    SetButtonStatus(18, 21, 2);   // 1/3 grey
+    SetButtonStatus(18, 23, 2);   // 3/5 grey
+    SetButtonStatus(18, 18, 2);   // 8/9 grey
+    SetButtonStatus(18, 19, 2);   // 9/10 grey
+  }
+}
+
+
+void Define_Menu19()
+{
+  strcpy(MenuTitle[19], "Band Selection Menu (19)");
+
+  AddButtonStatus(19, 20, "29 MHz", &Blue);
+  AddButtonStatus(19, 20, "29 MHz", &Green);
+
+  AddButtonStatus(19, 21, "51 MHz", &Blue);
+  AddButtonStatus(19, 21, "51 MHz", &Green);
+
+  AddButtonStatus(19, 22, "Direct", &Blue);
+  AddButtonStatus(19, 22, "Direct", &Green);
+
+  AddButtonStatus(19, 23, "2300 MHz", &Blue);
+  AddButtonStatus(19, 23, "2300 MHz", &Green);
+
+  AddButtonStatus(19, 24, "3400 MHz", &Blue);
+  AddButtonStatus(19, 24, "3400 MHz", &Green);
+
+  AddButtonStatus(19, 15, "5760 MHz", &Blue);
+  AddButtonStatus(19, 15, "5760 MHz", &Green);
+
+  AddButtonStatus(19, 16, "10 GHz", &Blue);
+  AddButtonStatus(19, 15, "10 GHz", &Green);
+
+  AddButtonStatus(19, 17, "24 GHz", &Blue);
+  AddButtonStatus(19, 17, "24 GHz", &Green);
+
+  AddButtonStatus(19, 18, "47 GHz", &Blue);
+  AddButtonStatus(19, 18, "47 GHz", &Green);
+
+  AddButtonStatus(19, 19, "76 GHz", &Blue);
+  AddButtonStatus(19, 19, "76 GHz", &Green);
+
+  AddButtonStatus(19, 10, "122 GHz", &Blue);
+  AddButtonStatus(19, 10, "122 GHz", &Green);
+
+  AddButtonStatus(19, 10, "134 GHz", &Blue);
+  AddButtonStatus(19, 10, "134 GHz", &Green);
+
+  AddButtonStatus(19, 4, "Return to^Main Menu", &DBlue);
+}
+
+void Highlight_Menu19()
+{
+  //char FECsText[63];
+  //snprintf(FECsText, 60, "%d", config.fec);
+
+  //SelectFromGroupOnMenu5(19, 20, 1, FECsText, "125", "250", "333", "500", "1000");
+  //SelectFromGroupOnMenu4(19, 15, 1, FECsText, "1500", "2000", "3000", "4000");
+}
+
+
+void Define_Menu20()
+{
+  int i;
+  int j;
+  char label[31];
+
+  strcpy(MenuTitle[20], "SDR Gain Menu (20)");
+
+  for (j = 4; j >= 1; j--)
+  {
+    for (i = 0; i < 5; i++)
+    {
+      snprintf(label, 21, "-%d dB", (4 - j) * 5 + i);
+      AddButtonStatus(20, 5 * j + i, label, &Blue);
+      AddButtonStatus(20, 5 * j + i, label, &Green);
+      AddButtonStatus(20, 5 * j + i, label, &Grey);
+    }
+  }
+
+  AddButtonStatus(20, 0, "-20 dB", &Blue);
+  AddButtonStatus(20, 0, "-20 dB", &Green);
+  AddButtonStatus(20, 0, "-20 dB", &Grey);
+
+  AddButtonStatus(20, 1, "-21 dB", &Blue);
+  AddButtonStatus(20, 1, "-21 dB", &Green);
+  AddButtonStatus(20, 1, "-21 dB", &Grey);
+
+  AddButtonStatus(20, 4, "Return to^Main Menu", &DBlue);
+}
+
+
+void Highlight_Menu20()
+{
+  int i;
+  int j;
+  int button;
+  int gainReduction;
+  char label[31];
+
+  if ((strcmp(config.modeoutput, "LIMEMINI") == 0) || (strcmp(config.modeoutput, "LIMEXTRX") == 0)
+   || (strcmp(config.modeoutput, "LIMEMINING") == 0))
+  {
+    for (j = 4; j >= 0; j--)   // For each row top to bottom
+    {
+      for (i = 0; i < 5; i++)  // For each button left to right
+      {
+        button = 5 * j + i;
+        gainReduction = (4 - j) * 5 + i;
+
+        if ((button != 2) && (button != 3) && (button != 4))   // exclude keyboard and return buttons
+        {
+          if (limeGainSet[gainReduction] == 0)    // Not achievable
+          {
+            //set bare button to grey
+            snprintf(label, 21, "-%d dB^impossible", gainReduction);
+            AmendButtonStatus(20, button, 0, label, &Blue);
+            AmendButtonStatus(20, button, 1, label, &Green);
+            AmendButtonStatus(20, button, 2, label, &Grey);
+            SetButtonStatus(20, button, 2);
+          }
+          else
+          {
+            snprintf(label, 21, "-%d dB^Lime gain %d", gainReduction, limeGainSet[gainReduction]);
+            AmendButtonStatus(20, button, 0, label, &Blue);
+            AmendButtonStatus(20, button, 1, label, &Green);
+            AmendButtonStatus(20, button, 2, label, &Grey);
+            if (config.limegain == limeGainSet[gainReduction])
+            {
+              SetButtonStatus(20, button, 1);
+            }
+            else
+            {
+              SetButtonStatus(20, button, 0);
+            }
+          }
+        }
+      }
+    }
+  }
+  // Keyboard button?
+
+}
 
 
 void Define_Menus()
@@ -1860,6 +2512,11 @@ void Define_Menus()
   Define_Menu13();
   Define_Menu14();
   Define_Menu15();
+  Define_Menu16();
+  Define_Menu17();
+  Define_Menu18();
+  Define_Menu19();
+  Define_Menu20();
 }
 
 void selectTestEquip(int Button)   // Test Equipment
@@ -1972,6 +2629,9 @@ void selectOutput(int Button)          // Transmitter output device
     case 18:
       strcpy(config.modeoutput, "LIMEXTRX");
       break;
+    case 19:
+      strcpy(config.modeoutput, "LIMEMINING");
+      break;
   }
   SetConfigParam(PATH_PCONFIG, "modeoutput", config.modeoutput);
 }
@@ -2002,6 +2662,9 @@ void selectVideosource(int Button)  // Transmitter Video Source
 {
   switch(Button)
   {
+    case 10:
+      strcpy(config.videosource, "TestCard");
+      break;
     case 15:
       strcpy(config.videosource, "PiCam");
       break;
@@ -2011,12 +2674,293 @@ void selectVideosource(int Button)  // Transmitter Video Source
     case 17:
       strcpy(config.videosource, "ATEMUSB");
       break;
-   // case 18:
-   //   strcpy(config.format, "1080p");
-   //   break;
   }
 
   SetConfigParam(PATH_PCONFIG, "videosource", config.videosource);
+}
+
+void selectFreqoutput(int Button)  // Transmitter output Frequency
+{
+  char freqoutputText[63];
+
+  switch(Button)
+  {
+    case 20:
+      config.freqoutput = 71.0;
+      break;
+    case 21:
+      config.freqoutput = 146.5;
+      break;
+    case 22:
+      config.freqoutput = 437;
+      break;
+    case 23:
+      config.freqoutput = 1249;
+      break;
+    case 24:
+      config.freqoutput = 1255;
+      break;
+    case 15:
+      config.freqoutput = 435;
+      break;
+    case 16:
+      config.freqoutput = 436;
+      break;
+    case 17:
+      config.freqoutput = 436.5;
+      break;
+    case 18:
+      config.freqoutput = 438;
+      break;
+    case 19:
+      config.freqoutput = 2395;
+      break;
+    case 10:
+      config.freqoutput = 2405.25;
+      break;
+    case 11:
+      config.freqoutput = 2405.75;
+      break;
+    case 12:
+      config.freqoutput = 2406.25;
+      break;
+    case 13:
+      config.freqoutput = 2406.75;
+      break;
+    case 14:
+      config.freqoutput = 2407.25;
+      break;
+    case 5:
+      config.freqoutput = 2407.75;
+      break;
+    case 6:
+      config.freqoutput = 2408.25;
+      break;
+    case 7:
+      config.freqoutput = 2408.75;
+      break;
+    case 8:
+      config.freqoutput = 2409.25;
+      break;
+    case 9:
+      config.freqoutput = 2409.75;
+      break;
+    case 0:
+      config.freqoutput = 425;
+      break;
+    case 1:
+      config.freqoutput = 431.5;
+      break;
+    case 2:
+      config.freqoutput = 1256;
+      break;
+    case 3:
+      // keyboard
+      //config.freqoutput = 71.0;
+      break;
+  }
+
+  snprintf(freqoutputText, 60, "%.2f", config.freqoutput);
+  SetConfigParam(PATH_PCONFIG, "freqoutput", freqoutputText);
+}
+
+
+void selectSymbolrate(int Button)  // Transmitter symbol rate
+{
+  char srText[63];
+
+  switch(Button)
+  {
+    case 20:
+      config.symbolrate = 125;
+      break;
+    case 21:
+      config.symbolrate = 250;
+      break;
+    case 22:
+      config.symbolrate = 333;
+      break;
+    case 23:
+      config.symbolrate = 500;
+      break;
+    case 24:
+      config.symbolrate = 1000;
+      break;
+    case 15:
+      config.symbolrate = 1500;
+      break;
+    case 16:
+      config.symbolrate = 2000;
+      break;
+    case 17:
+      config.symbolrate = 3000;
+      break;
+    case 18:
+      config.symbolrate = 4000;
+      break;
+//    case 10:
+//      config.symbolrate = 1614;
+//      break;
+//    case 11:
+//      config.symbolrate = 4164;
+//      break;
+  }
+  snprintf(srText, 60, "%d", config.symbolrate);
+  SetConfigParam(PATH_PCONFIG, "symbolrate", srText);
+}
+
+
+void selectFEC(int Button)  // Transmitter FEC
+{
+  char fecText[63];
+
+  switch(Button)
+  {
+    case 20:
+      config.fec = 14;
+      break;
+    case 21:
+      config.fec = 13;
+      break;
+    case 22:
+      config.fec = 12;
+      break;
+    case 23:
+      config.fec = 35;
+      break;
+    case 24:
+      config.fec = 23;
+      break;
+    case 15:
+      config.fec = 34;
+      break;
+    case 16:
+      config.fec = 56;
+      break;
+    case 17:
+      config.fec = 78;
+      break;
+    case 18:
+      config.fec = 89;
+      break;
+    case 10:
+      config.fec = 910;
+      break;
+  }
+  snprintf(fecText, 60, "%d", config.fec);
+  SetConfigParam(PATH_PCONFIG, "fec", fecText);
+}
+
+
+void selectBand(int Button)  // Transmitter Band
+{
+  char fecText[63];
+
+  switch(Button)
+  {
+    case 20:
+      config.symbolrate = 125;
+      break;
+    case 21:
+      config.symbolrate = 250;
+      break;
+    case 22:
+      config.symbolrate = 333;
+      break;
+    case 23:
+      config.symbolrate = 500;
+      break;
+    case 24:
+      config.symbolrate = 1000;
+      break;
+    case 15:
+      config.symbolrate = 1500;
+      break;
+    case 16:
+      config.symbolrate = 2000;
+      break;
+    case 17:
+      config.symbolrate = 3000;
+      break;
+    case 18:
+      config.symbolrate = 4000;
+      break;
+//    case 10:
+//      config.symbolrate = 1614;
+//      break;
+//    case 11:
+//      config.symbolrate = 4164;
+//      break;
+  }
+  snprintf(fecText, 60, "%d", config.fec);
+  SetConfigParam(PATH_PCONFIG, "fec", fecText);
+}
+
+void selectGain(int Button)  // SDR Gain
+{
+  char gainText[63];
+  // if (Lime)
+  {
+    switch(Button)
+    {
+      case 20:
+      case 21:
+      case 22:
+      case 23:
+      case 24:
+        config.limegain = limeGainSet[Button - 20];
+        break;
+      case 15:
+      case 16:
+      case 17:
+      case 18:
+      case 19:
+        config.limegain = limeGainSet[Button - 10];
+        break;
+      // case 10:  Not possible
+      case 11:
+      case 12:
+      case 13:
+      case 14:
+        config.limegain = limeGainSet[Button];
+        break;
+      case 5:
+      case 6:
+      case 7:
+      case 8:
+      case 9:
+        config.limegain = limeGainSet[Button + 10];
+        break;
+      case 0:
+      case 1:
+        config.limegain = limeGainSet[Button + 20];
+        break;
+    }
+    // Keyboard?
+  snprintf(gainText, 60, "%d", config.limegain);
+  SetConfigParam(PATH_PCONFIG, "limegain", gainText);
+  }
+//  else if   //Pluto
+//  {
+
+//  }
+//  else if   //DATV Express
+//  {
+
+//  }
+
+}
+
+
+
+void UpdateWeb()
+{
+  // Called after any screen update to update the web page if required.
+
+  if(webcontrol == true)
+  {
+    system("/home/pi/portsdown/scripts/single_screen_grab_for_web.sh &");
+  }
 }
 
 
@@ -2048,6 +2992,7 @@ void waitForScreenAction()
       redrawMenu();
       TransmitStop();
       strcpy(ScreenState, "NormalMenu");
+      UpdateWeb();
       continue;  // All reset, and Menu displayed so go back and wait for next touch
      }
 
@@ -2058,13 +3003,13 @@ void waitForScreenAction()
       redrawButton(1, 25);
       TransmitStop();
       strcpy(ScreenState, "NormalMenu");
+      UpdateWeb();
       continue;  // All reset, and Menu displayed so go back and wait for next touch
     }
 
 
     {                                           // Normal context
       i = IsMenuButtonPushed();
-
 
       // Deal with boot to tx or boot to rx
 //      if (boot_to_tx == true)
@@ -2146,7 +3091,6 @@ void waitForScreenAction()
             SetButtonStatus(1, 9, 0);
           }
           SetButtonStatus(1, 9, 1);
-          //Start_Highlights_Menu1();
           redrawMenu();
           usleep(500000);
           SetButtonStatus(1, 9, 0); 
@@ -2163,6 +3107,31 @@ void waitForScreenAction()
             PresetStoreTrigger = false;
             SetButtonStatus(1, 9, 0);
           }
+          redrawMenu();
+          break;
+        case 15:                                                      // Select Frequency
+          printf("MENU 16\n");                                        // Frequency menu
+          CurrentMenu = 16;
+          redrawMenu();
+          break;
+        case 16:                                                      // Select SR
+          printf("MENU 17\n");                                        // SR menu
+          CurrentMenu = 17;
+          redrawMenu();
+          break;
+        case 17:                                                      // Select FEC
+          printf("MENU 18\n");                                        // FEC menu
+          CurrentMenu = 18;
+          redrawMenu();
+          break;
+        case 18:                                                      // Select Band
+          printf("MENU 19\n");                                        // Band menu
+          CurrentMenu = 19;
+          redrawMenu();
+          break;
+        case 19:                                                      // Select SDR Gain
+          printf("MENU 20\n");                                        // SDR Gain menu
+          CurrentMenu = 20;
           redrawMenu();
           break;
         case 20:                                                      // Select Modulation
@@ -2196,21 +3165,21 @@ void waitForScreenAction()
             TransmitStart();
             SetButtonStatus(1, 25, 2);
             redrawButton(1, 25);
+            UpdateWeb();
           }
           break;
         case 27:
           printf("MENU 2 \n");         // Tools Menu
           CurrentMenu = 2;
-          //Start_Highlights_Menu2();
           redrawMenu();
           break;
         case 29:
           printf("MENU 4 \n");         // File Menu
           CurrentMenu = 4;
-          //Start_Highlights_Menu4();
           redrawMenu();
           break;
         }
+        continue;
       } 
       if (CurrentMenu == 2)  // Apps Menu
       {
@@ -2221,10 +3190,10 @@ void waitForScreenAction()
         case 4:                        // Back to Main Menu
           printf("MENU 1 \n");
           CurrentMenu = 1;
-          //Start_Highlights_Menu1();
           redrawMenu();
           break;
         }
+        continue;
       }
       if (CurrentMenu == 4)            // File Menu
       {
@@ -2241,10 +3210,10 @@ void waitForScreenAction()
         case 4:                        // Back to Main Menu
           printf("MENU 1 \n");
           CurrentMenu = 1;
-          //Start_Highlights_Menu1();
           redrawMenu();
           break;
         }
+        continue;
       }
       if (CurrentMenu == 7)            // Test Equipment Menu
       {
@@ -2269,6 +3238,7 @@ void waitForScreenAction()
           redrawMenu();                // and return to menu 1
           break;
         }
+        continue;
       }
       if (CurrentMenu == 11)           // Modulation Selection Menu
       {
@@ -2293,6 +3263,7 @@ void waitForScreenAction()
           redrawMenu();                // and return to menu 1
           break;
         }
+        continue;
       }
       if (CurrentMenu == 12)           // Encoding Selection Menu
       {
@@ -2320,6 +3291,7 @@ void waitForScreenAction()
           redrawMenu();                // and return to menu 1
           break;
         }
+        continue;
       }
       if (CurrentMenu == 13)           // Output Device Selection Menu
       {
@@ -2343,6 +3315,7 @@ void waitForScreenAction()
         case 16:
         case 17:
         case 18:
+        case 19:
           selectOutput(i);             // Select Output Device
           redrawMenu();                // Show 
           usleep(500000);
@@ -2350,6 +3323,7 @@ void waitForScreenAction()
           redrawMenu();                // and return to menu 1
           break;
         }
+        continue;
       }
       if (CurrentMenu == 14)           // Video format Selection Menu
       {
@@ -2373,6 +3347,7 @@ void waitForScreenAction()
           redrawMenu();                // and return to menu 1
           break;
         }
+        continue;
       }
       if (CurrentMenu == 15)           // Video Source Menu
       {
@@ -2385,17 +3360,200 @@ void waitForScreenAction()
           CurrentMenu = 1;
           redrawMenu();
           break;
-        case 15:
-        case 16:
-        case 17:
+        case 10:                       // Test Card
+        case 15:                       // Pi Cam
+        case 16:                       // Web Cam
+        case 17:                       // ATEM USB
         //case 18:
-          selectVideosource(i);             // Select Video Source
+          selectVideosource(i);        // Select Video Source
           redrawMenu();                // Show 
           usleep(500000);
           CurrentMenu = 1;
           redrawMenu();                // and return to menu 1
           break;
         }
+        continue;
+      }
+      if (CurrentMenu == 16)           // Frequency Selection Menu
+      {
+        printf("Menu %d, Button %d\n", CallingMenu, i);
+        CallingMenu = 16;
+        switch (i)
+        {
+        case 4:                        // Back to Main Menu
+          printf("MENU 1 \n");
+          CurrentMenu = 1;
+          redrawMenu();
+          break;
+        case 0:
+        case 1:
+        case 2:
+        case 5:
+        case 6:
+        case 7:
+        case 8:
+        case 9:
+        case 10:
+        case 11:
+        case 12:
+        case 13:
+        case 14:
+        case 15:
+        case 16:
+        case 17:
+        case 18:
+        case 19:
+        case 20:
+        case 21:
+        case 22:
+        case 23:
+        case 24:
+          selectFreqoutput(i);         // Select TX output frequency
+          redrawMenu();                // Show 
+          usleep(500000);
+          CurrentMenu = 1;
+          redrawMenu();                // and return to menu 1
+          break;
+        case 3:                       // Keyboard entered frequency
+          // Function here
+          break;
+        }
+        continue;
+      }
+      if (CurrentMenu == 17)           // SR Selection Menu
+      {
+        printf("Menu %d, Button %d\n", CallingMenu, i);
+        CallingMenu = 17;
+        switch (i)
+        {
+        case 4:                        // Back to Main Menu
+          printf("MENU 1 \n");
+          CurrentMenu = 1;
+          redrawMenu();
+          break;
+        case 15:
+        case 16:
+        case 17:
+        case 18:
+        case 20:
+        case 21:
+        case 22:
+        case 23:
+        case 24:
+          selectSymbolrate(i);         // Select TX SR
+          redrawMenu();                // Show 
+          usleep(500000);
+          CurrentMenu = 1;
+          redrawMenu();                // and return to menu 1
+          break;
+        case 3:                       // Keyboard entered frequency
+          // Function here
+          break;
+        }
+        continue;
+      }
+      if (CurrentMenu == 18)           // FEC Selection Menu
+      {
+        printf("Menu %d, Button %d\n", CallingMenu, i);
+        CallingMenu = 18;
+        switch (i)
+        {
+        case 4:                        // Back to Main Menu
+          printf("MENU 1 \n");
+          CurrentMenu = 1;
+          redrawMenu();
+          break;
+        case 15:
+        case 16:
+        case 17:
+        case 18:
+        case 20:
+        case 21:
+        case 22:
+        case 23:
+        case 24:
+          selectFEC(i);                // Select TX FEC
+          redrawMenu();                // Show 
+          usleep(500000);
+          CurrentMenu = 1;
+          redrawMenu();                // and return to menu 1
+          break;
+        case 3:                       // Keyboard entered frequency
+          // Function here
+          break;
+        }
+        continue;
+      }
+      if (CurrentMenu == 19)           // Band Selection Menu
+      {
+        printf("Menu %d, Button %d\n", CallingMenu, i);
+        CallingMenu = 19;
+        switch (i)
+        {
+        case 4:                        // Back to Main Menu
+          printf("MENU 1 \n");
+          CurrentMenu = 1;
+          redrawMenu();
+          break;
+        case 15:
+        case 16:
+        case 17:
+        case 18:
+        case 20:
+        case 21:
+        case 22:
+        case 23:
+        case 24:
+          selectBand(i);               // Select TX Band
+          redrawMenu();                // Show 
+          usleep(500000);
+          CurrentMenu = 1;
+          redrawMenu();                // and return to menu 1
+          break;
+        }
+        continue;
+      }
+      if (CurrentMenu == 20)           // SDR Gain Menu
+      {
+        printf("Menu %d, Button %d\n", CallingMenu, i);
+        CallingMenu = 20;
+        switch (i)
+        {
+        case 4:                        // Back to Main Menu
+          printf("MENU 1 \n");
+          CurrentMenu = 1;
+          redrawMenu();
+          break;
+        case 0:
+        case 1:
+        case 5:
+        case 6:
+        case 7:
+        case 8:
+        case 9:
+        case 10:
+        case 11:
+        case 12:
+        case 13:
+        case 14:
+        case 15:
+        case 16:
+        case 17:
+        case 18:
+        case 19:
+        case 20:
+        case 21:
+        case 22:
+        case 23:
+        case 24:
+          selectGain(i);               // Select SDR Gain
+          redrawMenu();                // Show 
+          usleep(500000);
+          CurrentMenu = 1;
+          redrawMenu();                // and return to menu 1
+          break;
+        }
+        continue;
       }
     }
   }
@@ -2406,7 +3564,7 @@ static void cleanexit(int exit_code)
 {
   //strcpy(ModeInput, "DESKTOP"); // Set input so webcam reset script is not called
   //TransmitStop();
-  //clearScreen(0, 0, 0);
+  clearScreen(0, 0, 0);
   // closeScreen();
 
   printf("Set app_exit true\n");
@@ -2425,14 +3583,14 @@ static void cleanexit(int exit_code)
 
 static void terminate(int dummy)
 {
-  printf("Terminate called\n");
+  clearScreen(0, 0, 0);
+  printf("\nTerminate called\n");
 
-  printf("Set app_exit true\n");
+  //printf("Set app_exit true\n");
   app_exit = true;
-  usleep(500000);
+  usleep(50000);
 
-  //clearScreen(0, 0, 0);
-  system("reset");                     // Move the cursor to the top of the screen
+  //system("reset");                     // Move the cursor to the top of the screen
   //closeScreen();
   exit(1);
 }
@@ -2445,6 +3603,9 @@ int main(int argc, char **argv)
   int screenXmax, screenXmin;
   int screenYmax, screenYmin;
   char response[63];
+
+  strcpy(ProgramName, argv[0]);        // Used for web click control
+
 
   // Catch sigaction and call terminate
   for (i = 0; i < 16; i++)
@@ -2538,13 +3699,9 @@ int main(int argc, char **argv)
 
   initScreen();
   CreateButtons();
-
   Define_Menus();
-
   ReadSavedParams();
-
   clearScreen(255, 255, 255);
-
   redrawMenu();
   publish();
 
