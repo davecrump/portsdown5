@@ -1,13 +1,13 @@
 modulation=S2QPSK
-encoding=MPEG-2
-modeoutput=LIMEXTRX
+encoding=H264
+modeoutput=LIMEMINI
 format=4:3
 videosource=TestCard
 freqoutput=437
 symbolrate=2000
 fec=23
 band=d3
-limegain=100
+limegain=85
 labelofband=70_cm
 attenlevel=-10.00
 explevel=30

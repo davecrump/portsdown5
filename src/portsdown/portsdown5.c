@@ -685,13 +685,13 @@ int getTouchSampleThread(int *rawX, int *rawY)
       {
         if (touch_inverted == true)
         {
-          scaledX = 799 - *rawX;
-          scaledY = *rawY;
+          scaledX = *rawX;
+          scaledY = 479 - *rawY;
         }
         else
         {
-          scaledX = *rawX;
-          scaledY = *rawY;  // ////////////////////////////// This needs testing!!
+          scaledX = 799 - *rawX;
+          scaledY = *rawY; // ////////////////////////////// This needs testing!!
         }
         printf("7 inch Touchscreen Touch Event: rawX = %d, rawY = %d scaledX = %d, scaledY = %d\n", *rawX, *rawY, scaledX, scaledY);
         return 1;
@@ -2917,7 +2917,7 @@ void selectGain(int Button)  // SDR Gain
       case 19:
         config.limegain = limeGainSet[Button - 10];
         break;
-      case 10:
+      // case 10:  Not possible
       case 11:
       case 12:
       case 13:
@@ -2933,7 +2933,7 @@ void selectGain(int Button)  // SDR Gain
         break;
       case 0:
       case 1:
-        config.limegain = limeGainSet[Button + 10];
+        config.limegain = limeGainSet[Button + 20];
         break;
     }
     // Keyboard?
@@ -2992,6 +2992,7 @@ void waitForScreenAction()
       redrawMenu();
       TransmitStop();
       strcpy(ScreenState, "NormalMenu");
+      UpdateWeb();
       continue;  // All reset, and Menu displayed so go back and wait for next touch
      }
 
@@ -3002,6 +3003,7 @@ void waitForScreenAction()
       redrawButton(1, 25);
       TransmitStop();
       strcpy(ScreenState, "NormalMenu");
+      UpdateWeb();
       continue;  // All reset, and Menu displayed so go back and wait for next touch
     }
 
@@ -3163,6 +3165,7 @@ void waitForScreenAction()
             TransmitStart();
             SetButtonStatus(1, 25, 2);
             redrawButton(1, 25);
+            UpdateWeb();
           }
           break;
         case 27:
@@ -3537,6 +3540,7 @@ void waitForScreenAction()
         case 16:
         case 17:
         case 18:
+        case 19:
         case 20:
         case 21:
         case 22:

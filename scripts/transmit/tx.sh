@@ -52,9 +52,9 @@ FREQOUTPUTHZ="$FREQOUTPUTKHZ"000
 SYMBOLRATEPS="$SYMBOLRATE"000
 
 # Make sure Lime gain is sensible
-if [ "$LIME_GAIN" -lt 6 ]; then
-  LIMEGAIN=6
-fi
+#if [ "$LIME_GAIN" -lt 6 ]; then
+#  LIMEGAIN=6
+#fi
 
 LIME_GAINF=`echo - | awk '{print '$LIMEGAIN' / 100}'`
 
@@ -168,23 +168,32 @@ if [ "$ENCODING" == "MPEG-2" ]; then
   fi
 fi
 
+    let BITRATE_VIDEO=(BITRATE_TS*75)/100-10000
+echo BITRATE_TS:
+echo $BITRATE_TS
+echo BITRATE_VIDEO:
+echo $BITRATE_VIDEO
+
 sudo rm videots >/dev/null 2>/dev/null
 mkfifo videots
 
 if [ "$MODEOUTPUT" == "LIMEMINI" ]; then
 
-  $PATHBIN/"limesdr_dvb" -i videots -s $SYMBOLRATEPS -f $FECNUM"/"$FECDEN -r 2 -m DVBS2 -c QPSK -t $FREQOUTPUTHZ -g $LIME_GAINF -q 1 -D 27 -e 2 &
+  $PATHBIN/"limesdr_dvb" -i videots -s $SYMBOLRATEPS -f $FECNUM"/"$FECDEN -r 1 -m DVBS2 -c QPSK -t $FREQOUTPUTHZ -g $LIME_GAINF -q 1 -D 27 -e 2 &
+  #$PATHBIN/"limesdr_dvb" -i videots -s $SYMBOLRATEPS -f carrier -r 1 -m DVBS2 -c QPSK -t $FREQOUTPUTHZ -g $LIME_GAINF -q 1 -D 27 -e 2 &
 
-elif [ "$MODEOUTPUT" == "LIMEXTRX" ]; then
+elif [ "$MODEOUTPUT" == "LIMEXTRX" ] || [ "$MODEOUTPUT" == "LIMEMINING" ]; then
 
   $PATHBIN/"limesdr_dvbng" -i videots -s $SYMBOLRATEPS -f $FECNUM"/"$FECDEN -r 1 -m DVBS2 -c QPSK -t $FREQOUTPUTHZ -g $LIME_GAINF -q 1 -D 27 -e 2 &
+
+  #$PATHBIN/"limesdr_dvbng" -i videots -s $SYMBOLRATEPS -f carrier -r 1 -m DVBS2 -c QPSK -t $FREQOUTPUTHZ -g $LIME_GAINF -q 1 -D 27 -e 2 &
 
 fi
 #echo starting netcat
 
-netcat -u -4 -l 10000 > videots
-exit
-          ffmpeg -loglevel debug -itsoffset -00:00:0.2 \
+#netcat -u -4 -l 10000 > videots
+#exit
+          ffmpeg \
             -thread_queue_size 512 \
             -re -loop 1 \
             -framerate 5 -video_size 704x576 \

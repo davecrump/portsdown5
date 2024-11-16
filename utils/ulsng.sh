@@ -22,4 +22,5 @@ sudo make install
 
 sudo ldconfig
 
+# To temporarily go back to a previous commit, run git checkout 626a781f2f1d20e25b3e731f3fe8fb350a7adc97
 

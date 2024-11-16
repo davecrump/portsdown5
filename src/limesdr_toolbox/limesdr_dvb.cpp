@@ -196,7 +196,15 @@ bool Tune(lms_stream_t *tx_stream, bool fpga)  // Carrier Mode
 			Frame[i].re = 0x7fff;
 			Frame[i].im = 0;
 		}
+lms_stream_status_t Status;
+LMS_GetStreamStatus(tx_stream, &Status);
+
+printf("\nPre-sendStream Status.fifoSize = %d, Status.fifoFilledCount = %d\n", Status.fifoSize, Status.fifoFilledCount);
+
 		LMS_SendStream(tx_stream, Frame, LEN_CARRIER, NULL, 1000);
+LMS_GetStreamStatus(tx_stream, &Status);
+
+printf("Post-sendStream Status.fifoSize = %d, Status.fifoFilledCount = %d\n", Status.fifoSize, Status.fifoFilledCount);
 	}
 	else
 	{
@@ -739,7 +747,7 @@ int main(int argc, char **argv)
 	}
 */
 
-	//int DebugCount = 0;
+	int DebugCount = 0;
 	//bool FirstTx = true;
 	//bool Transition = true;
 	LMS_StartStream(&tx_stream);
@@ -769,21 +777,23 @@ int main(int argc, char **argv)
 
 		lms_stream_status_t Status;
 		LMS_GetStreamStatus(&tx_stream, &Status);
+printf("Status.fifoSize = %d, Status.fifoFilledCount = %d\n", Status.fifoSize, Status.fifoFilledCount);
 		if (Status.fifoFilledCount < Status.fifoSize * 0.25)
 		{
-			//while(Status.fifoFilledCount<Status.fifoSize*0.9)
+			while(Status.fifoFilledCount<Status.fifoSize*0.9)
 			{
+printf("In fill fifo bit\n");
 				LMS_GetStreamStatus(&tx_stream, &Status);
 				NullFiller(&tx_stream, 10, FPGAMapping);
-				//fprintf(stderr,"Underflow %d/%d\n",Status.fifoFilledCount,Status.fifoSize);
+				fprintf(stderr,"Underflow %d/%d\n",Status.fifoFilledCount,Status.fifoSize);
 			}
 		}
 
-		//if (DebugCount % 1000 == 0)
-		//{
-		//	fprintf(stderr, "Fifo =%d/%d dropped %d underrun %d overrun %d Link=%f \n", Status.fifoFilledCount, Status.fifoSize, Status.droppedPackets, Status.underrun, Status.overrun, Status.linkRate);
-		//}
-		//DebugCount++;
+		if (DebugCount % 1000 == 0)
+		{
+			fprintf(stderr, "Fifo =%d/%d dropped %d underrun %d overrun %d Link=%f \n", Status.fifoFilledCount, Status.fifoSize, Status.droppedPackets, Status.underrun, Status.overrun, Status.linkRate);
+		}
+		DebugCount++;
 	}
 
 	// Set PTT off
