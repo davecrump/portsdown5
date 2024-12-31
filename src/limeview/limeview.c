@@ -38,6 +38,15 @@ int fd = 0;
 int wscreen, hscreen;
 float scaleXvalue, scaleYvalue; // Coeff ratio from Screen/TouchArea
 
+char StartApp[63];                     // Startup app on boot
+char DisplayType[31];                  // Element14_7, touch2, hdmi, web
+int VLCTransform = 0;                  // 0, 90, 180 or 270
+int FBOrientation = 0;                 // 0, 90, 180 or 270
+int HDMIResolution = 720;              // HDMI Resolution 720/1080
+bool TouchInverted = false;            // true if screen mounted upside down
+bool KeyLimePiEnabled = false;          // false for release
+
+
 typedef struct
 {
   int r,g,b;
@@ -502,6 +511,14 @@ void ReadSavedParams()
     webcontrol = false;
     system("cp /home/pi/portsdown/images/web_not_enabled.png /home/pi/tmp/screen.png");
   }
+
+  strcpy(response, "0");  // highlight null responses
+  GetConfigParam(PATH_SCONFIG, "fborientation", response);
+  FBOrientation = atoi(response);
+
+  strcpy(response, "0");  // highlight null responses
+  GetConfigParam(PATH_SCONFIG, "hdmiresolution", response);
+  HDMIResolution = atoi(response);
 
   GetConfigParam(PATH_SCONFIG, "touch", response);
   if (strcmp(response, "inverted") == 0)

@@ -58,17 +58,17 @@ mv "$3.bak" "$3"
 # First determine what display is connected:
 
 kmsprint -l | grep -q 'DSI-1 (connected)'
-if [ $? == 0 ]; then   ## touchscreen connected
+if [ "$?" == "0" ]; then   ## touchscreen connected
   echo "DETECTED_DISPLAY=touchscreen1"
   DETECTED_DISPLAY="touchscreen1"
 else
   kmsprint -l | grep -q 'HDMI-A-1 (connected)'
-  if [ $? == 0 ]; then   ## hdmi connected
+  if [ "$?" == "0" ]; then   ## hdmi connected
     echo "DETECTED_DISPLAY=hdmi"
     DETECTED_DISPLAY="hdmi"
   else
     kmsprint -l | grep -q 'DSI-2 (connected)'
-    if [ $? == 0 ]; then   ## touchscreen 2 connected
+    if [ "$?" == "0" ]; then   ## touchscreen 2 connected
       echo "DETECTED_DISPLAY=touchscreen2"
       DETECTED_DISPLAY="touchscreen2"
     else
@@ -80,14 +80,19 @@ fi
 
 # Check Raspberry Pi Version
 
-cat /sys/firmware/devicetree/base/model | grep -q 'Pi 5'
-if [ $? == 0 ]; then   ## Pi 5
-  echo "PI_MODEL=5"
+cat /sys/firmware/devicetree/base/model | grep -q 'Pi 5 Model'
+if [ "$?" == "0" ]; then   ## Pi 5
   PI_MODEL="5"
-else
-  echo "PI_MODEL=4"
+fi
+cat /sys/firmware/devicetree/base/model | grep -q 'Pi 500 Rev'
+if [ "$?" == "0" ]; then   ## Pi 500
+  PI_MODEL="500"
+fi
+cat /sys/firmware/devicetree/base/model | grep -q 'Pi 4 Model'
+if [ "$?" == "0" ]; then   ## Pi 4
   PI_MODEL="4"
 fi
+echo PI-MODEL="$PI_MODEL"
 
 # Check if Touchscreen 1 is mounted inverted
 
@@ -101,17 +106,17 @@ echo "HDMI_RESOLUTION="$HDMI_RESOLUTION
 
 # Check requested HDMI resolution against cmdline.txt.  Amend if required.
 
-if [ $HDMI_RESOLUTION == "720" ]; then
+if [ "$HDMI_RESOLUTION" == "720" ]; then
   cat /boot/firmware/cmdline.txt | grep -q 'video=HDMI-A-1:1280x720M@60'
-  if [ $? != 0 ]; then  # needs correcting
+  if [ "$?" != "0" ]; then  # needs correcting
     sudo sed -i -e 's/video=HDMI-A-1:1920x1080M@60/video=HDMI-A-1:1280x720M@60/g' /boot/firmware/cmdline.txt
     REBOOT_REQUIRED="true"
   fi
 fi
 
-if [ $HDMI_RESOLUTION == "1080" ]; then
+if [ "$HDMI_RESOLUTION" == "1080" ]; then
   cat /boot/firmware/cmdline.txt | grep -q 'video=HDMI-A-1:1920x1080M@60'
-  if [ $? != 0 ]; then  # needs correcting
+  if [ "$?" != "0" ]; then  # needs correcting
     sudo sed -i -e 's/video=HDMI-A-1:1280x720M@60/video=HDMI-A-1:1920x1080M@60/g' /boot/firmware/cmdline.txt
     REBOOT_REQUIRED="true"
   fi
@@ -127,31 +132,31 @@ CONFIG_FB_ORIENTATION=$(get_config_var fborientation $SCONFIGFILE)
 
 # 1. RPi 5 inverted touchscreen 1 (web control available)
 
-if [ $PI_MODEL == "5" ] && [ $TOUCHSCREEN_ORIENTATION == "inverted" ] && [ $DETECTED_DISPLAY == "touchscreen1" ]; then
+if [ "$PI_MODEL" == "5" ] && [ "$TOUCHSCREEN_ORIENTATION" == "inverted" ] && [ "$DETECTED_DISPLAY" == "touchscreen1" ]; then
 
   echo "RPi 5 inverted touchscreen 1"
 
   # Check display in config file.
-  if [ $CONFIG_DISPLAY != "Element14_7" ]; then  # needs changing
+  if [ "$CONFIG_DISPLAY" != "Element14_7" ]; then  # needs changing
     set_config_var display "Element14_7" $SCONFIGFILE
     CONFIG_DISPLAY="Element14_7"
   fi
 
   # Check VLC Transform in config file.
-  if [ $CONFIG_VLC_TRANSFORM != "180" ]; then  # needs changing
+  if [ "$CONFIG_VLC_TRANSFORM" != "180" ]; then  # needs changing
     set_config_var vlctransform "180" $SCONFIGFILE
     CONFIG_VLC_TRANSFORM="180"
   fi
 
   # Check Frame Buffer invert in config file.
-  if [ $CONFIG_FB_ORIENTATION != "180" ]; then  # needs changing
+  if [ "$CONFIG_FB_ORIENTATION" != "180" ]; then  # needs changing
     set_config_var fborientation "180" $SCONFIGFILE
     CONFIG_FB_ORIENTATION="180"
   fi
 
   # Check touchscreen entry in cmdline.txt
   cat /boot/firmware/cmdline.txt | grep -q 'video=DSI-1:800x480M-16@60,rotate=180'
-  if [ $? != 0 ]; then  # needs correcting
+  if [ "$?" != "0" ]; then  # needs correcting
     sudo sed -i -e 's/video=DSI-1:800x480M-16@60/video=DSI-1:800x480M-16@60,rotate=180/g' /boot/firmware/cmdline.txt
     REBOOT_REQUIRED="true"
   fi
@@ -159,31 +164,31 @@ fi
 
 # 2. RPi 5 non-inverted touchscreen 1 (web control available)
 
-if [ $PI_MODEL == "5" ] && [ $TOUCHSCREEN_ORIENTATION == "normal" ] && [ $DETECTED_DISPLAY == "touchscreen1" ]; then
+if [ "$PI_MODEL" == "5" ] && [ "$TOUCHSCREEN_ORIENTATION" == "normal" ] && [ "$DETECTED_DISPLAY" == "touchscreen1" ]; then
 
   echo "RPi 5 non-inverted touchscreen 1"
 
   # Check display in config file.
-  if [ $CONFIG_DISPLAY != "Element14_7" ]; then  # needs changing
+  if [ "$CONFIG_DISPLAY" != "Element14_7" ]; then  # needs changing
     set_config_var display "Element14_7" $SCONFIGFILE
     CONFIG_DISPLAY="Element14_7"
   fi
 
   # Check VLC Transform in config file.
-  if [ $CONFIG_VLC_TRANSFORM != "0" ]; then  # needs changing
+  if [ "$CONFIG_VLC_TRANSFORM" != "0" ]; then  # needs changing
     set_config_var vlctransform "0" $SCONFIGFILE
     CONFIG_VLC_TRANSFORM="0"
   fi
 
   # Check Frame Buffer invert in config file.
-  if [ $CONFIG_FB_ORIENTATION != "0" ]; then  # needs changing
+  if [ "$CONFIG_FB_ORIENTATION" != "0" ]; then  # needs changing
     set_config_var fborientation "0" $SCONFIGFILE
     CONFIG_FB_ORIENTATION="0"
   fi
 
   # Check touchscreen entry in cmdline.txt
   cat /boot/firmware/cmdline.txt | grep -q 'video=DSI-1:800x480M-16@60,rotate=180'
-  if [ $? == 0 ]; then  # needs correcting
+  if [ "$?" == "0" ]; then  # needs correcting
     sudo sed -i -e 's/video=DSI-1:800x480M-16@60,rotate=180/video=DSI-1:800x480M-16@60/g' /boot/firmware/cmdline.txt
     REBOOT_REQUIRED="true"
   fi
@@ -191,31 +196,31 @@ fi
 
 # 3. RPi 4 inverted touchscreen 1 (web control available)
 
-if [ $PI_MODEL == "4" ] && [ $TOUCHSCREEN_ORIENTATION == "inverted" ] && [ $DETECTED_DISPLAY == "touchscreen1" ]; then
+if [ "$PI_MODEL" == "4" ] && [ "$TOUCHSCREEN_ORIENTATION" == "inverted" ] && [ "$DETECTED_DISPLAY" == "touchscreen1" ]; then
 
   echo "RPi 4 inverted touchscreen 1"
 
   # Check display in config file.
-  if [ $CONFIG_DISPLAY != "Element14_7" ]; then  # needs changing
+  if [ "$CONFIG_DISPLAY" != "Element14_7" ]; then  # needs changing
     set_config_var display "Element14_7" $SCONFIGFILE
     CONFIG_DISPLAY="Element14_7"
   fi
 
   # Check VLC Transform in config file.
-  if [ $CONFIG_VLC_TRANSFORM != "0" ]; then  # needs changing
+  if [ "$CONFIG_VLC_TRANSFORM" != "0" ]; then  # needs changing
     set_config_var vlctransform "0" $SCONFIGFILE
     CONFIG_VLC_TRANSFORM="0"
   fi
 
   # Check Frame Buffer invert in config file.
-  if [ $CONFIG_FB_ORIENTATION != "0" ]; then  # needs changing
+  if [ "$CONFIG_FB_ORIENTATION" != "0" ]; then  # needs changing
     set_config_var fborientation "0" $SCONFIGFILE
     CONFIG_FB_ORIENTATION="0"
   fi
 
   # Check touchscreen entry in cmdline.txt
   cat /boot/firmware/cmdline.txt | grep -q 'video=DSI-1:800x480M-16@60,rotate=180'
-  if [ $? != 0 ]; then  # needs correcting
+  if [ "$?" != "0" ]; then  # needs correcting
     sudo sed -i -e 's/video=DSI-1:800x480M-16@60/video=DSI-1:800x480M-16@60,rotate=180/g' /boot/firmware/cmdline.txt
     REBOOT_REQUIRED="true"
   fi
@@ -223,31 +228,31 @@ fi
 
 # 4. RPi 4 non-inverted touchscreen 1 (web control available)
 
-if [ $PI_MODEL == "4" ] && [ $TOUCHSCREEN_ORIENTATION == "normal" ] && [ $DETECTED_DISPLAY == "touchscreen1" ]; then
+if [ "$PI_MODEL" == "4" ] && [ "$TOUCHSCREEN_ORIENTATION" == "normal" ] && [ "$DETECTED_DISPLAY" == "touchscreen1" ]; then
 
   echo "RPi 4 non-inverted touchscreen 1"
 
   # Check display in config file.
-  if [ $CONFIG_DISPLAY != "Element14_7" ]; then  # needs changing
+  if [ "$CONFIG_DISPLAY" != "Element14_7" ]; then  # needs changing
     set_config_var display "Element14_7" $SCONFIGFILE
     CONFIG_DISPLAY="Element14_7"
   fi
 
   # Check VLC Transform in config file.
-  if [ $CONFIG_VLC_TRANSFORM != "0" ]; then  # needs changing
+  if [ "$CONFIG_VLC_TRANSFORM" != "0" ]; then  # needs changing
     set_config_var vlctransform "0" $SCONFIGFILE
     CONFIG_VLC_TRANSFORM="0"
   fi
 
   # Check Frame Buffer invert in config file.
-  if [ $CONFIG_FB_ORIENTATION != "0" ]; then  # needs changing
+  if [ "$CONFIG_FB_ORIENTATION" != "0" ]; then  # needs changing
     set_config_var fborientation "0" $SCONFIGFILE
     CONFIG_FB_ORIENTATION="0"
   fi
 
   # Check touchscreen entry in cmdline.txt
   cat /boot/firmware/cmdline.txt | grep -q 'video=DSI-1:800x480M-16@60,rotate=180'
-  if [ $? == 0 ]; then  # needs correcting
+  if [ "$?" == "0" ]; then  # needs correcting
     sudo sed -i -e 's/video=DSI-1:800x480M-16@60,rotate=180/video=DSI-1:800x480M-16@60/g' /boot/firmware/cmdline.txt
     REBOOT_REQUIRED="true"
   fi
@@ -255,24 +260,24 @@ fi
 
 # 5. RPi 4 or 5 with no display (web control)
 
-if [ $DETECTED_DISPLAY == "none" ]; then
+if [ "$DETECTED_DISPLAY" == "none" ]; then
 
 echo "RPi 4 or 5 with no display"
 
   # Check display in config file.
-  if [ $CONFIG_DISPLAY != "web" ]; then  # needs changing
+  if [ "$CONFIG_DISPLAY" != "web" ]; then  # needs changing
     set_config_var display "web" $SCONFIGFILE
     CONFIG_DISPLAY="Element14_7"
   fi
 
   # Check VLC Transform in config file.
-  if [ $CONFIG_VLC_TRANSFORM != "0" ]; then  # needs changing
+  if [ "$CONFIG_VLC_TRANSFORM" != "0" ]; then  # needs changing
     set_config_var vlctransform "0" $SCONFIGFILE
     CONFIG_VLC_TRANSFORM="0"
   fi
 
   # Check Frame Buffer invert in config file.
-  if [ $CONFIG_FB_ORIENTATION != "0" ]; then  # needs changing
+  if [ "$CONFIG_FB_ORIENTATION" != "0" ]; then  # needs changing
     set_config_var fborientation "0" $SCONFIGFILE
     CONFIG_FB_ORIENTATION="0"
   fi
@@ -280,24 +285,24 @@ fi
 
 # 6. RPi 4 or 5 with HDMI and mouse (web control available)
 
-if [ $DETECTED_DISPLAY == "hdmi" ]; then
+if [ "$DETECTED_DISPLAY" == "hdmi" ]; then
 
 echo "RPi 4 or 5 with HDMI and mouse"
 
   # Check display in config file.
-  if [ $CONFIG_DISPLAY != "hdmi" ]; then  # needs changing
+  if [ "$CONFIG_DISPLAY" != "hdmi" ]; then  # needs changing
     set_config_var display "hdmi" $SCONFIGFILE
     CONFIG_DISPLAY="hdmi"
   fi
 
   # Check VLC Transform in config file.
-  if [ $CONFIG_VLC_TRANSFORM != "0" ]; then  # needs changing
+  if [ "$CONFIG_VLC_TRANSFORM" != "0" ]; then  # needs changing
     set_config_var vlctransform "0" $SCONFIGFILE
     CONFIG_VLC_TRANSFORM="0"
   fi
 
   # Check Frame Buffer invert in config file.
-  if [ $CONFIG_FB_ORIENTATION != "0" ]; then  # needs changing
+  if [ "$CONFIG_FB_ORIENTATION" != "0" ]; then  # needs changing
     set_config_var fborientation "0" $SCONFIGFILE
     CONFIG_FB_ORIENTATION="0"
   fi
@@ -305,30 +310,30 @@ fi
 
 # 7. RPi 5 with touchscreen 2 (web control available)
 
-if [ $PI_MODEL == "5" ] &&  [ $DETECTED_DISPLAY == "touchscreen2" ]; then
+if [ "$PI_MODEL" == "5" ] &&  [ "$DETECTED_DISPLAY" == "touchscreen2" ]; then
 
 echo "RPi 5 with touchscreen 2"
 
   # Check display in config file.
-  if [ $CONFIG_DISPLAY != "touch2" ]; then  # needs changing
+  if [ "$CONFIG_DISPLAY" != "touch2" ]; then  # needs changing
     set_config_var display "touch2" $SCONFIGFILE
     CONFIG_DISPLAY="touch2"
   fi
 
   # Check VLC Transform in config file.
-  if [ $CONFIG_VLC_TRANSFORM != "90" ]; then  # needs changing
+  if [ "$CONFIG_VLC_TRANSFORM" != "90" ]; then  # needs changing
     set_config_var vlctransform "90" $SCONFIGFILE
     CONFIG_VLC_TRANSFORM="90"
   fi
 
   # Check Frame Buffer invert in config file.
-  if [ $CONFIG_FB_ORIENTATION != "90" ]; then  # needs changing
+  if [ "$CONFIG_FB_ORIENTATION" != "90" ]; then  # needs changing
     set_config_var fborientation "90" $SCONFIGFILE
     CONFIG_FB_ORIENTATION="90"
   fi
 fi
 
-if [ $REBOOT_REQUIRED == "true" ]; then
+if [ "$REBOOT_REQUIRED" == "true" ]; then
   echo "Rebooting to apply changes"
   sudo reboot now
 else
