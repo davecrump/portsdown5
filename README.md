@@ -22,6 +22,12 @@ The preferred installation method only needs a Windows PC connected to the same 
 
 - Before you remove the card from your Windows PC, look at the card with windows explorer; the volume should be labeled "bootfs".  Create a new empty file called ssh in the top-level (root) directory by right-clicking, selecting New, Text Document, and then change the name to ssh (not ssh.txt).  You should get a window warning about changing the filename extension.  Click OK.  If you do not get this warning, you have created a file called ssh.txt and you need to rename it ssh.  IMPORTANT NOTE: by default, Windows (all versions) hides the .txt extension on the ssh file.  To change this, in Windows Explorer, select File, Options, click the View tab, and then untick "Hide extensions for known file types". Then click OK.
 
+- Create another file in the same folder called userconf.txt.  Paste in the single line below, and save the file.  This sets the default user as pi with the password raspberry.  You can change the password after the Portsdown has installed if required.
+
+```sh
+pi:$6$B6mdmoSQrTvKkAbL$Ocwu9m3VjPGpZEGe.uJvYNI4w/UcMUYTJjtt327ysNbmPRlnROBCvigF0nRsVFH.QhfsLozLj4OJS8lRT442N0
+```
+
 - Find the IP address of your Raspberry Pi using an IP Scanner (such as Advanced IP Scanner http://filehippo.com/download_advanced_ip_scanner/ for Windows, or Fing on an iPhone) to get the RPi's IP address.  The IP address is also visible on the touchscreen or HDMI screen about 8 lines from the bottom.
 
 - From your windows PC use Putty (http://www.chiark.greenend.org.uk/~sgtatham/putty/download.html) or kiTTY to log in to the IP address that you noted earlier.  You will get a Security warning the first time you try; this is normal.
