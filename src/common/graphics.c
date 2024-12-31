@@ -40,6 +40,11 @@ extern int mouse_x;                           // click x 0 - 799 from left
 extern int mouse_y;                           // click y 0 - 479 from bottom
 const int canvasXsize = 800;
 const int canvasYsize = 480;
+int Xinvert = 799;
+int Yinvert = 479;
+
+extern bool rotate_display;
+extern int FBOrientation;
 
 int32_t fbBytesPerPixel = 2;  // RGB565
 //int32_t fbBytesPerPixel = 4;  // RGBA8888
@@ -305,9 +310,6 @@ uint8_t waterfall_newcolour[256][3] =
 };
 
 
-
-
-
 uint32_t font_width_string(const font_t *font_ptr, char *string)
 {
     uint32_t total_width = 0;
@@ -530,8 +532,14 @@ void rectangle(int xpos, int ypos, int xsize, int ysize, int r, int g, int b)
     {
       for(y = 0; y < ysize; y++)  // Draw a vertical line
       {
-        p = (xpos + x + screenXsize * (479 - (ypos + y))) * 2;
-
+        if (FBOrientation == 0)
+        {
+          p = (xpos + x + screenXsize * (Yinvert - (ypos + y))) * 2;
+        }
+        else if (FBOrientation == 180)
+        {
+          p = (Xinvert - (xpos + x) + screenXsize * (ypos + y)) * 2;
+        }
         //memset(fbp + p,     gb, 1); 
         //memset(fbp + p + 1, rg, 1);
         memset(back_fbp + p,     gb, 1); 
@@ -614,6 +622,12 @@ void setPixel(int x, int y, uint8_t r, uint8_t g, uint8_t b)
 
   inv_y = 479 - y;
 
+  if (FBOrientation == 180)
+  {
+    x = Xinvert - x;
+    inv_y = Yinvert - inv_y;
+  }
+
   if ((x < screenXsize) && (inv_y < screenYsize) && (x >= 0) && (inv_y >= 0))
   {
     p=(x + screenXsize * inv_y) * 2;
@@ -628,6 +642,41 @@ void setPixel(int x, int y, uint8_t r, uint8_t g, uint8_t b)
     printf("Error: setPixelTrying to write pixel outside screen bounds. %d, %d\n", x, inv_y);
   }
 }
+
+
+void setInvPixel(int x, int y, uint8_t r, uint8_t g, uint8_t b)
+{
+  int p;      // Pixel Memory offset
+  int inv_y;  // y pos from bottom left
+  char gb;    // gggBBBbb RGB565 byte 2 (written first)
+  char rg;    // RRRrrGGG RGB565 byte 1 (written second)
+
+  gb = ((g & 0x1C) << 3) | (b  >> 3); // Take middle 3 Bits of G component and top 5 bits of Blue component
+  rg = (r & 0xF8) | (g >> 5);         // Take top 5 bits of Red component and top 3 bits of G component
+
+  inv_y = y;
+
+  if (FBOrientation == 180)
+  {
+    x = Xinvert - x;
+    inv_y = Yinvert - inv_y;
+  }
+
+  if ((x < screenXsize) && (inv_y < screenYsize) && (x >= 0) && (inv_y >= 0))
+  {
+    p=(x + screenXsize * inv_y) * 2;
+
+    //memset(fbp + p,     gb, 1); 
+    //memset(fbp + p + 1, rg, 1);
+    memset(back_fbp + p,     gb, 1); 
+    memset(back_fbp + p + 1, rg, 1);
+  }
+  else
+  {
+    printf("Error: setPixelTrying to write pixel outside screen bounds. %d, %d\n", x, inv_y);
+  }
+}
+
 
 void setLargePixel(int x, int y, int size, uint8_t R, uint8_t G, uint8_t B)
 {
@@ -661,6 +710,264 @@ void VertLine(int xpos, int ypos, int ysize, int r, int g, int b)
   rectangle(xpos, ypos, 1, ysize, r, g, b);
 }
 
+
+void DrawAALine(int x1, int y1, int x2, int y2, int rb, int gb, int bb, int rf, int gf, int bf)
+{
+  float yIntersect;
+  float xIntersect;
+  float yIntersect_offset;
+  float xIntersect_offset;
+  int x;
+  int y;
+  int r = 0;
+  int g = 0;
+  int b = 0;
+  int r_contrast;
+  int g_contrast;
+  int b_contrast;
+  //int p;     // Pixel Memory offset
+
+  // Check the line bounds first
+  if (((x1 < 0) || (x1 > screenXsize))
+   || ((x2 < 0) || (x2 > screenXsize))
+   || ((y1 < 1) || (y1 > screenXsize - 1))
+   || ((y2 < 1) || (y2 > screenXsize - 1)))
+  {
+    printf("DrawLine x1 %d y1 %d x2 %d y2 %d tried to write off-screen\n",x1, y1, x2, y2);
+  }
+  else
+  {
+    //printf("DrawLine x1 %d y1 %d x2 %d y2 %d tried to write\n",x1, y1, x2, y2);
+
+    if ((abs(x2 - x1) == abs(y2 - y1)) && (y2 - y1 != 0))  // 45 degree line
+    {
+      // No smoothing required, so
+      r = rf;
+      g = gf;
+      b = bf;
+      if (x1 < x2)  // 45 degree line on right hand side
+      {
+        //printf("45 RHS x %d y %d\n", x2 - x1, y2 - y1);
+        for (x = x1; x <= x2; x++)
+        {
+          y = y1 + (x - x1) * (y2 - y1)/abs(y2 - y1);
+
+          //p = (x + screenXsize * (479 - y)) * 4;
+
+          setPixel(x, y, r, g, b);
+
+          //memset(p + fbp,     b, 1);     // Blue
+          //memset(p + fbp + 1, g, 1);     // Green
+          //memset(p + fbp + 2, r, 1);     // Red
+          //memset(p + fbp + 3, 0x80, 1);  // A
+        }
+      }
+      else  // 45 degree line on left hand side
+      {
+        //printf("45 LHS x %d y %d\n", x2 - x1, y2 - y1);
+        for (x = x1; x >= x2; x--)
+        {
+          y = y1 + (x1 - x) * (y2 - y1)/abs(y2 - y1);
+          //p = (x + screenXsize * (479 - y)) * 4;
+
+          setPixel(x, y, r, g, b);
+
+          //memset(p + fbp,     b, 1);     // Blue
+          //memset(p + fbp + 1, g, 1);     // Green
+          //memset(p + fbp + 2, r, 1);     // Red
+          //memset(p + fbp + 3, 0x80, 1);  // A
+        }
+      }
+      return; // 45 degree line drawn.  Nothing else to do
+    }
+     
+    // Calculate contrast
+    r_contrast = rf - rb;
+    g_contrast = gf - gb;
+    b_contrast = bf - bb;
+
+    if (abs(x2 - x1) > abs(y2 - y1))  // Less than 45 degree gradient
+    {
+      if (x2 > x1)  // Rightwards line
+      {
+        //printf("Rightwards < 45 x %d y %d\n", x2 - x1, y2 - y1);
+        for (x = x1; x <= x2; x++)
+        {
+
+          yIntersect = (float)y1 + (float)(y2 - y1) * (float)(x - x1) / (float)(x2 - x1);
+          y = (int)yIntersect;
+          yIntersect_offset = yIntersect - (float)y;
+
+          r = rf + (int)((1.0 - yIntersect_offset) * (float)r_contrast);
+          g = gf + (int)((1.0 - yIntersect_offset) * (float)g_contrast);
+          b = bf + (int)((1.0 - yIntersect_offset) * (float)b_contrast);
+
+          setPixel(x, y, r, g, b);
+
+          //p = (x + screenXsize * (479 - y)) * 4;
+
+          //memset(p + fbp,     b, 1);     // Blue
+          //memset(p + fbp + 1, g, 1);     // Green
+          //memset(p + fbp + 2, r, 1);     // Red
+          //memset(p + fbp + 3, 0x80, 1);  // A
+
+          if (yIntersect_offset > 0.004)
+          {
+            r = rf + (int)(yIntersect_offset * (float)r_contrast);
+            g = gf + (int)(yIntersect_offset * (float)g_contrast);
+            b = bf + (int)(yIntersect_offset * (float)b_contrast);
+
+            y = y + 1;
+
+            setPixel(x, y, r, g, b);
+
+            //p = (x + screenXsize * (479 - y)) * 4;
+
+            //memset(p + fbp,     b, 1);     // Blue
+            //memset(p + fbp + 1, g, 1);     // Green
+            //memset(p + fbp + 2, r, 1);     // Red
+            //memset(p + fbp + 3, 0x80, 1);  // A
+          }
+        }
+      }
+      else if (x1 > x2) // Leftwards line
+      {
+        //printf("Leftwards < 45 x %d y %d\n", x2 - x1, y2 - y1);
+        for (x = x1; x >= x2; x--)
+        {
+          yIntersect = (float)y1 + (float)(y2 - y1) * (float)(x - x1) / (float)(x2 - x1);
+          y = (int)yIntersect;
+          yIntersect_offset = yIntersect - (float)y;
+
+          r = rf + (int)((1.0 - yIntersect_offset) * (float)r_contrast);
+          g = gf + (int)((1.0 - yIntersect_offset) * (float)g_contrast);
+          b = bf + (int)((1.0 - yIntersect_offset) * (float)b_contrast);
+
+          setPixel(x, y, r, g, b);
+
+          //p = (x + screenXsize * (479 - y)) * 4;
+
+          //memset(p + fbp,     b, 1);     // Blue
+          //memset(p + fbp + 1, g, 1);     // Green
+          //memset(p + fbp + 2, r, 1);     // Red
+          //memset(p + fbp + 3, 0x80, 1);  // A
+
+          if (yIntersect_offset > 0.004)
+          {
+            r = rf + (int)(yIntersect_offset * (float)r_contrast);
+            g = gf + (int)(yIntersect_offset * (float)g_contrast);
+            b = bf + (int)(yIntersect_offset * (float)b_contrast);
+
+            y = y + 1;
+
+            setPixel(x, y, r, g, b);
+
+            //p = (x + screenXsize * (479 - y)) * 4;
+
+            //memset(p + fbp,     b, 1);     // Blue
+            //memset(p + fbp + 1, g, 1);     // Green
+            //memset(p + fbp + 2, r, 1);     // Red
+            //memset(p + fbp + 3, 0x80, 1);  // A
+          }
+        }
+      }
+      else //  x1 = x2 so vertical line
+
+      {
+         printf("need to draw vertical\n");
+      }
+    }
+
+
+    if (abs(x2 - x1) < abs(y2 - y1))  // Nearer the vertical
+    {
+      if (y2 > y1)  // Upwards line
+      {
+        //printf("Upwards > 45 x %d y %d\n", x2 - x1, y2 - y1);
+        for (y = y1; y <= y2; y++)
+        {
+          xIntersect = (float)x1 + (float)(x2 - x1) * (float)(y - y1) / (float)(y2 - y1);
+          x = (int)xIntersect;
+          xIntersect_offset = xIntersect - (float)x;
+
+          r = rf + (int)((1.0 - xIntersect_offset) * (float)r_contrast);
+          g = gf + (int)((1.0 - xIntersect_offset) * (float)g_contrast);
+          b = bf + (int)((1.0 - xIntersect_offset) * (float)b_contrast);
+
+          setPixel(x, y, r, g, b);
+
+          //p = (x + screenXsize * (479 - y)) * 4;
+
+          //memset(p + fbp,     b, 1);     // Blue
+          //memset(p + fbp + 1, g, 1);     // Green
+          //memset(p + fbp + 2, r, 1);     // Red
+          //memset(p + fbp + 3, 0x80, 1);  // A
+
+          if (xIntersect_offset > 0.004)
+          {
+            r = rf + (int)(xIntersect_offset * (float)r_contrast);
+            g = gf + (int)(xIntersect_offset * (float)g_contrast);
+            b = bf + (int)(xIntersect_offset * (float)b_contrast);
+
+            x = x + 1;
+           
+            setPixel(x, y, r, g, b);
+
+            //p = (x + screenXsize * (479 - y)) * 4;
+
+            //memset(p + fbp,     b, 1);     // Blue
+            //memset(p + fbp + 1, g, 1);     // Green
+            //memset(p + fbp + 2, r, 1);     // Red
+            //memset(p + fbp + 3, 0x80, 1);  // A
+          }
+        }
+      }
+      else  // Downwards line
+      {
+        //printf("Downwards > 45 x %d y %d\n", x2 - x1, y2 - y1);
+        for (y = y1; y >= y2; y--)
+        {
+          xIntersect = (float)x1 + (float)(x2 - x1) * (float)(y - y1) / (float)(y2 - y1);
+          x = (int)xIntersect;
+          xIntersect_offset = xIntersect - (float)x;
+
+          r = rf + (int)((1.0 - xIntersect_offset) * (float)r_contrast);
+          g = gf + (int)((1.0 - xIntersect_offset) * (float)g_contrast);
+          b = bf + (int)((1.0 - xIntersect_offset) * (float)b_contrast);
+
+          setPixel(x, y, r, g, b);
+
+          //p = (x + screenXsize * (479 - y)) * 4;
+
+          //memset(p + fbp,     b, 1);     // Blue
+          //memset(p + fbp + 1, g, 1);     // Green
+          //memset(p + fbp + 2, r, 1);     // Red
+          //memset(p + fbp + 3, 0x80, 1);  // A
+
+          if (xIntersect_offset > 0.004)
+          {
+            r = rf + (int)(xIntersect_offset * (float)r_contrast);
+            g = gf + (int)(xIntersect_offset * (float)g_contrast);
+            b = bf + (int)(xIntersect_offset * (float)b_contrast);
+
+            x = x + 1;
+
+            setPixel(x, y, r, g, b);
+
+            //p = (x + screenXsize * (479 - y)) * 4;
+
+            //memset(p + fbp,     b, 1);     // Blue
+            //memset(p + fbp + 1, g, 1);     // Green
+            //memset(p + fbp + 2, r, 1);     // Red
+            //memset(p + fbp + 3, 0x80, 1);  // A
+          }
+        }
+      }
+    }
+  }
+}
+
+
 void MarkerGrn(int markerx, int x, int y)
 {
   int p;  // Pixel Memory offset
@@ -680,7 +987,14 @@ void MarkerGrn(int markerx, int x, int y)
         if ((y - 11 + row) > 10)  // on screen
         {
           //p = (x + screenXsize * (y - 11 + row)) * 4;
-          p = (x + screenXsize * (y - 11 + row)) * 2;
+          if (FBOrientation == 180)
+          {
+            p = ((Xinvert - x) + screenXsize * (Yinvert - (y - 11 + row))) * 2;
+          }
+          else
+          {
+            p = (x + screenXsize * (y - 11 + row)) * 2;
+          }
           memset(back_fbp + p + 1, 0x07, 1);
         }
       }
@@ -700,6 +1014,7 @@ void MarkerGrn(int markerx, int x, int y)
   }
 }
 
+
 screen_pixel_t waterfall_map(uint8_t value)
 {
   screen_pixel_t result;
@@ -711,7 +1026,6 @@ screen_pixel_t waterfall_map(uint8_t value)
 
   return result;
 }
-
 
 
 void closeScreen(void)
@@ -789,6 +1103,12 @@ void setCursorPixel(int x, int y, int level)
     rg = (level & 0xF8) | (level >> 5);         // Take top 5 bits of Red component and top 3 bits of G component
 
     inv_y = 479 - y;
+
+    if (FBOrientation == 180)
+    {
+      x = Xinvert - x;
+      inv_y = Yinvert - inv_y;
+    }
 
     p=(x + screenXsize * inv_y) * 2;
 
@@ -1116,47 +1436,90 @@ void fb2png()
   pngBytesPerPixel = 3;
   pngPitch = pngBytesPerPixel * pngWidth;
 
+  char gb;    // gggBBBbb RGB565 byte 2 (written first)
+  char rg;    // RRRrrGGG RGB565 byte 1 (written second)
+  char r;
+  char g;
+  char b;
+
   void *pngImagePtr = malloc(pngPitch * pngHeight);
 
   //fbPitch = fbBytesPerPixel  * pngWidth;
   fbPitch = fbBytesPerPixel  * screenXsize;
+  uint8_t *pngPixelPtr = pngImagePtr;
+  char *fbPixelPtr = fbp;
+
 
   uint32_t fbXoffset;
   uint32_t fbYoffset;
 
-  for (j = 0 ; j < pngHeight ; j++)       // For each line
+  if (FBOrientation == 0)
   {
-    fbYoffset = j * fbPitch;              // calculate input framebuffer offset at left hand end of line
-
-    for (i = 0 ; i < pngWidth ; i++)      // for each pixel in the output png
+    for (j = 0 ; j < pngHeight ; j++)       // For each line
     {
-      char gb;    // gggBBBbb RGB565 byte 2 (written first)
-      char rg;    // RRRrrGGG RGB565 byte 1 (written second)
-      char r;
-      char g;
-      char b;
+      fbYoffset = j * fbPitch;              // calculate input framebuffer offset at left hand end of line
+    printf("\n*********** Non Rotated snap\n\n");
 
-      fbXoffset = i * fbBytesPerPixel;    // calculate the input framebuffer offset for the pixel
 
-      uint8_t *pngPixelPtr = pngImagePtr + (i * pngBytesPerPixel) + (j * pngPitch);  // Set the png pointer
+      for (i = 0 ; i < pngWidth ; i++)      // for each pixel in the output png
+      {
 
-      char *fbPixelPtr = fbp + fbXoffset + fbYoffset;                                // Set the framebuffer pointer                                
+        fbXoffset = i * fbBytesPerPixel;    // calculate the input framebuffer offset for the pixel
 
-      // take the bytes at *fbPixelPtr and *fbPixelPtr + 1
-      gb = *fbPixelPtr;
-      fbPixelPtr = fbPixelPtr +1;
-      rg = *fbPixelPtr;
+        pngPixelPtr = pngImagePtr + (i * pngBytesPerPixel) + (j * pngPitch);     // Set the png pointer
 
-      //  Convert RGB565) to RGB888
+        fbPixelPtr = fbp + fbXoffset + fbYoffset;                                // Set the framebuffer pointer                                
 
-      r = rg & 0xF8;
-      g = ((rg & 0x07) << 5) | ((gb & 0xE0) >> 3);
-      b = (gb & 0x1F) << 3;
+        // take the bytes at *fbPixelPtr and *fbPixelPtr + 1
+        gb = *fbPixelPtr;
+        fbPixelPtr = fbPixelPtr +1;
+        rg = *fbPixelPtr;
 
-      // write to png buffer
-      memset(pngPixelPtr, r, 1);
-      memset(pngPixelPtr + 1, g, 1);
-      memset(pngPixelPtr + 2, b, 1);
+        //  Convert RGB565 to RGB888
+
+        r = rg & 0xF8;
+        g = ((rg & 0x07) << 5) | ((gb & 0xE0) >> 3);
+        b = (gb & 0x1F) << 3;
+
+        // write to png buffer
+        memset(pngPixelPtr, r, 1);
+        memset(pngPixelPtr + 1, g, 1);
+        memset(pngPixelPtr + 2, b, 1);
+      }
+    }
+  }
+  else if (FBOrientation == 180)  //   
+  {
+
+    for (j = 0 ; j < pngHeight ; j++)       // For each line
+    {
+      fbYoffset = (pngHeight - 1 - j) * fbPitch;    // calculate input framebuffer offset at left hand end of the line, bottom line first
+
+      for (i = 0 ; i < pngWidth ; i++)      // for each pixel in the output png
+      {
+
+        fbXoffset = (pngWidth - 1 - i) * fbBytesPerPixel;    // calculate the input framebuffer offset for the pixel starting at the right
+
+        fbPixelPtr = fbp + fbXoffset + fbYoffset;                                // Set the framebuffer pointer                                
+
+        // take the bytes at *fbPixelPtr and *fbPixelPtr + 1
+        gb = *fbPixelPtr;
+        fbPixelPtr = fbPixelPtr + 1;
+        rg = *fbPixelPtr;
+
+        //  Convert RGB565 to RGB888
+
+        r = rg & 0xF8;
+        g = ((rg & 0x07) << 5) | ((gb & 0xE0) >> 3);
+        b = (gb & 0x1F) << 3;
+
+        pngPixelPtr = pngImagePtr + (i * pngBytesPerPixel) + (j * pngPitch);     // Set the png pointer
+
+        // write to png buffer
+        memset(pngPixelPtr, r, 1);
+        memset(pngPixelPtr + 1, g, 1);
+        memset(pngPixelPtr + 2, b, 1);
+      }
     }
   }
 

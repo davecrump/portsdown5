@@ -195,9 +195,19 @@ echo "-----------------------------------------------"
 echo "----- Amending cmdline.txt and config.txt -----"
 echo "-----------------------------------------------"
 
+# Todo - check latest comdline.txt in initial build!!!!!!!!!!!!!!!!!!!!!!!!
+
+# Set touchscreen to 16 bit per pixel
+#sudo sed -i 's/800x480M@60/800x480M-16@60/' /boot/firmware/cmdline.txt
+
 # Rotate the touchscreen display to the normal orientation 
 if !(grep video=DSI-1 /boot/firmware/cmdline.txt) then
-  sudo sed -i '1s,$, video=DSI-1:800x480M@60\,rotate=180,' /boot/firmware/cmdline.txt
+  sudo sed -i '1s,$, video=DSI-1:800x480M-16@60\,rotate=180,' /boot/firmware/cmdline.txt
+fi
+
+# Rotate the touchscreen 2 display to the normal orientation 
+if !(grep video=DSI-2 /boot/firmware/cmdline.txt) then
+  sudo sed -i '1s,$, video=DSI-2:720x1280@60,rotate=270,' /boot/firmware/cmdline.txt
 fi
 
 # Set the default HDMI 0 output to 720p60
@@ -226,10 +236,31 @@ fi
 
 # Install the command-line aliases
 echo "alias ugui='/home/pi/portsdown/utils/uguir.sh'" >> /home/pi/.bash_aliases
+echo "alias gui='/home/pi/portsdown/utils/guir.sh'"  >> /home/pi/.bash_aliases
 echo "alias stop='/home/pi/portsdown/utils/stop.sh'"  >> /home/pi/.bash_aliases
+echo "alias ulsa='/home/pi/portsdown/utils/ulsa.sh'"  >> /home/pi/.bash_aliases
+echo "alias ulsabv='/home/pi/portsdown/utils/ulsabv.sh'"  >> /home/pi/.bash_aliases
+echo "alias ulsch='/home/pi/portsdown/utils/ulsch.sh'"  >> /home/pi/.bash_aliases
 
 echo
 echo "Amendments made"
+
+echo
+echo "-------------------------------"
+echo "----- Installing WiringPi -----"
+echo "-------------------------------"
+
+cd /home/pi
+git clone https://github.com/WiringPi/WiringPi.git
+  SUCCESS=$?; BuildLogMsg $SUCCESS "Wiring Pi Git Clone"
+cd WiringPi
+./build debian
+  SUCCESS=$?; BuildLogMsg $SUCCESS "Wiring Pi Build"
+mv debian-template/wiringpi_3.10_arm64.deb .
+  SUCCESS=$?; BuildLogMsg $SUCCESS "Moved wiringpi_3.10_arm64.deb"
+sudo apt install ./wiringpi_3.10_arm64.deb
+  SUCCESS=$?; BuildLogMsg $SUCCESS "Installed Wiring Pi"
+cd /home/pi
 
 # Download the previously selected version of Portsdown 5
 echo
@@ -240,7 +271,6 @@ echo "--------------------------------------------"
 cd /home/pi
 wget https://github.com/${GIT_SRC}/portsdown5/archive/main.zip
   SUCCESS=$?; BuildLogMsg $SUCCESS "Portsdown 5 download from GitHub"
-
 # Unzip the portsdown software and copy to the Pi
 unzip -o main.zip
 mv portsdown5-main portsdown

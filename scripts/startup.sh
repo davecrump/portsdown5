@@ -85,17 +85,18 @@ MODE_STARTUP=$(get_config_var startup $SCONFIGFILE)
 #sudo fbi -T 1 -noverbose -a /home/pi/rpidatv/scripts/images/BATC_Black.png >/dev/null 2>/dev/null
 #(sleep 1; sudo killall -9 fbi >/dev/null 2>/dev/null) &  ## kill fbi once it has done its work
 
-# Select the appropriate action
+# Exit (without display parameter initialisation) if Null_boot requested
 
-case "$MODE_STARTUP" in
-  Prompt)
-    # Do nothing
-    exit
-  ;;
-  *)
-    # Start the Touchscreen Scheduler
-    source /home/pi/portsdown/scripts/scheduler.sh
-  ;;
-esac
+if [ $MODE_STARTUP == Null_boot ] ; then
+  exit
+fi
 
+# Sort out the display orientation and size
+source /home/pi/portsdown/scripts/display_check_on_boot.sh
+
+# Start the Touchscreen Scheduler
+source /home/pi/portsdown/scripts/scheduler.sh
+
+# Scheduler only returns when Portsdown is stopped
+exit
 
