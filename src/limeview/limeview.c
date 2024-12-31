@@ -73,6 +73,8 @@ color_t Black = {.r = 0  , .g = 0  , .b = 0  };
 #define PATH_SCONFIG "/home/pi/portsdown/configs/system_config.txt"
 #define PATH_CONFIG "/home/pi/portsdown/configs/limeview_config.txt"
 
+bool invert_display = true;
+
 #define MAX_BUTTON 675
 int IndexButtonInArray=0;
 button_t ButtonArray[MAX_BUTTON];

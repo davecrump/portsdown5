@@ -132,6 +132,16 @@ ChooseBandViewerSDR()
 # 150  Run the Meteor Viewer
 # 151  Exit from gui requesting start of LimeSDR BandViewer
 # 160  Shutdown from GUI
+# 170  Spectrum Analyser Scheduler
+# 171  Spectrum Analyser DATV RX on IF
+# 172  Spectrum Analyser Direct DATV RX
+# 173  Spectrum Analyser Bolo power Meter
+# 174  Spectrum Analyser power detector
+# 175  Spectrum Analyser LimeSDR
+# 176  Spectrum Analyser LimeSDR fft on IF
+# 177  Spectrum Analyser Swept
+# 178  Spectrum Analyser TG Swept
+# 179  Spectrum Analyser TG Zero
 # 192  Reboot from GUI
 # 193  Rotate 7 inch and reboot
 # 197  Start Ryde RX
@@ -146,55 +156,34 @@ MODE_STARTUP=$(get_config_var startup $SCONFIGFILE)
 #cp /home/pi/portsdown/scripts/images/web_not_enabled.png /home/pi/tmp/screen.png
 
 case "$MODE_STARTUP" in
-  Testmenu_boot)
-    # Start the Portsdown in the test equipment menu
-    GUI_RETURN_CODE=207
-  ;;
-  Transmit_boot)
-    # Start the Portsdown in Transmit Mode
-    GUI_RETURN_CODE=199
-  ;;
-  Receive_boot)
-    # Start the Portsdown in Receive Mode
-    GUI_RETURN_CODE=198
-  ;;
-  Ryde_boot)
-    # Start the Ryde Receiver
-    GUI_RETURN_CODE=197
-  ;;
   Portsdown_boot)
     # Start the Portsdown Touchscreen
     GUI_RETURN_CODE=129
-  ;;
-  Langstone_boot)
-    # Start the Langstone
-    LANGSTONE_VERSION=$(get_config_var langstone $PCONFIGFILE)
-    case "$LANGSTONE_VERSION" in
-      v1pluto)
-        GUI_RETURN_CODE=135
-      ;;
-      v2lime)
-        GUI_RETURN_CODE=145
-      ;;
-      v2pluto)
-        GUI_RETURN_CODE=146
-      ;;
-      none)
-        GUI_RETURN_CODE=129
-      ;;
-    esac
   ;;
   Bandview_boot)
     # Start the Band Viewer
     ChooseBandViewerSDR
     GUI_RETURN_CODE=$BANDVIEW_START_CODE
   ;;
-  Meteorview_boot)
-    # Start the Meteor Viewer
-    GUI_RETURN_CODE=150
-    DisplayMsg "Waiting 15 seconds for the\n\nLeo Bodnar GPS Ref to stabilise"
-    #/home/pi/portsdown/scripts/single_screen_grab_for_web.sh &
-    sleep 15  # Wait for the Leo Bodnar frequency reference to stabilise
+  Testmenu_boot)
+    # Start the Portsdown in the test equipment menu
+    GUI_RETURN_CODE=207
+  ;;
+  SA_boot)
+    # Start the spectrum analyser
+    GUI_RETURN_CODE=170
+  ;;
+  Null_boot)
+    # Exit the scheduler
+    exit
+  ;;
+  TX_boot)
+    # Start the Portsdown in Transmit Mode
+    GUI_RETURN_CODE=199
+  ;;
+  RX_boot)
+    # Start the Portsdown in Receive Mode
+    GUI_RETURN_CODE=198
   ;;
   *)
     # Default to Portsdown
@@ -204,7 +193,8 @@ esac
 
 while [ "$GUI_RETURN_CODE" -gt 127 ] || [ "$GUI_RETURN_CODE" -eq 0 ];  do
 
-# echo $GUI_RETURN_CODE
+echo "Calling App "$GUI_RETURN_CODE" from scheduler"
+echo
 
   case "$GUI_RETURN_CODE" in
     0)
@@ -429,6 +419,46 @@ while [ "$GUI_RETURN_CODE" -gt 127 ] || [ "$GUI_RETURN_CODE" -eq 0 ];  do
       sudo swapoff -a
       sudo shutdown now
       break
+    ;;
+    170)
+      /home/pi/portsdown/bin/sa_sched
+      GUI_RETURN_CODE="$?"
+    ;;
+    171)
+      /home/pi/portsdown/bin/portsdown
+      GUI_RETURN_CODE="$?"
+    ;;
+    172)
+      /home/pi/portsdown/bin/portsdown
+      GUI_RETURN_CODE="$?"
+    ;;
+    173)
+      /home/pi/portsdown/bin/portsdown
+      GUI_RETURN_CODE="$?"
+    ;;
+    174)
+      /home/pi/portsdown/bin/portsdown
+      GUI_RETURN_CODE="$?"
+    ;;
+    175)
+      /home/pi/portsdown/bin/sa_sdr
+      GUI_RETURN_CODE="$?"
+    ;;
+    176)
+      /home/pi/portsdown/bin/sa_bv
+      GUI_RETURN_CODE="$?"
+    ;;
+    177)
+      /home/pi/portsdown/bin/sa_if
+      GUI_RETURN_CODE="$?"
+    ;;
+    178)
+      /home/pi/portsdown/bin/sa_if             # future parameter here
+      GUI_RETURN_CODE="$?"
+    ;;
+    179)
+      /home/pi/portsdown/bin/sa_bv             # future parameter here
+      GUI_RETURN_CODE="$?"
     ;;
     192)
       PLUTOIP=$(get_config_var plutoip $PCONFIGFILE)

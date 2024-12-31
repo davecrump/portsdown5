@@ -1,0 +1,25 @@
+Menu 1  Main Menu
+Menu 2  DATV Receive Menu
+Menu 3  Config Menu
+Menu 4  File Menu
+Menu 5  DATV Tools Menu
+Menu 6  System Config Menu
+Menu 7  Test Equipment Menu
+Menu 8
+Menu 9
+Menu 10
+Menu 11 Modulation Selection Menu
+Menu 12 Video Encoding Selection Menu
+Menu 13 Output Device Selection Menu
+Menu 14 Video Format Selection Menu
+Menu 15 Video Source Selection Menu
+Menu 16 Transmit Frequency Selection Menu
+Menu 17 Transmit Symbol Rate Menu
+Menu 18 Transmit FEC Menu
+Menu 19 Band Selection Menu
+Menu 20 SDR Gain Menu
+Menu 21 Start-up App
+Menu 22 Display and Control Menu
+
+
+  

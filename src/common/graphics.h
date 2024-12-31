@@ -34,6 +34,7 @@ void setPixel(int x, int y, uint8_t r, uint8_t g, uint8_t b);
 void setLargePixel(int x, int y, int size, uint8_t r, uint8_t g, uint8_t b);
 void HorizLine(int xpos, int ypos, int xsize, int r, int g, int b);
 void VertLine(int xpos, int ypos, int ysize, int r, int g, int b);
+void DrawAALine(int x1, int y1, int x2, int y2, int rb, int gb, int bb, int rf, int gf, int bf);
 void closeScreen(void);
 int initScreen(void);
 void MarkerGrn(int markerx, int x, int y);

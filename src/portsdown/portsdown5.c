@@ -51,13 +51,22 @@ color_t Grey  = {.r = 127, .g = 127, .b = 127};
 color_t Red   = {.r = 255, .g = 0  , .b = 0  };
 color_t Black = {.r = 0  , .g = 0  , .b = 0  };
 
+bool invert_display = true;
+
 #define MAX_BUTTON_ON_MENU 30
 #define MAX_MENUS 50
 
 int debug_level = 0;                   // 0 minimum, 1 medium, 2 max
 int fd = 0;                            // File Descriptor for touchscreen touch messages
 
-char DisplayType[31];
+char StartApp[63];                     // Startup app on boot
+char DisplayType[31];                  // Element14_7, touch2, hdmi, web
+int VLCTransform = 0;                  // 0, 90, 180 or 270
+int FBOrientation = 0;                 // 0, 90, 180 or 270
+int HDMIResolution = 720;              // HDMI Resolution 720/1080
+bool TouchInverted = false;            // true if screen mounted upside down
+bool KeyLimePiEnabled = true;          // false for release
+
 int hscreen = 480;
 int wscreen = 800;
   // -25 keeps right hand side symmetrical with left hand side
@@ -107,7 +116,6 @@ int TouchY;
 int TouchTrigger = 0;
 bool touchneedsinitialisation = true;
 bool VirtualTouch = false;             // used to simulate a screen touch if a monitored event finishes
-bool touch_inverted = true;            // true if touchscreen is inverted (PCB print inverted, ribbon on left) 
 
 // Mouse control variables
 bool mouse_connected = false;          // Set true if mouse detected at startup
@@ -115,7 +123,7 @@ bool mouse_active = false;             // set true after first movement of mouse
 bool MouseClickForAction = false;      // set true on left click of mouse
 int mouse_x;                           // click x 0 - 799 from left
 int mouse_y;                           // click y 0 - 479 from top
-bool touchscreen_present = true;       // detected on startup; used to control menu availability
+bool touchscreen_present = false;      // detected on startup; used to control mouse device address
 bool reboot_required = false;          // used after hdmi display change
 
 // Web Control globals
@@ -148,7 +156,16 @@ pthread_t thtouchscreen;               //  listens to the touchscreen
 pthread_t thwebclick;                  //  Listens for clicks from web interface
 pthread_t thmouse;                     //  Listens to the mouse
 
-// ******************* Function Prototypes **********************************//
+// ******************* External functions for reference *********************
+
+// *************** hardware.c: ***************
+
+// int CheckMouse();
+// void GetIPAddr(char IPAddress[18]);
+// void GetIPAddr2(char IPAddress[18]);
+// void Get_wlan0_IPAddr(char IPAddress[18]);
+
+// ******************* Function Prototypes **********************************
 
 // Read and write the configuration
 void GetConfigParam(char *PathConfigFile, char *Param, char *Value);
@@ -200,8 +217,14 @@ void Define_Menu1();
 void Highlight_Menu1();
 void Define_Menu2();
 void Highlight_Menu2();
+void Define_Menu3();
+void Highlight_Menu3();
 void Define_Menu4();
 void Highlight_Menu4();
+void Define_Menu5();
+void Highlight_Menu5();
+void Define_Menu6();
+void Highlight_Menu6();
 void Define_Menu7();
 void Highlight_Menu7();
 void Define_Menu11();
@@ -224,6 +247,10 @@ void Define_Menu19();
 void Highlight_Menu19();
 void Define_Menu20();
 void Highlight_Menu20();
+void Define_Menu21();
+void Highlight_Menu21();
+void Define_Menu22();
+void Highlight_Menu22();
 void Define_Menus();
 
 // Action Menu Buttons
@@ -237,6 +264,15 @@ void selectFreqoutput(int Button);
 void selectFEC(int Button);
 void selectBand(int Button);
 void selectGain(int Button);
+void SelectStartApp(int Button);
+void togglewebcontrol();
+void togglehdmiresolution();
+void togglescreenorientation();
+
+
+// Useful stuff
+
+void InfoScreen();
 
 // Make things happen
 void UpdateWeb();
@@ -473,6 +509,37 @@ void ReadSavedParams()
 
   // System Config File
 
+  strcpy(response, "0");  // highlight null responses
+  GetConfigParam(PATH_PCONFIG, "startup", response);
+  strcpy(StartApp, response);
+
+  strcpy(response, "0");  // highlight null responses
+  GetConfigParam(PATH_SCONFIG, "display", response);
+  strcpy (DisplayType, response);
+
+  strcpy(response, "0");  // highlight null responses
+  GetConfigParam(PATH_SCONFIG, "vlctransform", response);
+  VLCTransform = atoi(response);
+
+  strcpy(response, "0");  // highlight null responses
+  GetConfigParam(PATH_SCONFIG, "fborientation", response);
+  FBOrientation = atoi(response);
+
+  strcpy(response, "0");  // highlight null responses
+  GetConfigParam(PATH_SCONFIG, "hdmiresolution", response);
+  HDMIResolution = atoi(response);
+
+  strcpy(response, "0");  // highlight null responses
+  GetConfigParam(PATH_SCONFIG, "touch", response);
+  if (strcmp(response, "normal") == 0)
+  {
+    TouchInverted = false;
+  }
+  else
+  {
+    TouchInverted = true;
+  }
+
   strcpy(response, "disabled");   
   GetConfigParam(PATH_SCONFIG, "webcontrol", response);
   if (strcmp(response, "enabled") == 0)
@@ -487,9 +554,16 @@ void ReadSavedParams()
     system("cp /home/pi/portsdown/images/web_not_enabled.png /home/pi/tmp/screen.png");
   }
 
-
-  //strcpy(PlotTitle, "-");  // this is the "do not display" response
-  //GetConfigParam(PATH_CONFIG, "title", PlotTitle);
+  strcpy(response, "disabled");   
+  GetConfigParam(PATH_SCONFIG, "keylimepi", response);
+  if (strcmp(response, "enabled") == 0)
+  {
+    KeyLimePiEnabled = true;
+  }
+  else
+  {
+    KeyLimePiEnabled = false;
+  }
 }
 
 
@@ -560,27 +634,42 @@ int getTouchScreenDetails(int *screenXmin,int *screenXmax,int *screenYmin,int *s
   int abs[6] = {0};
 
   ioctl(fd, EVIOCGNAME(sizeof(name)), name);
-  printf("Input device name: \"%s\"\n", name);
+  if (debug_level >= 1)
+  {
+    printf("Input device name: \"%s\"\n", name);
+  }
 
   memset(bit, 0, sizeof(bit));
   ioctl(fd, EVIOCGBIT(0, EV_MAX), bit[0]);
-  printf("Supported events:\n");
+  if (debug_level >= 1)
+  {
+    printf("Supported events:\n");
+  }
 
-  int i,j,k;
-  int IsAtouchDevice=0;
+  int i, j, k;
+  int IsAtouchDevice = 0;
   for (i = 0; i < EV_MAX; i++)
   {
     if (test_bit(i, bit[0]))
     {
-      printf("  Event type %d (%s)\n", i, events[i] ? events[i] : "?");
+      if (debug_level >= 1)
+      {
+        printf("  Event type %d (%s)\n", i, events[i] ? events[i] : "?");
+      }
       if (!i) continue;
       ioctl(fd, EVIOCGBIT(i, KEY_MAX), bit[i]);
       for (j = 0; j < KEY_MAX; j++)
       {
         if (test_bit(j, bit[i]))
         {
-          printf("    Event code %d (%s)\n", j, names[i] ? (names[i][j] ? names[i][j] : "?") : "?");
-          if(j==330) IsAtouchDevice=1;
+          if (debug_level >= 1)
+          {
+            printf("    Event code %d (%s)\n", j, names[i] ? (names[i][j] ? names[i][j] : "?") : "?");
+          }
+          if (j == 330)
+          {
+            IsAtouchDevice = 1;
+          }
           if (i == EV_ABS)
           {
             ioctl(fd, EVIOCGABS(j), abs);
@@ -588,7 +677,10 @@ int getTouchScreenDetails(int *screenXmin,int *screenXmax,int *screenYmin,int *s
             {
               if ((k < 3) || abs[k])
               {
-                printf("     %s %6d\n", absval[k], abs[k]);
+                if (debug_level >= 1)
+                {
+                  printf("     %s %6d\n", absval[k], abs[k]);
+                }
                 if (j == 0)
                 {
                   if ((strcmp(absval[k],"Min  ")==0)) *screenXmin =  abs[k];
@@ -613,15 +705,6 @@ int getTouchScreenDetails(int *screenXmin,int *screenXmax,int *screenYmin,int *s
 int getTouchSampleThread(int *rawX, int *rawY)
 {
   int i;
-  static bool awaitingtouchstart;
-  static bool touchfinished;
-
-  if (touchneedsinitialisation == true)
-  {
-    awaitingtouchstart = true;
-    touchfinished = true;
-    touchneedsinitialisation = false;
-  }
 
   /* how many bytes were read */
   size_t rb;
@@ -629,8 +712,7 @@ int getTouchSampleThread(int *rawX, int *rawY)
   /* the events (up to 64 at once) */
   struct input_event ev[64];
 
-  if (((strcmp(DisplayType, "Element14_7") == 0) || (touchscreen_present == true))
-      && (strcmp(DisplayType, "dfrobot5") != 0))   // Browser or Element14_7, but not dfrobot5
+  if (strcmp(DisplayType, "Element14_7") == 0)
   {
     // Program flow blocks here until there is a touch event
     rb = read(fd, ev, sizeof(struct input_event) * 64);
@@ -683,7 +765,7 @@ int getTouchSampleThread(int *rawX, int *rawY)
 
       if((*rawX != -1) && (*rawY != -1) && (StartTouch == 1))  // 1a
       {
-        if (touch_inverted == true)
+        if (TouchInverted == false)
         {
           scaledX = *rawX;
           scaledY = 479 - *rawY;
@@ -694,78 +776,6 @@ int getTouchSampleThread(int *rawX, int *rawY)
           scaledY = *rawY; // ////////////////////////////// This needs testing!!
         }
         printf("7 inch Touchscreen Touch Event: rawX = %d, rawY = %d scaledX = %d, scaledY = %d\n", *rawX, *rawY, scaledX, scaledY);
-        return 1;
-      }
-    }
-  }
-
-  if (strcmp(DisplayType, "dfrobot5") == 0)
-  {
-    // Program flow blocks here until there is a touch event
-    rb = read(fd, ev, sizeof(struct input_event) * 64);
-
-    if (awaitingtouchstart == true)
-    {    
-      *rawX = -1;
-      *rawY = -1;
-      touchfinished = false;
-    }
-
-    for (i = 0;  i <  (rb / sizeof(struct input_event)); i++)
-    {
-      //printf("rawX = %d, rawY = %d, rawPressure = %d, \n\n", *rawX, *rawY, *rawPressure);
-
-      if (ev[i].type ==  EV_SYN)
-      {
-        //printf("Event type is %s%s%s = Start of New Event\n",
-        //        KYEL, events[ev[i].type], KWHT);
-      }
-
-      else if (ev[i].type == EV_KEY && ev[i].code == 330 && ev[i].value == 1)
-      {
-        awaitingtouchstart = false;
-        touchfinished = false;
-
-        //printf("Event type is %s%s%s & Event code is %sTOUCH(330)%s & Event value is %s1%s = Touch Starting\n",
-        //        KYEL,events[ev[i].type],KWHT,KYEL,KWHT,KYEL,KWHT);
-      }
-
-      else if (ev[i].type == EV_KEY && ev[i].code == 330 && ev[i].value == 0)
-      {
-        awaitingtouchstart = false;
-        touchfinished = true;
-
-        //printf("Event type is %s%s%s & Event code is %sTOUCH(330)%s & Event value is %s0%s = Touch Finished\n",
-        //        KYEL,events[ev[i].type],KWHT,KYEL,KWHT,KYEL,KWHT);
-      }
-
-      else if (ev[i].type == EV_ABS && ev[i].code == 0 && ev[i].value > 0)
-      {
-        //printf("Event type is %s%s%s & Event code is %sX(0)%s & Event value is %s%d%s\n",
-        //        KYEL, events[ev[i].type], KWHT, KYEL, KWHT, KYEL, ev[i].value, KWHT);
-        *rawX = ev[i].value;
-      }
-
-      else if (ev[i].type == EV_ABS  && ev[i].code == 1 && ev[i].value > 0)
-      {
-        //printf("Event type is %s%s%s & Event code is %sY(1)%s & Event value is %s%d%s\n",
-        //        KYEL, events[ev[i].type], KWHT, KYEL, KWHT, KYEL, ev[i].value, KWHT);
-        *rawY = ev[i].value;
-      }
-
-      else if (ev[i].type == EV_ABS  && ev[i].code == 24 && ev[i].value > 0)
-      {
-        //printf("Event type is %s%s%s & Event code is %sPressure(24)%s & Event value is %s%d%s\n",
-        //        KYEL, events[ev[i].type], KWHT, KYEL, KWHT, KYEL, ev[i].value,KWHT);
-        //*rawPressure = ev[i].value;
-      }
-
-      if((*rawX != -1) && (*rawY != -1) && (touchfinished == true))  // 1a
-      {
-        //printf("DFRobot Touch Event: rawX = %d, rawY = %d, rawPressure = %d\n", *rawX, *rawY, *rawPressure);
-        printf("DFRobot Touch Event: rawX = %d, rawY = %d, \n", *rawX, *rawY);
-        awaitingtouchstart = true;
-        touchfinished = false;
         return 1;
       }
     }
@@ -844,11 +854,23 @@ void *WaitMouseEvent(void * arg)
 
   bool left_button_action = false;
 
-  if ((fd = open("/dev/input/event0", O_RDONLY)) < 0)
+  if (touchscreen_present == false)  // so mouse on event0
   {
-    perror("evdev open");
-    exit(1);
+    if ((fd = open("/dev/input/event0", O_RDONLY)) < 0)
+    {
+      perror("evdev open");
+      exit(1);
+    }
   }
+  else  // touchscreen present so mouse is on event1
+  {
+    if ((fd = open("/dev/input/event1", O_RDONLY)) < 0)
+    {
+      perror("evdev open");
+      exit(1);
+    }
+  }
+
   struct input_event ev;
 
   while(app_exit == false)
@@ -868,7 +890,7 @@ void *WaitMouseEvent(void * arg)
         {
           x = 799;
         }
-        //printf("value %d, type %d, code %d, x_pos %d, y_pos %d\n",ev.value,ev.type,ev.code, x, y);
+        // printf("value %d, type %d, code %d, x_pos %d, y_pos %d\n",ev.value,ev.type,ev.code, x, y);
         moveCursor(x, y);
       }
       else if (ev.code == 1) // y
@@ -882,7 +904,7 @@ void *WaitMouseEvent(void * arg)
         {
           y = 479;
         }
-        //printf("value %d, type %d, code %d, x_pos %d, y_pos %d\n",ev.value,ev.type,ev.code, x, y);
+        // printf("value %d, type %d, code %d, x_pos %d, y_pos %d\n",ev.value,ev.type,ev.code, x, y);
 //        while (image_complete == false)  // Wait for menu to be drawn
 //        {
 //          usleep(1000);
@@ -1448,6 +1470,33 @@ void redrawMenu()
     case 1:
       Highlight_Menu1();
       break;
+    case 2:
+      Highlight_Menu2();
+      break;
+    case 3:
+      Highlight_Menu3();
+      break;
+    case 4:
+      Highlight_Menu4();
+      break;
+    case 5:
+      Highlight_Menu5();
+      break;
+    case 6:
+      Highlight_Menu6();
+      break;
+    case 7:
+      Highlight_Menu7();
+      break;
+//    case 8:
+//      Highlight_Menu8();
+//      break;
+//    case 9:
+//      Highlight_Menu9();
+//      break;
+//    case 10:
+//      Highlight_Menu10();
+//      break;
     case 11:
       Highlight_Menu11();
       break;
@@ -1477,6 +1526,12 @@ void redrawMenu()
       break;
     case 20:
       Highlight_Menu20();
+      break;
+    case 21:
+      Highlight_Menu21();
+      break;
+    case 22:
+      Highlight_Menu22();
       break;
   }
   
@@ -1896,6 +1951,24 @@ void Highlight_Menu2()
 }
 
 
+void Define_Menu3()
+{
+  strcpy(MenuTitle[3], "Portsdown 5 Config Menu (3)");
+
+  AddButtonStatus(3, 0, "System^Config", &Blue);
+
+  AddButtonStatus(3, 1, "Disp/Ctrl^Config", &Blue);
+
+  AddButtonStatus(3, 4, "Return to^Main Menu", &Blue);
+}
+
+
+void Highlight_Menu3()
+{
+
+}
+
+
 void Define_Menu4()
 {
   strcpy(MenuTitle[4], "Portsdown 5 File Menu (4)");
@@ -1903,6 +1976,8 @@ void Define_Menu4()
   AddButtonStatus(4, 0, "Reboot^System", &Blue);
 
   AddButtonStatus(4, 1, "Restart^Portsdown", &Blue);
+
+  AddButtonStatus(4, 2, "Info", &Blue);
 
   AddButtonStatus(4, 4, "Return to^Main Menu", &Blue);
 
@@ -1914,6 +1989,40 @@ void Highlight_Menu4()
 {
 
 }
+
+void Define_Menu5()
+{
+  strcpy(MenuTitle[5], "Portsdown 5 DATV Tools Menu (4)");
+
+  AddButtonStatus(5, 5, "IPTS^Monitor", &Blue);
+
+  AddButtonStatus(5, 4, "Return to^Main Menu", &Blue);
+
+
+}
+
+
+void Highlight_Menu5()
+{
+
+}
+
+
+void Define_Menu6()
+{
+  strcpy(MenuTitle[6], "System Config Menu (6)");
+
+  AddButtonStatus(6, 0, "Start-up^App", &Blue);
+
+  AddButtonStatus(6, 4, "Return to^Main Menu", &Blue);
+}
+
+
+void Highlight_Menu6()
+{
+
+}
+
 
 
 void Define_Menu7()
@@ -1929,16 +2038,22 @@ void Define_Menu7()
   //AddButtonStatus(7, 17, "720p^720x1280", &Blue);
   //AddButtonStatus(7, 17, "720p^720x1280", &Green);
 
-  //AddButtonStatus(7, 18, "1080p^1080x1920", &Blue);
-  //AddButtonStatus(7, 18, "1080p^1080x1920", &Green);
+  AddButtonStatus(7, 0, "Switch to^KeyLimePi SA", &Blue);
+  AddButtonStatus(7, 0, "Switch to^KeyLimePi SA", &Grey);
 
   AddButtonStatus(7, 4, "Return to^Main Menu", &DBlue);
 }
 
 
+
+
 void Highlight_Menu7()
 {
-
+  SetButtonStatus(7, 0, 0);
+  if (KeyLimePiEnabled == false)
+  {
+    SetButtonStatus(7, 0, 1);
+  }
 }
 
 
@@ -2497,7 +2612,137 @@ void Highlight_Menu20()
     }
   }
   // Keyboard button?
+}
 
+
+void Define_Menu21()
+{
+  strcpy(MenuTitle[21], "Start-up App Menu (21)");
+
+  AddButtonStatus(21, 20, "Boot to^Portsdown", &Blue);
+  AddButtonStatus(21, 20, "Boot to^Portsdown", &Green);
+
+  AddButtonStatus(21, 21, "Boot to^BandViewer", &Blue);
+  AddButtonStatus(21, 21, "Boot to^BandViewer", &Green);
+
+  AddButtonStatus(21, 22, "Boot to^Test Menu", &Blue);
+  AddButtonStatus(21, 22, "Boot to^Test Menu", &Green);
+
+  AddButtonStatus(21, 15, "Boot to^Transmit", &Blue);
+  AddButtonStatus(21, 15, "Boot to^Transmit", &Green);
+
+  AddButtonStatus(21, 16, "Boot to^Receive", &Blue);
+  AddButtonStatus(21, 16, "Boot to^Receive", &Green);
+
+  AddButtonStatus(21, 17, "Boot to^Cmd Prompt", &Blue);
+  AddButtonStatus(21, 17, "Boot to^Cmd Prompt", &Green);
+
+  AddButtonStatus(21, 18, "Boot to^Key Lime Pi", &Blue);
+  AddButtonStatus(21, 18, "Boot to^Key Lime Pi", &Green);
+  AddButtonStatus(21, 18, "Boot to^Key Lime Pi", &Grey);
+
+  AddButtonStatus(21, 4, "Return to^Main Menu", &Blue);
+}
+
+
+void Highlight_Menu21()
+{
+  // Reset all to Blue
+  SetButtonStatus(21, 15, 0);
+  SetButtonStatus(21, 16, 0);
+  SetButtonStatus(21, 17, 0);
+  SetButtonStatus(21, 18, 0);
+  SetButtonStatus(21, 20, 0);
+  SetButtonStatus(21, 21, 0);
+  SetButtonStatus(21, 22, 0);
+
+  if (strcmp(StartApp, "TX_boot") == 0)
+  {
+    SetButtonStatus(21, 15, 1);   // 
+  }
+
+  if (strcmp(StartApp, "RX_boot") == 0)
+  {
+    SetButtonStatus(21, 16, 1);   //
+  }
+
+  if (strcmp(StartApp, "Null_boot") == 0)
+  {
+    SetButtonStatus(21, 17, 1);   //
+  }
+
+  if (strcmp(StartApp, "SA_boot") == 0)
+  {
+    SetButtonStatus(21, 18, 1);   //
+  }
+
+  if (strcmp(StartApp, "Portsdown_boot") == 0)
+  {
+    SetButtonStatus(21, 20, 1);   //
+  }
+
+  if (strcmp(StartApp, "Bandview_boot") == 0)
+  {
+    SetButtonStatus(21, 21, 1);   //
+  }
+
+  if (strcmp(StartApp, "TestMenu_boot") == 0)
+  {
+    SetButtonStatus(21, 22, 1);   //
+  }
+
+  if (KeyLimePiEnabled == false)
+  {
+    SetButtonStatus(21, 18, 2);
+  }
+}
+
+
+void Define_Menu22()
+{
+  strcpy(MenuTitle[22], "Display and Control Menu (22)");
+
+  AddButtonStatus(22, 15, "Web Control^Enabled", &Blue);
+  AddButtonStatus(22, 15, "Web Control^Disabled", &Blue);
+
+  AddButtonStatus(22, 16, "HDMI Def'n^720", &Blue);
+  AddButtonStatus(22, 16, "HDMI Def'n^1080", &Blue);
+
+  AddButtonStatus(22, 17, "Normal^Touchscreen", &Blue);
+  AddButtonStatus(22, 17, "Invert^Touchscreen", &Blue);
+
+  AddButtonStatus(22, 4, "Return to^Main Menu", &Blue);
+}
+
+
+void Highlight_Menu22()
+{
+  if (webcontrol == true)
+  {
+    SetButtonStatus(22, 15, 0);
+  }
+  else
+  {
+    SetButtonStatus(22, 15, 1);
+  }
+
+  if (HDMIResolution == 720)
+  {
+    SetButtonStatus(22, 16, 0);
+  }
+  else
+  {
+    SetButtonStatus(22, 16, 1);
+  }
+
+  if (TouchInverted == false)
+  {
+    SetButtonStatus(22, 17, 0);
+  }
+  else
+  {
+    SetButtonStatus(22, 17, 1);
+  }
 }
 
 
@@ -2505,7 +2750,10 @@ void Define_Menus()
 {
   Define_Menu1();
   Define_Menu2();
+  Define_Menu3();
   Define_Menu4();
+  Define_Menu5();
+  Define_Menu6();
   Define_Menu7();
   Define_Menu11();
   Define_Menu12();
@@ -2517,12 +2765,18 @@ void Define_Menus()
   Define_Menu18();
   Define_Menu19();
   Define_Menu20();
+  Define_Menu21();
+  Define_Menu22();
 }
+
 
 void selectTestEquip(int Button)   // Test Equipment
 {
   switch(Button)
   {
+    case 0:                              // KeyLimePi SA
+      cleanexit(170);
+      break;
     case 15:                             // LimeSDR BandViewer
       cleanexit(136);
       break;
@@ -2952,6 +3206,156 @@ void selectGain(int Button)  // SDR Gain
 }
 
 
+void SelectStartApp(int Button)
+{
+  switch(Button)
+  {
+  case 15:                          
+    SetConfigParam(PATH_SCONFIG, "startup", "TX_boot");
+    strcpy(StartApp, "TX_boot");
+    break;
+  case 16:                          
+    SetConfigParam(PATH_SCONFIG, "startup", "RX_boot");
+    strcpy(StartApp, "RX_boot");
+    break;
+  case 17:                          
+    SetConfigParam(PATH_SCONFIG, "startup", "Null_boot");
+    strcpy(StartApp, "Null_boot");
+    break;
+  case 18:                          
+    SetConfigParam(PATH_SCONFIG, "startup", "SA_boot");
+    strcpy(StartApp, "SA_boot");
+    break;
+  case 20:                          
+    SetConfigParam(PATH_SCONFIG, "startup", "Portsdown_boot");
+    strcpy(StartApp, "Portsdown_boot");
+    break;
+  case 21:                          
+    SetConfigParam(PATH_SCONFIG, "startup", "Bandview_boot");
+    strcpy(StartApp, "Bandview_boot");
+    break;
+  case 22:                          
+    SetConfigParam(PATH_SCONFIG, "startup", "TestMenu_boot");
+    strcpy(StartApp, "TestMenu_boot");
+    break;
+   default:
+    break;
+  }
+}
+
+
+void togglewebcontrol()
+{
+  if (webcontrol == false)
+  {
+    SetConfigParam(PATH_SCONFIG, "webcontrol", "enabled");
+    webcontrol = true;
+    //if (webclicklistenerrunning == false)
+    //{
+    //  printf("Creating thread as webclick listener is not running\n");
+    //  pthread_create (&thwebclick, NULL, &WebClickListener, NULL);
+    //  printf("Created webclick listener thread\n");
+    //}
+  }
+  else
+  {
+    system("cp /home/pi/portsdown/images/web_not_enabled.png /home/pi/tmp/screen.png");
+    SetConfigParam(PATH_SCONFIG, "webcontrol", "disabled");
+    webcontrol = false;
+  }
+}
+
+void togglehdmiresolution()
+{
+  if (HDMIResolution == 720)
+  {
+    SetConfigParam(PATH_SCONFIG, "hdmiresolution", "1080");
+    HDMIResolution = 1080;
+  }
+  else
+  {
+    SetConfigParam(PATH_SCONFIG, "hdmiresolution", "720");
+    HDMIResolution = 720;
+  }
+
+  redrawMenu();                // Show
+  system("/home/pi/portsdown/scripts/display_check_on_boot.sh");
+  usleep(500000);
+  // reboot message required here
+  system("sudo reboot now");
+}
+
+
+void togglescreenorientation()
+{
+  if (TouchInverted == false)
+  {
+    SetConfigParam(PATH_SCONFIG, "touch", "inverted");
+    TouchInverted = true;
+  }
+  else
+  {
+    SetConfigParam(PATH_SCONFIG, "touch", "normal");
+    TouchInverted = false;
+  }
+
+  redrawMenu();                // Show 
+  system("/home/pi/portsdown/scripts/display_check_on_boot.sh");
+  usleep(500000);
+  // reboot message required here
+  system("sudo reboot now");
+}
+
+
+void InfoScreen()
+{
+  char IPAddress[18] = "Not connected";
+  char IPAddress2[18] = " ";
+  char IPAddressW[18] = "Not connected";
+  char IPLine[127];
+
+  // Initialise and calculate the text display
+  const font_t *font_ptr = &font_dejavu_sans_22;
+  int txtht =  font_ptr->ascent;
+  int linepitch = (14 * txtht) / 10;
+  int linenumber = 1;
+
+ 
+  GetIPAddr(IPAddress);
+  GetIPAddr2(IPAddress2);
+  Get_wlan0_IPAddr(IPAddressW);
+  strcpy(IPLine, "IP: ");
+  strcat(IPLine, IPAddress);
+  if (strlen(IPAddress2) > 6)
+  {
+    strcat(IPLine, "   2nd IP: ");
+    strcat(IPLine, IPAddress2);
+  }
+  strcat(IPLine, "   WLAN: ");
+  strcat(IPLine, IPAddressW);
+
+  // Display Text
+  clearScreen(0, 0, 0);
+
+  TextMid(wscreen / 2.0, hscreen - linenumber * linepitch, "Portsdown 5 Information Screen", font_ptr, 0, 0, 0, 255, 255, 255);
+
+  linenumber = linenumber + 2;
+
+  //Text(wscreen/40, hscreen - linenumber * linepitch, swversion, font_ptr);
+
+  //Text2(15 * wscreen/25, hscreen - linenumber * linepitch, dateTime, font_ptr);
+  linenumber = linenumber + 1;
+
+  Text(wscreen/40, hscreen - linenumber * linepitch, IPLine, font_ptr, 0, 0, 0, 255, 255, 255);
+  linenumber = linenumber + 1;
+
+  publish();
+  UpdateWeb();
+
+  // Wait for screen touch before exit
+  wait_touch();
+}
+
 
 void UpdateWeb()
 {
@@ -3169,8 +3573,13 @@ void waitForScreenAction()
           }
           break;
         case 27:
-          printf("MENU 2 \n");         // Tools Menu
-          CurrentMenu = 2;
+          printf("MENU 5 \n");         // DATV Tools Menu
+          CurrentMenu = 5;
+          redrawMenu();
+          break;
+        case 28:
+          printf("MENU 3 \n");         // Config Menu
+          CurrentMenu = 3;
           redrawMenu();
           break;
         case 29:
@@ -3195,6 +3604,30 @@ void waitForScreenAction()
         }
         continue;
       }
+      if (CurrentMenu == 3)  // Config Menu
+      {
+        printf("Button Event %d, Entering Menu 3 Case Statement\n",i);
+        CallingMenu = 3;
+        switch (i)
+        {
+        case 0:                        // System Config Menu
+          printf("MENU 6 \n");
+          CurrentMenu = 6;
+          redrawMenu();
+          break;
+        case 1:                        // Display/Control Config Menu
+          printf("MENU 22 \n");
+          CurrentMenu = 22;
+          redrawMenu();
+          break;
+        case 4:                        // Back to Main Menu
+          printf("MENU 1 \n");
+          CurrentMenu = 1;
+          redrawMenu();
+          break;
+        }
+        continue;
+      }
       if (CurrentMenu == 4)            // File Menu
       {
         printf("Button Event %d, Entering Menu 4 Case Statement\n",i);
@@ -3206,6 +3639,48 @@ void waitForScreenAction()
           break;
         case 1:                        // Restart Portsdown app
           cleanexit(129);
+          break;
+        case 2:                        // Show Info Page
+          InfoScreen();
+          printf("MENU 1 \n");
+          CurrentMenu = 1;
+          redrawMenu();
+          break;
+        case 4:                        // Back to Main Menu
+          printf("MENU 1 \n");
+          CurrentMenu = 1;
+          redrawMenu();
+          break;
+        }
+        continue;
+      }
+      if (CurrentMenu == 5)            // DATV Tools Menu
+      {
+        printf("Button Event %d, Entering Menu 5 Case Statement\n",i);
+        CallingMenu = 5;
+        switch (i)
+        {
+        case 5:                        // IPTS Monitor
+          //system("sudo reboot now");
+          break;
+        case 4:                        // Back to Main Menu
+          printf("MENU 1 \n");
+          CurrentMenu = 1;
+          redrawMenu();
+          break;
+        }
+        continue;
+      }
+      if (CurrentMenu == 6)  // System Config Menu
+      {
+        printf("Button Event %d, Entering Menu 3 Case Statement\n",i);
+        CallingMenu = 3;
+        switch (i)
+        {
+        case 0:                        // Start-up App Menu
+          printf("MENU 21 \n");
+          CurrentMenu = 21;
+          redrawMenu();
           break;
         case 4:                        // Back to Main Menu
           printf("MENU 1 \n");
@@ -3226,6 +3701,7 @@ void waitForScreenAction()
           CurrentMenu = 1;
           redrawMenu();
           break;
+        case 0:
         case 15:
         case 16:
         //case 17:
@@ -3555,6 +4031,60 @@ void waitForScreenAction()
         }
         continue;
       }
+      if (CurrentMenu == 21)           // Start-up App Menu
+      {
+        printf("Menu %d, Button %d\n", CallingMenu, i);
+        CallingMenu = 21;
+        switch (i)
+        {
+        case 15:                       // Boot to Transmit
+        case 16:                       // Boot to Receive
+        case 17:                       // Boot to Command Prompt
+        case 18:                       // Boot to Key Lime Pi SA
+        case 20:                       // Boot to Portsdown
+        case 21:                       // Boot to BandViewer
+        case 22:                       // Boot to Test Menu
+          SelectStartApp(i);           // 
+          redrawMenu();                // Show 
+          usleep(500000);
+          CurrentMenu = 1;
+          redrawMenu();                // and return to menu 1
+          break;
+        case 4:                        // Back to Main Menu
+          printf("MENU 1 \n");
+          CurrentMenu = 1;
+          redrawMenu();
+          break;
+        }
+        continue;
+      }
+      if (CurrentMenu == 22)           // Display and Control Menu
+      {
+        printf("Menu %d, Button %d\n", CallingMenu, i);
+        CallingMenu = 22;
+        switch (i)
+        {
+        case 15:                       // Toggle web control
+          togglewebcontrol();
+          redrawMenu();                // Show 
+          usleep(500000);
+          CurrentMenu = 1;
+          redrawMenu();                // and return to menu 1
+          break;
+        case 16:                       // Toggle HDMI 720/1080 (reboot)
+          togglehdmiresolution();
+          break;
+        case 17:                       // Toggle screen inverted (reboot)
+          togglescreenorientation();
+          break;
+        case 4:                        // Back to Main Menu
+          printf("MENU 1 \n");
+          CurrentMenu = 1;
+          redrawMenu();
+          break;
+        }
+        continue;
+      }
     }
   }
 }
@@ -3598,10 +4128,12 @@ static void terminate(int dummy)
 
 int main(int argc, char **argv)
 {
-  int NoDeviceEvent = 0;
   int i;
+  //int NoDeviceEvent = 0;
   int screenXmax, screenXmin;
   int screenYmax, screenYmin;
+
+
   char response[63];
 
   strcpy(ProgramName, argv[0]);        // Used for web click control
@@ -3623,33 +4155,40 @@ int main(int argc, char **argv)
   // Allow optional web control.  If no mouse, set hdmi720 and enable web control.
 
   // Check the display type in the config file
-  strcpy(response, "Element14_7");
-  GetConfigParam(PATH_SCONFIG, "display", DisplayType);
+  strcpy(response, "not_set");
+  GetConfigParam(PATH_SCONFIG, "display", response);
   strcpy(DisplayType, response);
 
-  // Check for presence of touchscreen
-  for(NoDeviceEvent = 0; NoDeviceEvent < 7; NoDeviceEvent++)
+  if ((strcmp(DisplayType, "Element14_7") == 0) || (strcmp(DisplayType, "touch2") == 0))
   {
-    if (openTouchScreen(NoDeviceEvent) == 1)
-    {
-      if(getTouchScreenDetails(&screenXmin, &screenXmax, &screenYmin, &screenYmax)==1) break;
-    }
-  }
-
-  if(NoDeviceEvent != 7)  // Touchscreen detected
-  {
-    printf("Touchscreen detected\n");
+    printf("Touchscreen detected after boot\n");
     touchscreen_present = true;
 
-    // Set correct entry in config file if required.  No need to reboot
-    if ((strcmp(DisplayType, "Element14_7") != 0) && (strcmp(DisplayType, "dfrobot5") != 0))
+    // Open the touchscreen
+    for (i = 0; i < 7; i++)
     {
-      strcpy(DisplayType, "Element14_7");
-      SetConfigParam(PATH_SCONFIG, "display", "Element14_7");
+      if (openTouchScreen(i) == 1)
+      {
+        if(getTouchScreenDetails(&screenXmin, &screenXmax, &screenYmin, &screenYmax) == 1) break;
+      }
     }
 
     // Create Touchscreen thread
     pthread_create (&thtouchscreen, NULL, &WaitTouchscreenEvent, NULL);
+
+
+    if (CheckMouse() == 0)
+    {
+      mouse_connected = true;
+      mouse_active = true;
+      printf("Mouse Connected\n");
+
+      // And start the mouse listener thread
+      printf("Starting Mouse Thread\n");
+      pthread_create (&thmouse, NULL, &WaitMouseEvent, NULL);
+    }
+
+
   }
   else // No touchscreen detected, check for mouse
   {
@@ -3659,17 +4198,6 @@ int main(int argc, char **argv)
       mouse_active = true;
       printf("Mouse Connected\n");
 
-      // If display not previously set to hdmi, correct it
-      if ((strcmp(DisplayType, "hdmi") != 0) && (strcmp(DisplayType, "hdmi480") != 0)
-        && (strcmp(DisplayType, "hdmi720") != 0) && (strcmp(DisplayType, "hdmi1080") != 0))
-      {
-        strcpy(DisplayType, "hdmi720");
-        SetConfigParam(PATH_SCONFIG, "display", "hdmi720");
-        // need a linux command here to edit the cmdline.txt file and a reboot
-        //system ("/home/pi/rpidatv/scripts/set_display_config.sh");
-        //system ("sudo reboot now");
-      }
-
       // And start the mouse listener thread
       printf("Starting Mouse Thread\n");
       pthread_create (&thmouse, NULL, &WaitMouseEvent, NULL);
@@ -3678,24 +4206,20 @@ int main(int argc, char **argv)
     {
       printf("Mouse not Connected\n");
 
-      SetConfigParam(PATH_SCONFIG, "webcontrol", "enabled");
-      webcontrol = true;
-
-      // If display not previously set to hdmi, correct it
-      if ((strcmp(DisplayType, "hdmi") != 0) && (strcmp(DisplayType, "hdmi480") != 0)
-        && (strcmp(DisplayType, "hdmi720") != 0) && (strcmp(DisplayType, "hdmi1080") != 0))
+      strcpy(response, "0");  // highlight null responses
+      GetConfigParam(PATH_SCONFIG, "webcontrol", response);
+      if (strcmp(response, "enabled") != 0)
       {
-        strcpy(DisplayType, "hdmi720");
-        SetConfigParam(PATH_SCONFIG, "display", "hdmi720");
-        // need a linux command here to edit the cmdline.txt file and a reboot
-        //system ("/home/pi/rpidatv/scripts/set_display_config.sh");
-        //system ("sudo reboot now");
+        SetConfigParam(PATH_SCONFIG, "webcontrol", "enabled");
+        webcontrol = true;
+
+        // Start the web click listener
+        pthread_create (&thwebclick, NULL, &WebClickListener, NULL);
+        printf("Created webclick listener thread\n");
       }
     }
   }
   printf("Completed Screen and Mouse checks\n");
-
-  //usleep(5000000);                      // Let graphics settle
 
   initScreen();
   CreateButtons();
@@ -3703,7 +4227,6 @@ int main(int argc, char **argv)
   ReadSavedParams();
   clearScreen(255, 255, 255);
   redrawMenu();
-  publish();
 
   printf("Waiting for button press on touchscreen\n");
   waitForScreenAction();
