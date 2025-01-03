@@ -17,7 +17,7 @@ sudo rm /home/pi/tmp/snapshot.png >/dev/null 2>/dev/null
 
 /home/pi/portsdown/bin/fb2png >/dev/null 2>/dev/null
 
-mv /home/pi/tmp/snapshot.png /home/pi/tmp/screen.png >/dev/null 2>/dev/null
+cp /home/pi/tmp/snapshot.png /home/pi/tmp/screen.png >/dev/null 2>/dev/null
 
 exit
 

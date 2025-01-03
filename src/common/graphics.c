@@ -1006,7 +1006,14 @@ void MarkerGrn(int markerx, int x, int y)
         if ((y - 11 + row) > 10)  // on screen
         {
           //p = (x + screenXsize * (y - 11 + row)) * 4;
-          p = (x + screenXsize * (y - 11 + row)) * 2;
+          if (FBOrientation == 180)
+          {
+            p = ((Xinvert - x) + screenXsize * (Yinvert - (y - 11 + row))) * 2;
+          }
+          else
+          {
+            p = (x + screenXsize * (y - 11 + row)) * 2;
+          }
           memset(back_fbp + p + 1, 0x07, 1);
         }
       }
