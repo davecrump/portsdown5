@@ -40,3 +40,29 @@ void sleep_ms(uint32_t _duration)
     }
 }
 
+uint64_t monotonic_ns(void)
+{
+    struct timespec tp;
+
+    if(clock_gettime(CLOCK_MONOTONIC, &tp) != 0)
+    {
+        return 0;
+    }
+
+    return (uint64_t) tp.tv_sec * 1000000000 + tp.tv_nsec;
+}
+
+
+uint64_t monotonic_us(void)
+{
+    struct timespec tp;
+
+    if(clock_gettime(CLOCK_MONOTONIC, &tp) != 0)
+    {
+        return 0;
+    }
+
+    return (uint64_t) tp.tv_sec * 1000000 + tp.tv_nsec / 1000;
+}
+
+

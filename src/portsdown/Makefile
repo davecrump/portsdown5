@@ -9,6 +9,7 @@ LIBFLAGS2=-L/opt/vc/lib -lpthread -lrt -lpng16 -lm -ldl -rdynamic -lfcgi -fcommo
 
 portsdown5: portsdown5.c 
 	gcc -fdiagnostics-color -Wall $(INCLUDEFLAGS2) -o  portsdown5 \
+		lmrx_utils.c \
 		../common/font/font.c \
 		../common/font/dejavu_sans_18.c \
 		../common/font/dejavu_sans_20.c \
@@ -24,9 +25,10 @@ portsdown5: portsdown5.c
 		../common/hardware.c \
 		../common/ffunc.c \
 		../common/ffunc.h \
+		../common/utils.c \
 		portsdown5.c $(LIBFLAGS2) 
 
 #install:
-#	cp rpidatvgui ../../bin/
+	cp portsdown5 ../../bin/
 
 

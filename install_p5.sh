@@ -47,6 +47,7 @@ fi
 GIT_SRC="britishamateurtelevisionclub";  # default
 LMNDE="false"                            # don't load LimeSuiteNG and LimeNET Micro 2.0 DE specifics unless requested
 WAIT="false"                             # Go straight into reboot unless requested
+UPDATE="false"                           # set to true for an update
 POSITIONAL_ARGS=()
 
 while [[ $# -gt 0 ]]; do
@@ -61,11 +62,15 @@ while [[ $# -gt 0 ]]; do
       WAIT="true"
       shift # past argument
       ;;
+    -u|--update)
+      UPDATE="true"
+      shift # past argument
+      ;;
     -x|--xtrx)
       LMNDE="true" 
       shift # past argument
       ;;
-    -u|--user)
+    -g|--github)
       shift # past argument
       echo user"$1"
       GIT_SRC=$1
@@ -77,7 +82,8 @@ while [[ $# -gt 0 ]]; do
       echo "-d or --development          Build Portsdown 5 from development repository"
       echo "-w or --wait                 Wait at the end of Stage 1 of the build before reboot"
       echo "-x or --xtrx                 Include the files and modules for the LimeNET Micro 2.0 DE"
-      echo "-u or --user githubname      Build Portsdown 5 from githubname/portsdown5 repository"
+      echo "-g or --github githubname    Build Portsdown 5 from githubname/portsdown5 repository"
+      echo "-u or --update               Update existing install.  May be used with -d "
       exit 1
       ;;
     *)
@@ -89,6 +95,12 @@ done
 set -- "${POSITIONAL_ARGS[@]}" # restore positional parameters
 
 # Act on arguments
+if [ "$UPDATE" == "true" ]; then
+  echo "--------------------------------------------------------"
+  echo "----- Updating an exiasting Portsdown 5 build ----------"
+  echo "--------------------------------------------------------"
+  echo $(date -u) "Updating - NOT new install" | sudo tee -a /home/pi/p5_initial_build_log.txt  > /dev/null
+fi
 if [ "$GIT_SRC" == "davecrump" ]; then
   echo "--------------------------------------------------------"
   echo "----- Installing development version of Portsdown 5-----"
@@ -150,117 +162,150 @@ echo "-----------------------------------"
 sudo apt-get -y dist-upgrade
   SUCCESS=$?; BuildLogMsg $SUCCESS "dist-upgrade"
 
-# Install the packages that we need
-echo
-echo "-------------------------------"
-echo "----- Installing Packages -----"
-echo "-------------------------------"
+if [ "$UPDATE" == "false" ]; then
 
-sudo apt-get -y install git                                     # For app download
-  SUCCESS=$?; BuildLogMsg $SUCCESS "git install"
-sudo apt-get -y install cmake                                   # For compiling
-  SUCCESS=$?; BuildLogMsg $SUCCESS "cmake install"
-sudo apt-get -y install fbi                                     # For display of images
-  SUCCESS=$?; BuildLogMsg $SUCCESS "fbi install"
-sudo apt-get -y install libusb-1.0-0-dev                        # For LimeSuite
-  SUCCESS=$?; BuildLogMsg $SUCCESS "libusb-1.0-0-dev"
-sudo apt-get -y install linux-headers-generic                   # For LimeSuite
-  SUCCESS=$?; BuildLogMsg $SUCCESS "linux-headers-generic install"
-sudo apt-get -y install libfftw3-dev                            # For bandviewers
-  SUCCESS=$?; BuildLogMsg $SUCCESS "libfftw3-dev install"
-sudo apt-get -y install nginx-light                             # For web access
-  SUCCESS=$?; BuildLogMsg $SUCCESS "libfcgi-dev install"
-sudo apt-get -y install libfcgi-dev                             # For web control
-  SUCCESS=$?; BuildLogMsg $SUCCESS "nginx-light install"
-sudo apt-get -y install libjpeg-dev                             #
-  SUCCESS=$?; BuildLogMsg $SUCCESS "libjpeg-dev install"
-sudo apt-get -y install imagemagick                             # for captions
-  SUCCESS=$?; BuildLogMsg $SUCCESS "imagemagick install"
-sudo apt-get -y install libraspberrypi-dev                      # for bcm_host
-  SUCCESS=$?; BuildLogMsg $SUCCESS "libraspberrypi-dev install"
-sudo apt-get -y install libpng-dev                              # for screen capture
-  SUCCESS=$?; BuildLogMsg $SUCCESS "libpng-dev install"
-sudo apt-get -y install vlc                                     # for rx and replay
-  SUCCESS=$?; BuildLogMsg $SUCCESS "vlc install"
-sudo apt-get -y install ffmpeg                                  # for tx encoding
-  SUCCESS=$?; BuildLogMsg $SUCCESS "ffmpeg install"
-sudo apt-get -y install netcat-openbsd                          # For TS input
-  SUCCESS=$?; BuildLogMsg $SUCCESS "netcat install"
-#sudo apt-get -y install libgmock-dev                            # For LimeSuiteNG 
-# SUCCESS=$?; BuildLogMsg $SUCCESS "libgmock-dev install"
+  # Install the packages that we need
+  echo
+  echo "-------------------------------"
+  echo "----- Installing Packages -----"
+  echo "-------------------------------"
 
-# Amend /boot/firmware/cmdline.txt and /boot/firmware/config.txt
-echo
-echo "-----------------------------------------------"
-echo "----- Amending cmdline.txt and config.txt -----"
-echo "-----------------------------------------------"
-
-# Todo - check latest comdline.txt in initial build!!!!!!!!!!!!!!!!!!!!!!!!
-
-# Set touchscreen to 16 bit per pixel
-#sudo sed -i 's/800x480M@60/800x480M-16@60/' /boot/firmware/cmdline.txt
-
-# Rotate the touchscreen display to the normal orientation 
-if !(grep video=DSI-1 /boot/firmware/cmdline.txt) then
-  sudo sed -i '1s,$, video=DSI-1:800x480M-16@60\,rotate=180,' /boot/firmware/cmdline.txt
+  sudo apt-get -y install git                                     # For app download
+    SUCCESS=$?; BuildLogMsg $SUCCESS "git install"
+  sudo apt-get -y install cmake                                   # For compiling
+    SUCCESS=$?; BuildLogMsg $SUCCESS "cmake install"
+  sudo apt-get -y install fbi                                     # For display of images
+    SUCCESS=$?; BuildLogMsg $SUCCESS "fbi install"
+  sudo apt-get -y install libusb-1.0-0-dev                        # For LimeSuite
+    SUCCESS=$?; BuildLogMsg $SUCCESS "libusb-1.0-0-dev"
+  sudo apt-get -y install linux-headers-generic                   # For LimeSuite
+    SUCCESS=$?; BuildLogMsg $SUCCESS "linux-headers-generic install"
+  sudo apt-get -y install libfftw3-dev                            # For bandviewers
+    SUCCESS=$?; BuildLogMsg $SUCCESS "libfftw3-dev install"
+  sudo apt-get -y install nginx-light                             # For web access
+    SUCCESS=$?; BuildLogMsg $SUCCESS "libfcgi-dev install"
+  sudo apt-get -y install libfcgi-dev                             # For web control
+    SUCCESS=$?; BuildLogMsg $SUCCESS "nginx-light install"
+  sudo apt-get -y install libjpeg-dev                             #
+    SUCCESS=$?; BuildLogMsg $SUCCESS "libjpeg-dev install"
+  sudo apt-get -y install imagemagick                             # for captions
+    SUCCESS=$?; BuildLogMsg $SUCCESS "imagemagick install"
+  sudo apt-get -y install libraspberrypi-dev                      # for bcm_host
+    SUCCESS=$?; BuildLogMsg $SUCCESS "libraspberrypi-dev install"
+  sudo apt-get -y install libpng-dev                              # for screen capture
+    SUCCESS=$?; BuildLogMsg $SUCCESS "libpng-dev install"
+  sudo apt-get -y install vlc                                     # for rx and replay
+    SUCCESS=$?; BuildLogMsg $SUCCESS "vlc install"
+  sudo apt-get -y install ffmpeg                                  # for tx encoding
+    SUCCESS=$?; BuildLogMsg $SUCCESS "ffmpeg install"
+  sudo apt-get -y install netcat-openbsd                          # For TS input
+    SUCCESS=$?; BuildLogMsg $SUCCESS "netcat install"
+  sudo apt-get -y install evemu-tools                             # For mouse device evaluation
+    SUCCESS=$?; BuildLogMsg $SUCCESS "evemu-tools install"
+  sudo apt-get -y install mosquitto                               # For F5OEO firmware on Pluto and LibreSDR
+    SUCCESS=$?; BuildLogMsg $SUCCESS "mosquitto install"
+  sudo apt-get -y install mosquitto-clients                       # For F5OEO firmware on Pluto and LibreSDR
+    SUCCESS=$?; BuildLogMsg $SUCCESS "mosquitto-clients install"
+  #sudo apt-get -y install libgmock-dev                            # For LimeSuiteNG 
+  # SUCCESS=$?; BuildLogMsg $SUCCESS "libgmock-dev install"
+  sudo apt-get -y install libasound2-dev                          # For LongMynd
+    SUCCESS=$?; BuildLogMsg $SUCCESS "libasound2-dev install"
+  sudo apt-get -y install libavahi-client-dev                     # For LibreSDR??
+    SUCCESS=$?; BuildLogMsg $SUCCESS "libavahi-client-dev install"
 fi
 
-# Rotate the touchscreen 2 display to the normal orientation 
-if !(grep video=DSI-2 /boot/firmware/cmdline.txt) then
-  sudo sed -i '1s,$, video=DSI-2:720x1280@60,rotate=270,' /boot/firmware/cmdline.txt
+# Placeholder for New packages during update
+
+if [ "$UPDATE" == "false" ]; then
+
+  # Amend /boot/firmware/cmdline.txt and /boot/firmware/config.txt
+  echo
+  echo "-----------------------------------------------"
+  echo "----- Amending cmdline.txt and config.txt -----"
+  echo "-----------------------------------------------"
+
+  # Set touchscreen to 16 bit per pixel
+  #sudo sed -i 's/800x480M@60/800x480M-16@60/' /boot/firmware/cmdline.txt
+
+  # Rotate the touchscreen display to the normal orientation 
+  if !(grep video=DSI-1 /boot/firmware/cmdline.txt) then
+    sudo sed -i '1s,$, video=DSI-1:800x480M-16@60\,rotate=180,' /boot/firmware/cmdline.txt
+  fi
+
+  # Rotate the touchscreen 2 display to the normal orientation 
+  if !(grep video=DSI-2 /boot/firmware/cmdline.txt) then
+    sudo sed -i '1s,$, video=DSI-2:720x1280@60,rotate=270,' /boot/firmware/cmdline.txt
+  fi
+
+  # Set the default HDMI 0 output to 720p60
+  if !(grep video=HDMI-A-1 /boot/firmware/cmdline.txt) then
+    sudo sed -i '1s,$, video=HDMI-A-1:1280x720M@60,' /boot/firmware/cmdline.txt
+  fi
+
+  # Disable the splash screen
+  if !(grep -E '^disable_splash' /boot/firmware/config.txt) then
+    sudo sh -c "echo disable_splash=1 >> /boot/firmware/config.txt"
+  fi
+
+  # If required, add the specific parameters for LimeSDR XTRX and LMN 2.0 DE
+  if [ "$LMNDE" == "true" ]; then
+    sudo sh -c "echo dtoverlay=pcie-32bit-dma >> /boot/firmware/config.txt"
+    sudo sh -c "echo dtparam=spi=on >> /boot/firmware/config.txt"
+    sudo sh -c "echo dtoverlay=spi1-2cs,cs0_pin=18,cs1_pin=17 >> /boot/firmware/config.txt"
+    sudo sh -c "echo dtparam=i2c_vc=on >> /boot/firmware/config.txt"
+    sudo sh -c "echo dtoverlay=i2c-rtc,pcf85063a,i2c_csi_dsi >> /boot/firmware/config.txt"
+  fi
+
+  # Stop the cursor flashing on the touchscreen
+  if !(grep global_cursor_default /boot/firmware/cmdline.txt) then
+    sudo sed -i '1s,$, vt.global_cursor_default=0,' /boot/firmware/cmdline.txt
+  fi
+
+  # Install the command-line aliases
+  echo "alias ugui='/home/pi/portsdown/utils/uguir.sh'" >> /home/pi/.bash_aliases
+  echo "alias gui='/home/pi/portsdown/utils/guir.sh'"  >> /home/pi/.bash_aliases
+  echo "alias stop='/home/pi/portsdown/utils/stop.sh'"  >> /home/pi/.bash_aliases
+  echo "alias ulsa='/home/pi/portsdown/utils/ulsa.sh'"  >> /home/pi/.bash_aliases
+  echo "alias ulsabv='/home/pi/portsdown/utils/ulsabv.sh'"  >> /home/pi/.bash_aliases
+  echo "alias ulsch='/home/pi/portsdown/utils/ulsch.sh'"  >> /home/pi/.bash_aliases
+
+  echo
+  echo "Amendments made"
 fi
 
-# Set the default HDMI 0 output to 720p60
-if !(grep video=HDMI-A-1 /boot/firmware/cmdline.txt) then
-  sudo sed -i '1s,$, video=HDMI-A-1:1280x720M@60,' /boot/firmware/cmdline.txt
+if [ "$UPDATE" == "false" ]; then
+  echo
+  echo "-------------------------------"
+  echo "----- Installing WiringPi -----"
+  echo "-------------------------------"
+
+  cd /home/pi
+  git clone https://github.com/WiringPi/WiringPi.git
+    SUCCESS=$?; BuildLogMsg $SUCCESS "Wiring Pi Git Clone"
+  cd WiringPi
+  ./build debian
+    SUCCESS=$?; BuildLogMsg $SUCCESS "Wiring Pi Build"
+  mv debian-template/wiringpi_3.14_arm64.deb .
+    SUCCESS=$?; BuildLogMsg $SUCCESS "Moved wiringpi_3.14_arm64.deb"
+  sudo apt install ./wiringpi_3.4_arm64.deb
+    SUCCESS=$?; BuildLogMsg $SUCCESS "Installed Wiring Pi"
+  cd /home/pi
 fi
 
-# Disable the splash screen
-if !(grep -E '^disable_splash' /boot/firmware/config.txt) then
-  sudo sh -c "echo disable_splash=1 >> /boot/firmware/config.txt"
+if [ "$UPDATE" == "true" ]; then
+
+  echo
+  echo "-------------------------------"
+  echo "----- Preserving Configs ------"
+  echo "-------------------------------"
+
+  rm -rf /home/pi/configs
+  cp -r /home/pi/portsdown/configs/ /home/pi/configs/
+
+  # Delete previous Portsdown files
+  rm -rf /home/pi/portsdown
+
 fi
-
-# If required, add the specific parameters for LimeSDR XTRX and LMN 2.0 DE
-if [ "$LMNDE" == "true" ]; then
-  sudo sh -c "echo dtoverlay=pcie-32bit-dma >> /boot/firmware/config.txt"
-  sudo sh -c "echo dtparam=spi=on >> /boot/firmware/config.txt"
-  sudo sh -c "echo dtoverlay=spi1-2cs,cs0_pin=18,cs1_pin=17 >> /boot/firmware/config.txt"
-  sudo sh -c "echo dtparam=i2c_vc=on >> /boot/firmware/config.txt"
-  sudo sh -c "echo dtoverlay=i2c-rtc,pcf85063a,i2c_csi_dsi >> /boot/firmware/config.txt"
-fi
-
-# Stop the cursor flashing on the touchscreen
-if !(grep global_cursor_default /boot/firmware/cmdline.txt) then
-  sudo sed -i '1s,$, vt.global_cursor_default=0,' /boot/firmware/cmdline.txt
-fi
-
-# Install the command-line aliases
-echo "alias ugui='/home/pi/portsdown/utils/uguir.sh'" >> /home/pi/.bash_aliases
-echo "alias gui='/home/pi/portsdown/utils/guir.sh'"  >> /home/pi/.bash_aliases
-echo "alias stop='/home/pi/portsdown/utils/stop.sh'"  >> /home/pi/.bash_aliases
-echo "alias ulsa='/home/pi/portsdown/utils/ulsa.sh'"  >> /home/pi/.bash_aliases
-echo "alias ulsabv='/home/pi/portsdown/utils/ulsabv.sh'"  >> /home/pi/.bash_aliases
-echo "alias ulsch='/home/pi/portsdown/utils/ulsch.sh'"  >> /home/pi/.bash_aliases
-
-echo
-echo "Amendments made"
-
-echo
-echo "-------------------------------"
-echo "----- Installing WiringPi -----"
-echo "-------------------------------"
-
-cd /home/pi
-git clone https://github.com/WiringPi/WiringPi.git
-  SUCCESS=$?; BuildLogMsg $SUCCESS "Wiring Pi Git Clone"
-cd WiringPi
-./build debian
-  SUCCESS=$?; BuildLogMsg $SUCCESS "Wiring Pi Build"
-mv debian-template/wiringpi_3.10_arm64.deb .
-  SUCCESS=$?; BuildLogMsg $SUCCESS "Moved wiringpi_3.10_arm64.deb"
-sudo apt install ./wiringpi_3.10_arm64.deb
-  SUCCESS=$?; BuildLogMsg $SUCCESS "Installed Wiring Pi"
-cd /home/pi
 
 # Download the previously selected version of Portsdown 5
 echo
@@ -269,13 +314,32 @@ echo "----- Downloading Portsdown 5 Software -----"
 echo "--------------------------------------------"
 
 cd /home/pi
-wget https://github.com/${GIT_SRC}/portsdown5/archive/main.zip
+wget https://github.com/${GIT_SRC}/portsdown5/archive/main.zip -O main.zip
   SUCCESS=$?; BuildLogMsg $SUCCESS "Portsdown 5 download from GitHub"
 # Unzip the portsdown software and copy to the Pi
 unzip -o main.zip
 mv portsdown5-main portsdown
 rm main.zip
 mkdir /home/pi/portsdown/bin
+
+if [ "$UPDATE" == "true" ]; then
+
+  echo
+  echo "------------------------------"
+  echo "----- Restoring Configs ------"
+  echo "------------------------------"
+
+  # update factory configs
+  rm -rf /home/pi/configs/factory
+  cp -r /home/pi/portsdown/configs/factory /home/pi/configs/factory
+
+  # Delete new Portsdown configs
+  rm -rf /home/pi/portsdown/configs
+
+  # Restore the old Configs
+  cp -r /home/pi/configs/ /home/pi/portsdown/configs
+fi
+
 
 # Compile the main Portsdown 5 application
 echo
@@ -369,6 +433,20 @@ make -j 4 -O
 
 mv /home/pi/portsdown/src/fb2png/fb2png /home/pi/portsdown/bin/fb2png
 
+# Compile LongMynd
+echo
+echo "-------------------------------------------"
+echo "----- Compiling the LongMynd Receiver -----"
+echo "-------------------------------------------"
+cd /home/pi
+cp -r /home/pi/portsdown/src/longmynd/ /home/pi/
+cd longmynd
+make -j 4 -O
+  SUCCESS=$?; BuildLogMsg $SUCCESS "LongMynd compile"
+
+# Set up the udev rules for USB
+sudo cp minitiouner.rules /etc/udev/rules.d/
+
 # Compile Legacy Lime BandViewer
 echo
 echo "--------------------------------------------"
@@ -386,72 +464,130 @@ mv /home/pi/portsdown/src/limeview/limeview /home/pi/portsdown/bin/limeview
 #cp .fftwf_wisdom /home/pi/.fftwf_wisdom
 cd /home/pi
 
-# Configure to start Portsdown on boot as a service
-sudo cp /home/pi/portsdown/scripts/set-up_configs/portsdown.service /etc/systemd/system/
-sudo systemctl daemon-reload
-sudo systemctl enable portsdown
-
-
-# Configure the nginx web server
-cp -r /home/pi/portsdown/scripts/set-up_configs/webroot /home/pi/webroot
-sudo cp /home/pi/portsdown/scripts/set-up_configs/nginx.conf /etc/nginx/nginx.conf
-
+# Compile Legacy Noise Figure Meter
 echo
-echo "------------------------------------------"
-echo "----- Setting up for captured images -----"
-echo "------------------------------------------"
+echo "-----------------------------------------------"
+echo "----- Compiling Legacy Noise Figure Meter -----"
+echo "-----------------------------------------------"
 
-# Amend /etc/fstab to create a tmpfs drive at ~/tmp for multiple images
-sudo sed -i '4itmpfs           /home/pi/tmp    tmpfs   defaults,noatime,nosuid,size=10m  0  0' /etc/fstab
+cd /home/pi/portsdown/src/nf_meter
+make -j 4 -O
+  SUCCESS=$?; BuildLogMsg $SUCCESS "Lime NF Meter compile"
 
-# Create a ~/snaps folder for captured images
-mkdir /home/pi/snaps
-
-# Set the image index number to 0
-echo "0" > /home/pi/snaps/snap_index.txt
-
-echo
-echo "SD Card Serial:"
-cat /sys/block/mmcblk0/device/cid
-
-# Create file to trigger install on next reboot
-touch /home/pi/portsdown/.post-install_actions
+mv /home/pi/portsdown/src/nf_meter/nf_meter /home/pi/portsdown/bin/nf_meter
 cd /home/pi
 
-if [ "$BUILD_STATUS" == "Fail" ] ; then
-  echo $(date -u) " Build stage 1 fail" | sudo tee -a /home/pi/p5_initial_build_log.txt  > /dev/null
-  echo
-  echo "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
-  echo "!!!!!   Build stage 1 complete with errors   !!!!!!!"
-  echo "!!!!!       Read log below for details       !!!!!!!"
-  echo "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
-  echo
-  cat /home/pi/p5_initial_build_log.txt
-  echo
-  echo Enter sudo reboot now to manually reboot and run stage 2 anyway
-  echo 
-  exit
-else
-  echo
-  echo "--------------------------------------------"
-  echo "-----  Successful stage 1, no errors   -----"
-  echo "-----                                  -----"
-  echo "-----           Rebooting now          -----"
-  echo "--------------------------------------------"
+# Compile Legacy Noise Meter
+echo
+echo "----------------------------------------"
+echo "----- Compiling Legacy Noise Meter -----"
+echo "----------------------------------------"
 
-  if [ "$WAIT" == "true" ]; then                 ## Wait for key press before reboot
-    echo "-----                                  -----"
-    echo "-----       Waiting for Reboot         -----"
-    echo "--------------------------------------------"
+cd /home/pi/portsdown/src/noise_meter
+make -j 4 -O
+  SUCCESS=$?; BuildLogMsg $SUCCESS "Lime Noise Meter compile"
+
+mv /home/pi/portsdown/src/noise_meter/noise_meter /home/pi/portsdown/bin/noise_meter
+cd /home/pi
+
+if [ "$UPDATE" == "false" ]; then
+
+  # Download, compile and install DATV Express-server
+  echo
+  echo "------------------------------------------"
+  echo "----- Installing DATV Express Server -----"
+  echo "------------------------------------------"
+  cd /home/pi
+  wget https://github.com/G4GUO/express_server/archive/master.zip
+    SUCCESS=$?; BuildLogMsg $SUCCESS "DATV Express Server Download"
+  unzip master.zip
+  mv express_server-master express_server
+  rm master.zip
+  cd /home/pi/express_server
+  make
+    SUCCESS=$?; BuildLogMsg $SUCCESS "DATV Express Server compile"
+  sudo make install
+  cd /home/pi
+fi
+
+if [ "$UPDATE" == "false" ]; then
+
+  # Configure to start Portsdown on boot as a service
+  sudo cp /home/pi/portsdown/scripts/set-up_configs/portsdown.service /etc/systemd/system/
+  sudo systemctl daemon-reload
+  sudo systemctl enable portsdown
+
+  # Configure the nginx web server
+  cp -r /home/pi/portsdown/scripts/set-up_configs/webroot /home/pi/webroot
+  sudo cp /home/pi/portsdown/scripts/set-up_configs/nginx.conf /etc/nginx/nginx.conf
+
+  echo
+  echo "------------------------------------------"
+  echo "----- Setting up for captured images -----"
+  echo "------------------------------------------"
+
+  # Amend /etc/fstab to create a tmpfs drive at ~/tmp for multiple images
+  sudo sed -i '4itmpfs           /home/pi/tmp    tmpfs   defaults,noatime,nosuid,size=10m  0  0' /etc/fstab
+
+  # Create a ~/snaps folder for captured images
+  mkdir /home/pi/snaps
+
+  # Set the image index number to 0
+  echo "0" > /home/pi/snaps/snap_index.txt
+
+  echo
+  echo "SD Card Serial:"
+  cat /sys/block/mmcblk0/device/cid
+
+  # Create file to trigger install on next reboot
+  touch /home/pi/portsdown/.post-install_actions
+  cd /home/pi
+
+  if [ "$BUILD_STATUS" == "Fail" ] ; then
+    echo $(date -u) " Build stage 1 fail" | sudo tee -a /home/pi/p5_initial_build_log.txt  > /dev/null
     echo
-    read -p "Press enter to reboot for stage 2 of the installation"
+    echo "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
+    echo "!!!!!   Build stage 1 complete with errors   !!!!!!!"
+    echo "!!!!!       Read log below for details       !!!!!!!"
+    echo "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
+    echo
+    cat /home/pi/p5_initial_build_log.txt
+    echo
+    echo Enter sudo reboot now to manually reboot and run stage 2 anyway
+    echo 
+    exit
+  else
+    echo
+    echo "--------------------------------------------"
+    echo "-----  Successful stage 1, no errors   -----"
+    echo "-----                                  -----"
+    echo "-----           Rebooting now          -----"
+    echo "--------------------------------------------"
+
+    if [ "$WAIT" == "true" ]; then                 ## Wait for key press before reboot
+      echo "-----                                  -----"
+      echo "-----       Waiting for Reboot         -----"
+      echo "--------------------------------------------"
+      echo
+      read -p "Press enter to reboot for stage 2 of the installation"
+    fi
+
+    echo "-----                                  -----"
+    echo "-----           Rebooting now          -----"
+    echo "--------------------------------------------"
+
+    sudo reboot now
   fi
 
+elif   # Update
+
+  echo
+  echo "--------------------------------------------"
+  echo "-----        Update Complete           -----"
   echo "-----                                  -----"
   echo "-----           Rebooting now          -----"
   echo "--------------------------------------------"
 
-  sudo reboot now
 fi
 
 exit

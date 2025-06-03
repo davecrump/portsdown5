@@ -31,8 +31,8 @@ int fbfd = 0;
 long int screenSize = 0;
 int screenXsize = 0;
 int screenYsize = 0;
-int currentX = 0;
-int currentY = 0;
+//int currentX = 0;
+//int currentY = 0;
 int textSize= 1 ;
 
 extern bool mouse_active;                     // Only set with no touchscreen when mouse has first moved
@@ -48,6 +48,12 @@ extern int FBOrientation;
 
 int32_t fbBytesPerPixel = 2;  // RGB565
 //int32_t fbBytesPerPixel = 4;  // RGBA8888
+
+// Functions not declared externally (not in .h)
+
+int displayChar(const font_t *font_ptr, char c, uint8_t backColourR, uint8_t backColourG, uint8_t backColourB, uint8_t foreColourR, uint8_t foreColourG, uint8_t foreColourB, int currentX, int currentY);
+
+int displayLargeChar(int sizeFactor, const font_t *font_ptr, char c, uint8_t backColourR, uint8_t backColourG, uint8_t backColourB, uint8_t foreColourR, uint8_t foreColourG, uint8_t foreColourB, int currentX, int currentY);
 
 uint8_t waterfall_newcolour[256][3] = 
 {
@@ -310,7 +316,19 @@ uint8_t waterfall_newcolour[256][3] =
 };
 
 
-uint32_t font_width_string(const font_t *font_ptr, char *string)
+
+
+
+
+/***************************************************************************//**
+ * @brief Returns the width of a string in a given font in pixels
+ *
+ * @param Font pointer, string
+ *
+ * @return Width of string
+ * 
+*******************************************************************************/
+int font_width_string(const font_t *font_ptr, char *string)
 {
     uint32_t total_width = 0;
     uint32_t string_length = strlen(string);
@@ -321,7 +339,18 @@ uint32_t font_width_string(const font_t *font_ptr, char *string)
     return total_width;
 }
 
-void displayChar(const font_t *font_ptr, char c, uint8_t backColourR, uint8_t backColourG, uint8_t backColourB, uint8_t foreColourR, uint8_t foreColourG, uint8_t foreColourB)
+
+/***************************************************************************//**
+ * @brief Draws a single character in a given font with given background and 
+ *        foreground colours at the position specified
+ *
+ * @param Font pointer, background colour, foreground colour, position
+ *
+ * @return the character width
+ * 
+*******************************************************************************/
+
+int displayChar(const font_t *font_ptr, char c, uint8_t backColourR, uint8_t backColourG, uint8_t backColourB, uint8_t foreColourR, uint8_t foreColourG, uint8_t foreColourB, int currentX, int currentY)
 {
   // Draws the character based on currentX and currentY at the bottom line (descenders below)
   int row;
@@ -360,10 +389,56 @@ void displayChar(const font_t *font_ptr, char c, uint8_t backColourR, uint8_t ba
     }
   }
   // Move position on by the character width
-  currentX = currentX + font_ptr->characters[(uint8_t)c].render_width;
+  return font_ptr->characters[(uint8_t)c].render_width;
 }
 
-void displayLargeChar(int sizeFactor, const font_t *font_ptr, char c, uint8_t backColourR, uint8_t backColourG, uint8_t backColourB, uint8_t foreColourR, uint8_t foreColourG, uint8_t foreColourB)
+int displayCharOnly(const font_t *font_ptr, char c, uint8_t backColourR, uint8_t backColourG, uint8_t backColourB, uint8_t foreColourR, uint8_t foreColourG, uint8_t foreColourB, int currentX, int currentY)
+{
+  // Draws the character based on currentX and currentY at the bottom line (descenders below)
+  int row;
+  int col;
+
+  int32_t y_offset; // height of top of character from baseline
+
+  int32_t thisPixelR;  // Values for each pixel
+  int32_t thisPixelB;
+  int32_t thisPixelG;
+
+  // Calculate scale from background clour to foreground colour
+  const int32_t red_contrast = foreColourR - backColourR;
+  const int32_t green_contrast = foreColourG - backColourG;
+  const int32_t blue_contrast = foreColourB - backColourB;
+
+  // Calculate height from top of character to baseline
+  y_offset = font_ptr->ascent;
+
+  // For each row
+  for(row = 0; row < font_ptr->characters[(uint8_t)c].height; row++)
+  {
+    // For each column in the row
+    for(col = 0; col < font_ptr->characters[(uint8_t)c].width; col++)
+    {
+      // For each pixel
+      if ((int32_t)font_ptr->characters[(uint8_t)c].map[col+(row*font_ptr->characters[(uint8_t)c].width)] > 0)  // leave background unchanged
+      {
+
+        thisPixelR = backColourR + ((red_contrast * (int32_t)font_ptr->characters[(uint8_t)c].map[col+(row*font_ptr->characters[(uint8_t)c].width)]) / 0xFF);
+        thisPixelG = backColourG + ((green_contrast * (int32_t)font_ptr->characters[(uint8_t)c].map[col+(row*font_ptr->characters[(uint8_t)c].width)]) / 0xFF);
+        thisPixelB = backColourB + ((blue_contrast * (int32_t)font_ptr->characters[(uint8_t)c].map[col+(row*font_ptr->characters[(uint8_t)c].width)]) / 0xFF);
+
+
+        if ((currentX + col < 800) && (currentY + row - y_offset < 480))
+        {
+           setPixel(currentX + col, currentY - row + y_offset, thisPixelR, thisPixelG, thisPixelB);
+        }
+      }
+    }
+  }
+  // Move position on by the character width
+  return font_ptr->characters[(uint8_t)c].render_width;
+}
+
+int displayLargeChar(int sizeFactor, const font_t *font_ptr, char c, uint8_t backColourR, uint8_t backColourG, uint8_t backColourB, uint8_t foreColourR, uint8_t foreColourG, uint8_t foreColourB, int currentX, int currentY)
 {
   // Draws the character based on currentX and currentY at the bottom line (descenders below)
   // magnified by sizeFactor
@@ -418,7 +493,7 @@ void displayLargeChar(int sizeFactor, const font_t *font_ptr, char c, uint8_t ba
     }
   }
   // Move position on by the character width
-  currentX = currentX + (font_ptr->characters[(uint8_t)c].render_width * sizeFactor);
+  return font_ptr->characters[(uint8_t)c].render_width * sizeFactor;
 }
 
 
@@ -427,10 +502,14 @@ void TextMid (int xpos, int ypos, char*s, const font_t *font_ptr, uint8_t backCo
   int sx;   // String width in pixels
   int p;    // Character Counter
   p=0;
+  int incremental_xpos;
+  int increment;
 
   // Calculate String Length and position string write position start
   sx = (font_width_string(font_ptr, s)) / 2;  
-  gotoXY(xpos - sx, ypos);
+
+  // Position string write position start
+  incremental_xpos = xpos - sx;
 
   //printf("TextMid sx %d, x %d, y %d, %s\n", sx, xpos, ypos, s);
 
@@ -438,7 +517,8 @@ void TextMid (int xpos, int ypos, char*s, const font_t *font_ptr, uint8_t backCo
   do
   {
     char c=s[p++];
-    displayChar(font_ptr, c, backColourR, backColourG, backColourB, foreColourR, foreColourG, foreColourB);
+    increment = displayChar(font_ptr, c, backColourR, backColourG, backColourB, foreColourR, foreColourG, foreColourB, incremental_xpos, ypos);
+    incremental_xpos = incremental_xpos + increment;
   }
   while(s[p] != 0);  // While not end of string
 }
@@ -447,10 +527,11 @@ void Text (int xpos, int ypos, char*s, const font_t *font_ptr, uint8_t backColou
 {
   int p;    // Character Counter
   char c;
+  int incremental_xpos;
+  int increment;
 
   // Position string write position start
-
-  gotoXY(xpos, ypos);
+  incremental_xpos = xpos;
 
   //printf("TextMid x %d, y %d, %s\n", xpos, ypos, s);
 
@@ -459,7 +540,31 @@ void Text (int xpos, int ypos, char*s, const font_t *font_ptr, uint8_t backColou
   {
     //printf("%c\n", c);
     c = s[p];
-    displayChar(font_ptr, c, backColourR, backColourG, backColourB, foreColourR, foreColourG, foreColourB);
+    increment = displayChar(font_ptr, c, backColourR, backColourG, backColourB, foreColourR, foreColourG, foreColourB, incremental_xpos, ypos);
+    incremental_xpos = incremental_xpos + increment;
+  }
+}
+
+
+void TextOnly (int xpos, int ypos, char*s, const font_t *font_ptr, uint8_t backColourR, uint8_t backColourG, uint8_t backColourB, uint8_t foreColourR, uint8_t foreColourG, uint8_t foreColourB)
+{
+  int p;    // Character Counter
+  char c;
+  int incremental_xpos;
+  int increment;
+
+  // Position string write position start
+  incremental_xpos = xpos;
+
+  //printf("TextMid x %d, y %d, %s\n", xpos, ypos, s);
+
+  // Display each character
+  for (p = 0; p < strlen(s); p++)
+  {
+    //printf("%c\n", c);
+    c = s[p];
+    increment = displayCharOnly(font_ptr, c, backColourR, backColourG, backColourB, foreColourR, foreColourG, foreColourB, incremental_xpos, ypos);
+    incremental_xpos = incremental_xpos + increment;
   }
 }
 
@@ -468,10 +573,11 @@ void LargeText (int xpos, int ypos, int sizeFactor, char*s, const font_t *font_p
 {
   int p;    // Character Counter
   p=0;
+  int incremental_xpos;
+  int increment;
 
   // Position string write position start
-
-  gotoXY(xpos, ypos);
+  incremental_xpos = xpos;
 
   //printf("TextMid x %d, y %d, %s\n", xpos, ypos, s);
 
@@ -479,7 +585,8 @@ void LargeText (int xpos, int ypos, int sizeFactor, char*s, const font_t *font_p
   do
   {
     char c = s[p++];
-    displayLargeChar(sizeFactor, font_ptr, c, backColourR, backColourG, backColourB, foreColourR, foreColourG, foreColourB);
+    increment = displayLargeChar(sizeFactor, font_ptr, c, backColourR, backColourG, backColourB, foreColourR, foreColourG, foreColourB, incremental_xpos, ypos);
+    incremental_xpos = incremental_xpos + increment;
   }
   while(s[p] != 0);  // While not end of string
 }
@@ -547,13 +654,6 @@ void rectangle(int xpos, int ypos, int xsize, int ysize, int r, int g, int b)
       }
     }
   }
-}
-
-
-void gotoXY(int x, int y)  // x and y are measured from bottom left of a 480 x 800 in range 0 - 479 or 799
-{
-  currentX = x;
-  currentY = y;
 }
 
 
@@ -1255,6 +1355,18 @@ void moveCursor(int new_x, int new_y)
     redraw_min_x = 799;
   }
 
+  // Reverse orientation if required
+  if (FBOrientation == 180)
+  {
+    int temp_redraw_min_x = redraw_min_x;
+    redraw_min_x = 799 - redraw_max_x;
+    redraw_max_x = 799 - temp_redraw_min_x;
+
+    int temp_redraw_min_y = redraw_min_y;
+    redraw_min_y = 479 - redraw_max_y;
+    redraw_max_y = 479 - temp_redraw_min_y;
+  }
+
   //printf("moveCursor old_x %d, old_y %d, new_x %d, new_y %d, screenXsize %d\n", old_x, old_y, new_x, new_y, screenXsize);
   //printf("moveCursor redraw_min_x %d, redraw_max_x %d, redraw_min_y %d, redraw_max_y %d\n", redraw_min_x, redraw_max_x, redraw_min_y, redraw_max_y);
 
@@ -1593,6 +1705,7 @@ void fb2png()
   pngImagePtr = NULL;
 }
 
+
 void publish()
 {
   if (mouse_active == true)
@@ -1625,6 +1738,13 @@ void publishRectangle(int x, int y, int w, int h)
   int offset;
   int yline;
 
+  // Transform if screen inverted
+  if (FBOrientation == 180)
+  {
+    x = 800 - x - w;
+    y = 480 - y - h;
+  }
+
   // define the xoffset and xlength
 
   xoffset = x * fbBytesPerPixel;
@@ -1635,13 +1755,14 @@ void publishRectangle(int x, int y, int w, int h)
 
   yoffset = (479 - y) * screenXsize * fbBytesPerPixel;
 
+
   if (mouse_active == true)
   {
     for (yline = 0; yline < h; yline++)
     {
       offset = yoffset - yline * linebytes + xoffset;
+      //printf (" with mouse yline = %d, offset = %d\n", yline, offset);
 
-//printf ("yline = %d, offset = %d\n", yline, offset);
       // Copy the back buffer to the cursor buffer
       memcpy(cursor_fbp + offset, back_fbp + offset, xlength);
 
@@ -1657,6 +1778,7 @@ void publishRectangle(int x, int y, int w, int h)
     // Copy the back buffer to the cursor buffer
     for (yline = 0; yline < h; yline++)
     {
+      //printf ("no mouse yline = %d, offset = %d\n", yline, offset);
       offset = yoffset - yline * linebytes + xoffset;
       memcpy(fbp + offset, back_fbp + offset, xlength);
     }

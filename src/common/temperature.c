@@ -27,3 +27,32 @@ bool temperature_cpu(float *result)
   return false;
 }
 
+/***************************************************************************//**
+ * @brief Looks up the CPU Temp
+ *
+ * @param CPUTemp (str) CPU Temp to be passed as a string
+ *
+ * @return void
+*******************************************************************************/
+
+void GetCPUTemp(char CPUTemp[31])
+{
+  FILE *fp;
+
+  /* Open the command for reading. */
+  fp = popen("vcgencmd measure_temp", "r");
+  if (fp == NULL) {
+    printf("Failed to run command\n" );
+    exit(1);
+  }
+
+  /* Read the output a line at a time - output it. */
+  while (fgets(CPUTemp, 20, fp) != NULL)
+  {
+    //printf("%s", CPUTemp);
+  }
+
+  /* close */
+  pclose(fp);
+}
+

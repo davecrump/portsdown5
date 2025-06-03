@@ -41,6 +41,16 @@ float freqCalGain100[10] = {-15.0, -15.0, -19.0, -20.8,  -16.4,  -27.6,  -10.2, 
 static lms_device_t* device = NULL;
 
 
+int LimeTemp()
+{
+  double Temperature;
+
+  LMS_GetChipTemperature(device, 0, &Temperature);
+  //printf(" - Temperature: %.0f°C\n", Temperature);
+  return (int)(Temperature);
+}
+
+
 float calcFreqGainCal()
 {
   int i;

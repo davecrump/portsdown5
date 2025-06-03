@@ -465,8 +465,6 @@ int limesdr_init(const double sample_rate,
     return -1;
   }
 
-printf("Calling LMS_Open(device,  device_list[%d], NULL)\n", device_i);
-
 	if (LMS_Open(device, device_list[device_i], NULL) < 0)
 	{
 		fprintf(stderr, "LMS_Open() : %s\n", LMS_GetLastErrorMessage());
@@ -474,7 +472,6 @@ printf("Calling LMS_Open(device,  device_list[%d], NULL)\n", device_i);
 	}
 
 	const lms_dev_info_t *device_info;
-printf("Calling LMS_GetDeviceInfo(*device)\n");
 
 	device_info = LMS_GetDeviceInfo(*device);
 	if (device_info != NULL)
@@ -491,7 +488,6 @@ printf("Calling LMS_GetDeviceInfo(*device)\n");
 		fprintf(stderr, "LMS_Reset() : %s\n", LMS_GetLastErrorMessage());
 		return -1;
 	}
-printf("Calling LMS_Init(*device)\n");
 
 	if (LMS_Init(*device) < 0)
 	{
@@ -500,9 +496,6 @@ printf("Calling LMS_Init(*device)\n");
 	}
 
 	int is_not_tx = (is_tx == LMS_CH_TX) ? LMS_CH_RX : LMS_CH_TX;
-
-printf("Calling LMS_EnableChannel(*device, is_not_tx, channel, false)\n");
-
 	if (LMS_EnableChannel(*device, is_not_tx, channel, false) < 0)
 	{
 		fprintf(stderr, "LMS_EnableChannelRx() : %s\n", LMS_GetLastErrorMessage());
@@ -515,10 +508,6 @@ printf("Calling LMS_EnableChannel(*device, is_not_tx, channel, false)\n");
 		//return -1;
 	}*/
 	/*//not for mini
-
-printf("Calling LMS_EnableChannel(*device, is_tx, 1 - channel, false)\n");
-
-
 	if (LMS_EnableChannel(*device, is_tx, 1 - channel, false) < 0)
 	{
 		fprintf(stderr, "LMS_EnableChannelTx1() : %s\n", LMS_GetLastErrorMessage());
@@ -531,10 +520,7 @@ printf("Calling LMS_EnableChannel(*device, is_tx, 1 - channel, false)\n");
 		//return -1;
 	}
 	
-printf("Calling LMS_SetSampleRate(*device, %f, 0)\n", sample_rate);
-
-
-	//LMS_SetNormalizedGain(*device, is_tx, channel, gain);
+	LMS_SetNormalizedGain(*device, is_tx, channel, gain);
 	if(WithCalibration)
 	{
 		if (LMS_SetSampleRate(*device, sample_rate, 0) < 0)
