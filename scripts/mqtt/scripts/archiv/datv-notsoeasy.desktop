@@ -1,0 +1,10 @@
+[Desktop Entry]
+X-SnapInstanceName=DATV-NotSoEasy
+Name=DATV-NotSoEasy
+Exec=env BAMF_DESKTOP_FILE_HINT=/home/pluto/DATV-NotSoEasy-Linux/DATV-TX.sh
+Terminal=true
+Type=Application
+Icon=/home/pluto/DATV-NotSoEasy-Linux/ini/212.gif
+StartupWMClass=DATV-NotSoEasy
+Comment=DATV TX/RX
+Categories=Development;

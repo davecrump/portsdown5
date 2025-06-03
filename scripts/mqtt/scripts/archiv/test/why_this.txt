@@ -1,0 +1,5 @@
+Improved calculations
+
+Add DVBMODE=DVB-S
+or  DVBMODE=DVB-S2
+to config-tx.ini
