@@ -1,10 +1,10 @@
 modulation=S2QPSK
 encoding=H264
 modeoutput=LIMEMINI
-format=4:3
+format=16:9
 videosource=TestCard
 freqoutput=437
-symbolrate=2000
+symbolrate=333
 fec=23
 band=d3
 limegain=85

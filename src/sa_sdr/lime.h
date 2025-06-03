@@ -13,6 +13,7 @@ typedef struct {
 } lime_fft_buffer_t;
 
 void *lime_thread(void *arg);
+int LimeTemp();
 
 #endif /* __LIME_H__ */
 

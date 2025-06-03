@@ -17,6 +17,7 @@
 #include <stdbool.h>
 #include <fftw3.h>
 #include <wiringPi.h> // Include new WiringPi library
+#include <ads1115.h>
 #include <mcp23017.h>
 
 #include "lime.h"
@@ -27,7 +28,10 @@
 #include "../common/timing.h"
 #include "../common/buffer/buffer_circular.h"
 #include "../common/ffunc.h"
+#include "../common/hardware.h"
 #include "../common/LMNspi/LMNspi.h"
+#include "../common/temperature.h"
+#include "../common/siggen.h"
 
 pthread_t thbutton;
 pthread_t thwebclick;                  //  Listens for clicks from web interface
@@ -72,9 +76,10 @@ color_t DGrey = {.r = 32 , .g = 32 , .b = 32 };
 color_t Red   = {.r = 255, .g = 0  , .b = 0  };
 color_t Black = {.r = 0  , .g = 0  , .b = 0  };
 
-#define PATH_SCONFIG "/home/pi/portsdown/configs/system_config.txt"
-#define PATH_CONFIG "/home/pi/portsdown/configs/sa_sdr_config.txt"
-#define PATH_ICONFIG "/home/pi/portsdown/configs/sa_if_config.txt"
+#define PATH_SCONFIG  "/home/pi/portsdown/configs/system_config.txt"
+#define PATH_CONFIG   "/home/pi/portsdown/configs/sa_sdr_config.txt"
+#define PATH_ICONFIG  "/home/pi/portsdown/configs/sa_if_config.txt"
+#define PATH_SGCONFIG "/home/pi/portsdown/configs/siggenconfig.txt"
 
 #define MAX_BUTTON 675
 int IndexButtonInArray=0;
@@ -131,12 +136,17 @@ uint32_t pfreq3 = 748000;
 uint32_t pfreq4 = 1255000;
 uint32_t pfreq5 = 2409000;
 
+// Parameters read from Panel
+
+uint8_t band = 1;                        // Band 1 to 8
 uint8_t samode = 1;                      // Mode selected on front panel
 bool automode = true;                    // set to false to force a mode (persistent)
 int32_t atten = 0;                       // Input attenuator, 0 through -80 dB
 bool samodeauto = true;                  // enables front panel control of which running app
 bool LimeStarted = false;                // delays checking mode until Lime is started so that it can shut down cleanly
 float smoothing_factor;
+bool FirstStatusCall = false;
+bool ShowStatusPage = false;
 
 int markerx = 250;
 int markery = 15;
@@ -205,6 +215,15 @@ char DisplayType[31];
 bool rotate_display = true;
 bool touchscreen_present = false;
 
+// SigGen globals
+int level = 0;
+int SG_OutputLevel = 0;
+uint64_t DisplayFreq = 437000000;
+bool siggen_on = false;
+bool ModOn = false;
+bool firmware_loaded = false;
+bool firmware_loading = false;
+
 ///////////////////////////////////////////// FUNCTION PROTOTYPES ///////////////////////////////
 
 void GetConfigParam(char *PathConfigFile, char *Param, char *Value);
@@ -217,10 +236,12 @@ void *WaitMouseEvent(void * arg);
 void *WebClickListener(void * arg);
 void parseClickQuerystring(char *query_string, int *x_ptr, int *y_ptr);
 FFUNC touchscreenClick(ffunc_session_t * session);
+void take_snap();
+void snap_from_menu();
 void do_snapcheck();
 int IsImageToBeChanged(int x,int y);
 int CheckLimeConnect();
-int CheckMouse();
+//int CheckMouse();
 void UpdateWeb();
 void Keyboard(char RequestText[63], char InitText[63], int MaxLength);
 int openTouchScreen(int NoDevice);
@@ -250,6 +271,7 @@ void SetWfall(int button);
 void ShiftFrequency(int button);
 void CalcSpan();
 uint32_t ConstrainFreq(uint32_t CheckFreq);
+void control_SigGen(int button);
 void ChangeLabel(int button);
 void RedrawDisplay();
 void *WaitButtonEvent(void * arg);
@@ -271,11 +293,11 @@ void Define_Menu9();
 void Start_Highlights_Menu9();
 void Define_Menu10();
 void Start_Highlights_Menu10();
-void Define_Menu11();
 void Define_Menu12();
 void Start_Highlights_Menu12();
 void Define_Menu13();
-void Start_Highlights_Menu12();
+void Define_Menu14();
+void Start_Highlights_Menu14();
 void Define_Menu41();
 void DrawEmptyScreen();
 void DrawTickMarks();
@@ -793,6 +815,66 @@ FFUNC touchscreenClick(ffunc_session_t * session)
 }
 
 
+void take_snap()
+{
+  FILE *fp;
+  char SnapIndex[255];
+  int SnapNumber;
+  char mvcmd[255];
+  char echocmd[255];
+  char SnapIndexText[255];
+
+  // Fetch the Next Snap serial number
+  fp = popen("cat /home/pi/snaps/snap_index.txt", "r");
+  if (fp == NULL) 
+  {
+    printf("Failed to run command\n" );
+    exit(1);
+  }
+  // Read the output a line at a time - output it. 
+  while (fgets(SnapIndex, 20, fp) != NULL)
+  {
+    //printf("%s", SnapIndex);
+  }
+
+  pclose(fp);
+
+  SnapNumber=atoi(SnapIndex);  // this is the next snap number to be saved.  Needs incrementing before exit
+
+  fb2png(); // saves snap to /home/pi/tmp/snapshot.png
+
+  system("convert /home/pi/tmp/snapshot.png /home/pi/tmp/screen.jpg");
+
+  sprintf(SnapIndexText, "%d", SnapNumber);
+  strcpy(mvcmd, "cp /home/pi/tmp/screen.jpg /home/pi/snaps/snap");
+  strcat(mvcmd, SnapIndexText);
+  strcat(mvcmd, ".jpg >/dev/null 2>/dev/null");
+  system(mvcmd);
+
+  snprintf(echocmd, 50, "echo %d > /home/pi/snaps/snap_index.txt", SnapNumber + 1);
+  system (echocmd); 
+}
+
+
+void snap_from_menu()
+{
+  freeze = true; 
+  SetButtonStatus(ButtonNumber(CurrentMenu, 0), 1);  // hide the capture button 
+  UpdateWindow();                                    // paint the hide
+
+  while(! frozen)                                    // wait till the end of the scan
+  {
+    usleep(10);
+  }
+
+  take_snap();
+
+  SetButtonStatus(ButtonNumber(CurrentMenu, 0), 0);  // unhide the button
+  UpdateWindow();                                    // paint the un-hide
+  freeze = false;
+}
+
+
 void do_snapcheck()
 {
   FILE *fp;
@@ -805,6 +887,7 @@ void do_snapcheck()
 
   char fbicmd[255];
   char rotatecmd[255];
+  char labelcmd[255];
 
   // Fetch the Next Snap serial number
   fp = popen("cat /home/pi/snaps/snap_index.txt", "r");
@@ -833,27 +916,44 @@ void do_snapcheck()
       if (FBOrientation == 180)
       {
         system("rm /home/pi/tmp/snapinverted.jpg >/dev/null 2>/dev/null");
+        system("rm /home/pi/tmp/labelledsnap.jpg >/dev/null 2>/dev/null");
 
-        strcpy(rotatecmd, "convert /home/pi/snaps/snap");
-        strcat(rotatecmd, SnapIndex);
+        // Label the snap before inverting it
+        strcpy(labelcmd, "convert /home/pi/snaps/snap");
+        strcat(labelcmd, SnapIndex);
+        strcat(labelcmd, ".jpg -pointsize 20 -fill white -draw 'text 5,460 \"Snap ");
+        strcat(labelcmd, SnapIndex);
+        strcat(labelcmd, "\"' /home/pi/tmp/labelledsnap.jpg");
+        system(labelcmd);
+
+        // Invert the labelled snap
+        strcpy(rotatecmd, "convert /home/pi/tmp/labelledsnap");
         strcat(rotatecmd, ".jpg -rotate 180 /home/pi/tmp/snapinverted.jpg");
         system(rotatecmd);
 
+        // Display it
         strcpy(fbicmd, "sudo fbi -T 1 -noverbose -a /home/pi/tmp/snapinverted.jpg >/dev/null 2>/dev/null");
         system(fbicmd);
       }
       else
       {
-        strcpy(fbicmd, "sudo fbi -T 1 -noverbose -a /home/pi/snaps/snap");
-        strcat(fbicmd, SnapIndex);
-        strcat(fbicmd, ".jpg >/dev/null 2>/dev/null");
+        // Label the snap
+        strcpy(labelcmd, "convert /home/pi/snaps/snap");
+        strcat(labelcmd, SnapIndex);
+        strcat(labelcmd, ".jpg -pointsize 20 -fill white -draw 'text 5,460 \"Snap ");
+        strcat(labelcmd, SnapIndex);
+        strcat(labelcmd, "\"' /home/pi/tmp/labelledsnap.jpg");
+        system(labelcmd);
+
+        // Display it
+        strcpy(fbicmd, "sudo fbi -T 1 -noverbose -a /home/pi/tmp/labelledsnap.jpg >/dev/null 2>/dev/null");
         system(fbicmd);
       }
       LastDisplayedSnap = Snap;
       UpdateWeb();
     }
 
-    if (getTouchSample(&rawX, &rawY, &rawPressure)==0) continue;
+    if (getTouchSample(&rawX, &rawY, &rawPressure) == 0) continue;
 
     system("sudo killall fbi >/dev/null 2>/dev/null");  // kill instance of fbi
 
@@ -876,21 +976,18 @@ void do_snapcheck()
   system("sudo killall fbi >/dev/null 2>/dev/null");  // kill any instance of fbi
 }
 
+
 int IsImageToBeChanged(int x,int y)
 {
   // Returns -1 for LHS touch, 0 for centre and 1 for RHS
 
-  TransformTouchMap(x,y);       // Sorts out orientation and approx scaling of the touch map
+  TransformTouchMap(x, y);       // Sorts out orientation and approx scaling of the touch map
 
-  if (scaledY >= hscreen/2)
-  {
-    return 0;
-  }
-  if (scaledX <= wscreen/8)
+  if (scaledX <= wscreen / 4)
   {
     return -1;
   }
-  else if (scaledX >= 7 * wscreen/8)
+  else if (scaledX >= 3 * wscreen / 4)
   {
     return 1;
   }
@@ -944,33 +1041,33 @@ return 0;
  * @return 0 if connected, 1 if not connected
 *******************************************************************************/
 
-int CheckMouse()
-{
-  FILE *fp;
-  char response_line[255];
+//int CheckMouse()
+//{
+//  FILE *fp;
+//  char response_line[255];
 
-  fp = popen("ls -l /dev/input | grep 'mouse'", "r");
-  if (fp == NULL)
-  {
-    printf("Failed to run command\n" );
-    exit(1);
-  }
+//  fp = popen("ls -l /dev/input | grep 'mouse'", "r");
+//  if (fp == NULL)
+//  {
+//    printf("Failed to run command\n" );
+//    exit(1);
+//  }
 
   // Response is "crw-rw---- 1 root input 13, 32 Apr 29 17:02 mouse0" if present, null if not
   // So, if there is a response, return 0.
 
   /* Read the output a line at a time - output it. */
-  while (fgets(response_line, 250, fp) != NULL)
-  {
-    if (strlen(response_line) > 1)
-    {
-      pclose(fp);
-      return 0;
-    }
-  }
-  pclose(fp);
-  return 1;
-}
+//  while (fgets(response_line, 250, fp) != NULL)
+//  {
+//    if (strlen(response_line) > 1)
+//    {
+//      pclose(fp);
+//      return 0;
+//    }
+//  }
+//  pclose(fp);
+//  return 1;
+//}
 
 
 void UpdateWeb()
@@ -1522,7 +1619,7 @@ int CreateButton(int MenuIndex, int ButtonPosition)
 
   ButtonIndex = ButtonNumber(MenuIndex, ButtonPosition);
 
-  if ((MenuIndex != 41) && (MenuIndex != 1) && (MenuIndex != 2) && (MenuIndex != 6))   // All except Main, keyboard, Span, Markers
+  if ((MenuIndex != 41) && (MenuIndex != 1) && (MenuIndex != 2) && (MenuIndex != 6) && (MenuIndex != 14))   // All except Main, keyboard, Span, Markers and SigGen
   {
     if (ButtonPosition == 0)  // Capture
     {
@@ -1540,7 +1637,87 @@ int CreateButton(int MenuIndex, int ButtonPosition)
       h = 50;
     }
   }
-  else if ((MenuIndex == 1) || (MenuIndex == 2))   // Main and Marker Menu
+  else if (MenuIndex == 1)   // Main Menu
+  {
+    if (ButtonPosition == 0)  // Capture
+    {
+      x = 0;
+      y = 0;
+      w = 90;
+      h = 50;
+    }
+    if (ButtonPosition == 1)                            // Menu Title
+    {
+      x = normal_xpos;
+      y = 480 - (ButtonPosition * 60);
+      w = normal_width;
+      h = 50;
+    }
+    if (ButtonPosition == 2)                             // Freq
+    {
+      x = normal_xpos;  
+      y = 480 - (2 * 60);
+      w = 50;
+      h = 50;
+    }
+    if (ButtonPosition == 3)                             // Span
+    {
+      x = 710;   // = normal_xpos + 50 button width + 20 gap
+      y = 480 - (2 * 60);
+      w = 50;
+      h = 50;
+    }
+    if (ButtonPosition == 4)                             // Settings           
+    {
+      x = normal_xpos;  
+      y = 480 - (3 * 60);
+      w = 50;
+      h = 50;
+    }
+    if (ButtonPosition == 5)                             // Config
+    {
+      x = 710;  // = normal_xpos + 50 button width + 20 gap  
+      y = 480 - (3 * 60);
+      w = 50;
+      h = 50;
+    }
+    if (ButtonPosition == 6)                             // Markers           
+    {
+      x = normal_xpos;  
+      y = 480 - (4 * 60);
+      w = 50;
+      h = 50;
+    }
+    if (ButtonPosition == 7)                             // Mode
+    {
+      x = 710;  // = normal_xpos + 50 button width + 20 gap  
+      y = 480 - (4 * 60);
+      w = 50;
+      h = 50;
+    }
+    if (ButtonPosition == 8)                             // Left arrow
+    {
+      x = normal_xpos;
+      y = 480 - (5 * 60);
+      w = 50;
+      h = 50;
+    }
+    if (ButtonPosition == 9)                             // Right Arrow
+    {
+      x = 710;  // = normal_xpos + 50 button width + 20 gap  
+      y = 480 - (5 * 60);
+      w = 50;
+      h = 50;
+    }
+    if ((ButtonPosition == 10) || (ButtonPosition == 11) || (ButtonPosition == 12))  // Bottom 3 buttons
+    {
+      x = normal_xpos;
+      y = 480 - ((ButtonPosition - 4) * 60);
+      w = normal_width;
+      h = 50;
+    }
+  }
+  else if ((MenuIndex == 1) || (MenuIndex == 2) || (MenuIndex == 14))   // Marker and SigGen Menu
   {
     if (ButtonPosition == 0)  // Capture
     {
@@ -2761,10 +2938,10 @@ void ShiftFrequency(int button)
 
   switch (button)
   {
-    case 5:                                                       // Left 1/10 span
+    case 8:                                                       // Left 1/10 span
       centrefreq = centrefreq - (span * 125) / 1280;
     break;
-    case 6:                                                       // Left 1/10 span
+    case 9:                                                       // Left 1/10 span
       centrefreq = centrefreq + (span * 125) / 1280;
     break;
   }
@@ -2895,6 +3072,224 @@ uint32_t ConstrainFreq(uint32_t CheckFreq)  // Check Freq is within bounds
     return 3500000;
   }
   return CheckFreq;
+}
+
+
+void control_SigGen(int button)
+{
+  char RequestText[63];
+  char InitText[63];
+  bool IsValid = false;
+  char ValueToSave[63];
+
+  switch (button)
+  {
+    case 0:                                                                         // On entry to Sig Gen menu
+
+      if (CheckExpressConnect() != 0)        // DATV Express not detected, so show error message
+      {
+        // Stop the scan at the end of the current one and wait for it to stop
+        freeze = true;
+        while(! frozen)
+        {
+          usleep(10);                                   // wait till the end of the scan
+        }
+
+        MsgBox4("DATV Express Source not detected", "Check that the Express output is selected", " ", "Touch screen to continue");
+        wait_touch();
+        // Tidy up, paint around the screen and then unfreeze
+        clearScreen(0, 0, 0);
+        DrawEmptyScreen();  // Required to set A value, which is not set in DrawTrace
+        DrawYaxisLabels();  // dB calibration on LHS
+        DrawSettings();     // Draw Title
+        freeze = false;
+      }
+
+      firmware_loading = false;
+      firmware_loaded = false;
+
+      // Check if DATV Express Server running.  If not, start it (which loads the firmware)
+      if (CheckExpressRunning() != 0)        // DATV Express Server not running
+      {
+        // Change menu to say firmware laoding
+        firmware_loading = true;
+        firmware_loaded = false;
+        Start_Highlights_Menu14();
+        UpdateWindow();
+        
+        if (StartExpressServer() != 0)        // DATV Express Server Error
+        {
+          // Stop the scan at the end of the current one and wait for it to stop
+          freeze = true;
+          while(! frozen)
+          {
+            usleep(10);                                   // wait till the end of the scan
+          }
+
+          MsgBox4("DATV Express Firmware failed to load", "Investigation required", " ", "Touch screen to continue");
+          wait_touch();
+
+          // Tidy up, paint around the screen and then unfreeze
+          clearScreen(0, 0, 0);
+          DrawEmptyScreen();  // Required to set A value, which is not set in DrawTrace
+          DrawYaxisLabels();  // dB calibration on LHS
+          DrawSettings();     // Draw Title
+          freeze = false;
+        }
+        else
+        {
+          firmware_loading = false;
+          firmware_loaded = true;
+        }
+      }
+      else  // Server already running, so low firmware as loaded
+      {
+        firmware_loading = false;
+        firmware_loaded = true;
+      }
+      Start_Highlights_Menu14();
+      UpdateWindow();
+
+      break;
+
+    case 1:                                                                                  // SigGen On/off
+      if (siggen_on == false)
+      {
+        if (ModOn == false)
+        {
+          ExpressOn(DisplayFreq, level);
+        }
+        else
+        {
+          ExpressOnWithMod(DisplayFreq, level);
+        }
+        siggen_on = true;
+      }
+      else
+      {
+        ExpressOff();
+        siggen_on = false;
+      }
+      break;
+
+    case 2:                                                                               // Frequency
+      // Define request string
+      strcpy(RequestText, "Enter frequency in Hz");
+
+      // Define initial value 
+      snprintf(InitText, 12, "%ld", DisplayFreq);
+
+      freeze = true;
+      while(! frozen)
+      {
+        usleep(10);                                   // wait till the end of the scan
+      }
+
+      while (IsValid == false)
+      {
+        Keyboard(RequestText, InitText, 10);
+        if (strlen(KeyboardReturn) < 8)
+        {
+          IsValid = false;
+        }
+        else
+        {
+          DisplayFreq = strtoll(KeyboardReturn, 0, 0);
+          if ((DisplayFreq >= 70000000) && (DisplayFreq <= 2450000000))
+          {
+            IsValid = true;
+          }
+          else
+          {
+            IsValid = false;
+          }
+        }
+      }
+      // Tidy up, paint around the screen and then unfreeze
+      clearScreen(0, 0, 0);
+      DrawEmptyScreen();  // Required to set A value, which is not set in DrawTrace
+      DrawYaxisLabels();  // dB calibration on LHS
+      DrawSettings();     // Draw Title
+      freeze = false;
+
+      ChangeExpressFreq(DisplayFreq);
+      SG_OutputLevel = CalcOPLevel(DisplayFreq, level, ModOn);
+
+      snprintf(ValueToSave, 63, "%ld", DisplayFreq);
+      SetConfigParam(PATH_SGCONFIG, "freq", ValueToSave);
+      printf("SigGen Frequency set to: %ld Hz\n", DisplayFreq);
+      break;
+
+    case 3:                                                                              // QPSK Mod On/off
+      if (ModOn == false)
+      {
+        // turn on modulation
+        ModOn = true;
+        if (siggen_on == true)
+        {
+          ExpressModOn();
+        }
+      }
+      else
+      {
+        // turn off modulation
+        ModOn = false;
+        if (siggen_on == true)
+        {
+          ExpressModOff();
+        }
+      }
+
+      // calculate new real level
+      SG_OutputLevel = CalcOPLevel(DisplayFreq, level, ModOn);
+      break;
+    //case 4:                                           // Does nothing, just shows output level
+
+    case 5:                                                                                 // Reduce output
+      level = level - 1;
+      if (level < 0)
+      {
+        level = 0;
+      }
+      snprintf(ValueToSave, 63, "%d", level);
+      SetConfigParam(PATH_SGCONFIG, "level", ValueToSave);
+      printf("SigGen Level set to: %d\n", level);
+
+      ChangeExpressLevel(level);
+
+      // calculate new real level
+      SG_OutputLevel = CalcOPLevel(DisplayFreq, level, ModOn);
+      break;
+
+    case 6:                                                                             // Increase output
+      level = level + 1;
+      if (level > 42)
+      {
+        level = 42;
+      }
+      snprintf(ValueToSave, 63, "%d", level);
+      SetConfigParam(PATH_SGCONFIG, "level", ValueToSave);
+      printf("SigGen Level set to: %d\n", level);
+
+      ChangeExpressLevel(level);
+
+      // calculate new real level
+      SG_OutputLevel = CalcOPLevel(DisplayFreq, level, ModOn);
+      break;
+
+    case 7:                                                                              // Load Firmware
+      siggen_on = false;
+      ModOn = false;
+      firmware_loading = true;
+      firmware_loaded = false;
+      StopExpressServer();
+      Start_Highlights_Menu14();
+      UpdateWindow();
+      StartExpressServer();
+      firmware_loaded = true;
+      firmware_loading = false;
+      break;
+  }
 }
 
 
@@ -3122,14 +3517,7 @@ void *WaitButtonEvent(void * arg)
       switch (i)
       {
         case 0:                                            // Capture Snap
-          freeze = true; 
-          SetButtonStatus(ButtonNumber(CurrentMenu, 0), 1);  // hide the capture button 
-          UpdateWindow();                                    // paint the hide
-          while(! frozen);                                   // wait till the end of the scan
-          system("/home/pi/portsdown/scripts/snap.sh");
-          SetButtonStatus(ButtonNumber(CurrentMenu, 0), 0);
-          UpdateWindow();
-          freeze = false;
+          snap_from_menu();
           break;
         case 2:                                            // Enter Centre Frequency
           printf("Centre Frequency keyboard Requested\n");
@@ -3144,34 +3532,52 @@ void *WaitButtonEvent(void * arg)
           Start_Highlights_Menu6();
           UpdateWindow();
           break;
-        case 4:                                            // Mode
+        case 4:                                            // Settings
+          printf("Settings Menu 3 Requested\n");
+          CurrentMenu = 3;
+          UpdateWindow();
+          break;
+        case 5:                                            // Config
+          printf("Config Menu 9 Requested\n");
+          CurrentMenu = 9;
+          Start_Highlights_Menu9();
+          UpdateWindow();
+          break;
+        case 6:                                            // Markers
+          printf("Markers Menu 2 Requested\n");
+          CurrentMenu = 2;
+          Start_Highlights_Menu2();
+          UpdateWindow();
+          break;
+        case 7:                                            // Mode
           printf("Mode Menu 5 Requested\n");
           CurrentMenu = 5;
           Start_Highlights_Menu5();
           UpdateWindow();
           break;
-        case 5:                                            // Left Arrow
-        case 6:                                            // Right Arrow
+        case 8:                                            // Left Arrow
+        case 9:                                            // Right Arrow
           printf("Shift Frequency Requested\n");
           ShiftFrequency(i);
           //UpdateWindow();
           RequestPeakValueZero = true;
           break;
-        case 7:                                            // Go to Menu 2 (11)
-          printf("Menu 2 (11) Requested\n");
-          CurrentMenu = 11;
+        case 10:                                            // System
+          printf("System Menu 4 Requested\n");
+          CurrentMenu = 4;
           UpdateWindow();
           break;
-        case 8:                                            // Exit to Portsdown
-          if(PortsdownExitRequested)
+        case 11:                                            // Exit to Portsdown
+          if(PortsdownExitRequested == true)
           {
             freeze = true;
             usleep(100000);
             clearScreen(0, 0, 0);
             UpdateWeb();
+            publish();
             usleep(1000000);
             closeScreen();
-            cleanexit(129);
+            cleanexit(207);
           }
           else
           {
@@ -3180,7 +3586,7 @@ void *WaitButtonEvent(void * arg)
             UpdateWindow();
           }
           break;
-        case 9:
+        case 12:
           if (freeze)
           {
             SetButtonStatus(ButtonNumber(CurrentMenu, 8), 0);
@@ -3196,7 +3602,7 @@ void *WaitButtonEvent(void * arg)
         default:
           printf("Menu 1 Error\n");
       }
-      if(i != 8)
+      if(i != 11)
       {
         PortsdownExitRequested = false;
         Start_Highlights_Menu1();
@@ -3212,14 +3618,7 @@ void *WaitButtonEvent(void * arg)
       switch (i)
       {
         case 0:                                            // Capture Snap
-          freeze = true; 
-          SetButtonStatus(ButtonNumber(CurrentMenu, 0), 1);
-          UpdateWindow();
-          while(! frozen);
-          system("/home/pi/portsdown/scripts/snap.sh");
-          SetButtonStatus(ButtonNumber(CurrentMenu, 0), 0);
-          UpdateWindow();
-          freeze = false;
+          snap_from_menu();
           break;
         case 2:                                            // Peak
           if ((markeron == false) || (markermode != 2))
@@ -3344,28 +3743,21 @@ void *WaitButtonEvent(void * arg)
       CallingMenu = 3;
       switch (i)
       {
-        case 0:                                            // Capture Snap
-          freeze = true; 
-          SetButtonStatus(ButtonNumber(CurrentMenu, 0), 1);
-          UpdateWindow();
-          while(! frozen);
-          system("/home/pi/portsdown/scripts/snap.sh");
-          SetButtonStatus(ButtonNumber(CurrentMenu, 0), 0);
-          UpdateWindow();
-          freeze = false;
+        case 0:                                             // Capture Snap
+          snap_from_menu();
           break;
-        case 2:                                            // Centre Freq
-          ChangeLabel(i);
-          CurrentMenu = 3;
-          UpdateWindow();          
-          RequestPeakValueZero = true;
-          break;
-        case 3:                                            // Frequency Presets
+        case 2:                                            // Frequency Presets
           printf("Frequency Preset Menu 7 Requested\n");
           CurrentMenu = 7;
           Start_Highlights_Menu7();
           UpdateWindow();
           RequestPeakValueZero = true;
+          break;
+        case 3:                                            // Sig Gen
+          printf("SigGen Menu 14 Requested\n");
+          CurrentMenu = 14;
+          control_SigGen(0);  // Start-up actions for SigGen
+          UpdateWindow();
           break;
         case 4:                                            // Span Width
           printf("Span Width Menu 6 Requested\n");
@@ -3419,14 +3811,7 @@ void *WaitButtonEvent(void * arg)
       switch (i)
       {
         case 0:                                            // Capture Snap
-          freeze = true; 
-          SetButtonStatus(ButtonNumber(CurrentMenu, 0), 1);
-          UpdateWindow();
-          while(! frozen);
-          system("/home/pi/portsdown/scripts/snap.sh");
-          SetButtonStatus(ButtonNumber(CurrentMenu, 0), 0);
-          UpdateWindow();
-          freeze = false;
+          snap_from_menu();
           break;
         case 2:                                            // Snap Viewer
           freeze = true;
@@ -3495,14 +3880,7 @@ void *WaitButtonEvent(void * arg)
       switch (i)
       {
         case 0:                                            // Capture Snap
-          freeze = true; 
-          SetButtonStatus(ButtonNumber(CurrentMenu, 0), 1);
-          UpdateWindow();
-          while(! frozen);
-          system("/home/pi/portsdown/scripts/snap.sh");
-          SetButtonStatus(ButtonNumber(CurrentMenu, 0), 0);
-          UpdateWindow();
-          freeze = false;
+          snap_from_menu();
           break;
         case 2:                                            // Classic SA Mode
           SetMode(i);
@@ -3560,15 +3938,7 @@ void *WaitButtonEvent(void * arg)
       switch (i)
       {
         case 0:                                            // Capture Snap
-          freeze = true; 
-          SetButtonStatus(ButtonNumber(CurrentMenu, 0), 1);
-          UpdateWindow();
-          while(! frozen);
-          system("/home/pi/portsdown/scripts/snap.sh");
-          SetButtonStatus(ButtonNumber(CurrentMenu, 0), 0);
-          Start_Highlights_Menu6();
-          UpdateWindow();
-          freeze = false;
+          snap_from_menu();
           break;
         case 2:                                            // 100 kHz
         case 3:                                            // 200 kHz
@@ -3617,14 +3987,7 @@ void *WaitButtonEvent(void * arg)
       switch (i)
       {
         case 0:                                            // Capture Snap
-          freeze = true; 
-          SetButtonStatus(ButtonNumber(CurrentMenu, 0), 1);
-          UpdateWindow();
-          while(! frozen);
-          system("/home/pi/portsdown/scripts/snap.sh");
-          SetButtonStatus(ButtonNumber(CurrentMenu, 0), 0);
-          UpdateWindow();
-          freeze = false;
+          snap_from_menu();
           break;
         case 2:                                            // pfreq1
         case 3:                                            // pfreq2 
@@ -3666,15 +4029,7 @@ void *WaitButtonEvent(void * arg)
       switch (i)
       {
         case 0:                                            // Capture Snap
-          freeze = true; 
-          SetButtonStatus(ButtonNumber(CurrentMenu, 0), 1);
-          UpdateWindow();
-          while(! frozen);
-          system("/home/pi/portsdown/scripts/snap.sh");
-          SetButtonStatus(ButtonNumber(CurrentMenu, 0), 0);
-          Start_Highlights_Menu8();
-          UpdateWindow();
-          freeze = false;
+          snap_from_menu();
           break;
         case 2:                                            // 100%
         case 3:                                            // 90%
@@ -3718,14 +4073,7 @@ void *WaitButtonEvent(void * arg)
       switch (i)
       {
         case 0:                                            // Capture Snap
-          freeze = true; 
-          SetButtonStatus(ButtonNumber(CurrentMenu, 0), 1);
-          UpdateWindow();
-          while(! frozen);
-          system("/home/pi/portsdown/scripts/snap.sh");
-          SetButtonStatus(ButtonNumber(CurrentMenu, 0), 0);
-          UpdateWindow();
-          freeze = false;
+          snap_from_menu();
           break;
         case 2:                                            // Freq Presets
           printf("Freq Presets Menu 10 Requested\n");
@@ -3742,7 +4090,19 @@ void *WaitButtonEvent(void * arg)
           ChangeLabel(6);
           UpdateWindow();          
           break;
-        case 5:                                            // 
+        case 5:                                                       // Show Parameters
+          freeze = true; 
+          while(! frozen);
+          clearScreen(0, 0, 0);
+          FirstStatusCall = true;
+          ShowStatusPage = true;
+          wait_touch();
+          ShowStatusPage = false;
+          UpdateWindow();
+          DrawEmptyScreen();  // Required to set A value, which is not set in DrawTrace
+          DrawYaxisLabels();  // dB calibration on LHS
+          DrawSettings();     // Start, Stop RBW, Ref level and Title
+          freeze = false;
           break;
         case 6:                                            // 
           break;
@@ -3777,14 +4137,7 @@ void *WaitButtonEvent(void * arg)
       switch (i)
       {
         case 0:                                            // Capture Snap
-          freeze = true; 
-          SetButtonStatus(ButtonNumber(CurrentMenu, 0), 1);
-          UpdateWindow();
-          while(! frozen);
-          system("/home/pi/portsdown/scripts/snap.sh");
-          SetButtonStatus(ButtonNumber(CurrentMenu, 0), 0);
-          UpdateWindow();
-          freeze = false;
+          snap_from_menu();
           break;
         case 2:                                            // pfreq1
         case 3:                                            // pfreq2 
@@ -3819,70 +4172,6 @@ void *WaitButtonEvent(void * arg)
       }
       continue;  // Completed Menu 10 action, go and wait for touch
     }
-    if (CurrentMenu == 11)  // Known as Menu 2
-    {
-      printf("Button Event %d, Entering Menu 11 Case Statement\n",i);
-      CallingMenu = 11;
-      switch (i)
-      {
-        case 0:                                            // Capture Snap
-          freeze = true; 
-          SetButtonStatus(ButtonNumber(CurrentMenu, 0), 1);
-          UpdateWindow();
-          while(! frozen);
-          system("/home/pi/portsdown/scripts/snap.sh");
-          SetButtonStatus(ButtonNumber(CurrentMenu, 0), 0);
-          UpdateWindow();
-          freeze = false;
-          break;
-        case 2:                                            // Go to Marker Menu
-          printf("Marker Menu (2) requested\n");
-          CurrentMenu = 2;
-          UpdateWindow();
-          break;
-        case 3:                                            // Go To Freq Presets Menu
-          printf("Freq Presets Menu (7) requested\n");
-          CurrentMenu = 7;
-          UpdateWindow();
-          break;
-        case 4:                                            // Go To Settings Menu
-          printf("Settings Menu (3) requested\n");
-          CurrentMenu = 3;
-          UpdateWindow();
-          break;
-        case 5:                                            // Go To Config Menu
-          printf("Config Menu (9) requested\n");
-          CurrentMenu = 9;
-          UpdateWindow();
-          break;
-        case 6:                                            // Go To System Menu
-          printf("System Menu (4) requested\n");
-          CurrentMenu = 4;
-          UpdateWindow();
-          break;
-        case 7:                                            // Return to Main Menu
-          printf("Main Menu (1) requested\n");
-          CurrentMenu = 1;
-          UpdateWindow();
-          break;
-        case 8:
-          if (freeze)
-          {
-            SetButtonStatus(ButtonNumber(CurrentMenu, 8), 0);
-            freeze = false;
-          }
-          else
-          {
-            SetButtonStatus(ButtonNumber(CurrentMenu, 8), 1);
-            freeze = true;
-          }
-          UpdateWindow();
-          break;
-        default:
-          printf("Menu 11 Error\n");
-      }
-      continue;  // Completed Menu 11 action, go and wait for touch
-    }
     if (CurrentMenu == 12)  // Waterfall Config
     {
       printf("Button Event %d, Entering Menu 12 Case Statement\n",i);
@@ -3890,14 +4179,7 @@ void *WaitButtonEvent(void * arg)
       switch (i)
       {
         case 0:                                            // Capture Snap
-          freeze = true; 
-          SetButtonStatus(ButtonNumber(CurrentMenu, 0), 1);
-          UpdateWindow();
-          while(! frozen);
-          system("/home/pi/portsdown/scripts/snap.sh");
-          SetButtonStatus(ButtonNumber(CurrentMenu, 0), 0);
-          UpdateWindow();
-          freeze = false;
+          snap_from_menu();
           break;
         case 2:                                            // Set Waterfall Base
         case 3:                                            // Set waterfall range
@@ -3955,17 +4237,35 @@ void *WaitButtonEvent(void * arg)
       switch (i)
       {
         case 0:                                            // Capture Snap
-          freeze = true; 
-          SetButtonStatus(ButtonNumber(CurrentMenu, 0), 1);
-          UpdateWindow();
-          while(! frozen);
-          system("/home/pi/portsdown/scripts/snap.sh");
-          SetButtonStatus(ButtonNumber(CurrentMenu, 0), 0);
-          UpdateWindow();
-          freeze = false;
+          snap_from_menu();
           break;
-        case 2:                                            // 
-        case 3:                                            // 
+        case 2:                                            // Noise Figure Meter
+          freeze = true;
+          usleep(100000);
+          clearScreen(0, 0, 0);
+          UpdateWeb();
+          publish();
+          usleep(1000000);
+          closeScreen();
+          cleanexit(138);
+        case 3:                                            // Noise Meter
+          freeze = true;
+          usleep(100000);
+          clearScreen(0, 0, 0);
+          UpdateWeb();
+          publish();
+          usleep(1000000);
+          closeScreen();
+          cleanexit(147);
+        case 4:                                            // DMM Display
+          freeze = true;
+          usleep(100000);
+          clearScreen(0, 0, 0);
+          UpdateWeb();
+          publish();
+          usleep(1000000);
+          closeScreen();
+          cleanexit(142);
         case 7:                                            // Return to Main Menu
           printf("Main Menu 1 Requested\n");
           CurrentMenu=1;
@@ -3989,6 +4289,50 @@ void *WaitButtonEvent(void * arg)
       }
       continue;  // Completed Menu 9 action, go and wait for touch
     }
+    if (CurrentMenu == 14)  //  Sig Gen Menu
+    {
+      printf("Button Event %d, Entering Menu 14 Case Statement\n",i);
+      CallingMenu = 14;
+      switch (i)
+      {
+        case 0:                                            // Capture Snap
+          snap_from_menu();
+          break;
+        case 1:                                            // SigGen On/off
+        case 2:                                            // Frequency
+        case 3:                                            // QPSK Mod On/off
+        //case 4:                                           // Does nothing, just shows output level
+        case 5:                                            // Reduce output
+        case 6:                                            // Increase output
+        case 7:                                            // Load Firmware
+          control_SigGen(i);
+          Start_Highlights_Menu14();
+          UpdateWindow();
+          break;
+        case 8:                                            // Return to Main Menu
+          printf("Main Menu 1 Requested\n");
+          CurrentMenu = 1;
+          Start_Highlights_Menu1();
+          UpdateWindow();
+          break;
+        case 9:
+          if (freeze)
+          {
+            SetButtonStatus(ButtonNumber(CurrentMenu, 9), 0);
+            freeze = false;
+          }
+          else
+          {
+            SetButtonStatus(ButtonNumber(CurrentMenu, 9), 1);
+            freeze = true;
+          }
+          UpdateWindow();
+          break;
+        default:
+          printf("Menu 14 Error\n");
+      }
+      continue;  // Completed Menu 14 action, go and wait for touch
+    }
   }
   return NULL;
 }
@@ -4009,37 +4353,42 @@ void Define_Menu1()                                  // Main Menu
 
   button = CreateButton(1, 1);
   AddButtonStatus(button, "Main Menu", &Black);
-  AddButtonStatus(button, " ", &Green);
 
   button = CreateButton(1, 2);
-  AddButtonStatus(button, "Centre^Freq", &Blue);
-  AddButtonStatus(button, " ", &Green);
+  AddButtonStatus(button, "Freq^ ", &Blue);
 
   button = CreateButton(1, 3);
   AddButtonStatus(button, "Span^Width", &Blue);
-  AddButtonStatus(button, " ", &Green);
 
   button = CreateButton(1, 4);
-  AddButtonStatus(button, "Mode", &Blue);
-  AddButtonStatus(button, "", &Green);
+  AddButtonStatus(button, "Sett^ ", &Blue);
 
   button = CreateButton(1, 5);
+  AddButtonStatus(button, "Conf^ ", &Blue);
+
+  button = CreateButton(1, 6);
+  AddButtonStatus(button, "Mkrs^ ", &Blue);
+
+  button = CreateButton(1, 7);
+  AddButtonStatus(button, "Mode^ ", &Blue);
+
+  button = CreateButton(1, 8);
   AddButtonStatus(button, "<-", &Blue);
   AddButtonStatus(button, " ", &Green);
 
-  button = CreateButton(1, 6);
+  button = CreateButton(1, 9);
   AddButtonStatus(button, "->", &Blue);
   AddButtonStatus(button, " ", &Green);
 
-  button = CreateButton(1, 7);
-  AddButtonStatus(button, "Menu 2", &Blue);
+  button = CreateButton(1, 10);
+  AddButtonStatus(button, "System", &Blue);
   AddButtonStatus(button, " ", &Green);
 
-  button = CreateButton(1, 8);
+  button = CreateButton(1, 11);
   AddButtonStatus(button, "Exit to^Portsdown", &DBlue);
   AddButtonStatus(button, "Exit to^Portsdown", &Red);
 
-  button = CreateButton(1, 9);
+  button = CreateButton(1, 12);
   AddButtonStatus(button, "Freeze", &Blue);
   AddButtonStatus(button, "Unfreeze", &Green);
 }
@@ -4048,11 +4397,11 @@ void Start_Highlights_Menu1()
 {
   if (PortsdownExitRequested)
   {
-    SetButtonStatus(ButtonNumber(1, 8), 1);
+    SetButtonStatus(ButtonNumber(1, 11), 1);
   }
   else
   {
-    SetButtonStatus(ButtonNumber(1, 8), 0);
+    SetButtonStatus(ButtonNumber(1, 11), 0);
   }
 }
 
@@ -4128,11 +4477,11 @@ void Define_Menu3()                                           // Settings Menu
   AddButtonStatus(button, " ", &Green);
 
   button = CreateButton(3, 2);
-  AddButtonStatus(button, "Centre^Freq", &Blue);
+  AddButtonStatus(button, "Freq^Presets", &Blue);
   AddButtonStatus(button, " ", &Green);
 
   button = CreateButton(3, 3);
-  AddButtonStatus(button, "Freq^Presets", &Blue);
+  AddButtonStatus(button, "Sig Gen^ ", &Blue);
   AddButtonStatus(button, " ", &Green);
 
   button = CreateButton(3, 4);
@@ -4316,7 +4665,7 @@ void Define_Menu6()                                           // Span Menu
   AddButtonStatus(button, "30^MHz", &Green);
 
   button = CreateButton(6, 11);
-  AddButtonStatus(button, "Retuen to^Main Menu", &DBlue);
+  AddButtonStatus(button, "Return to^Main Menu", &DBlue);
 
   button = CreateButton(6, 12);
   AddButtonStatus(button, "Freeze", &Blue);
@@ -4611,9 +4960,8 @@ void Define_Menu9()                                          // Config Menu
   button = CreateButton(9, 4);
   AddButtonStatus(button, "Edit^Title", &Blue);
 
-  //button = CreateButton(9, 5);
-  //AddButtonStatus(button, " ", &Blue);
-  //AddButtonStatus(button, " ", &Green);
+  button = CreateButton(9, 5);
+  AddButtonStatus(button, "Show SA^Status", &Blue);
 
   //button = CreateButton(9 6);
   //AddButtonStatus(button, "Set^Config", &Blue);
@@ -4694,40 +5042,6 @@ void Start_Highlights_Menu10()
   AmendButtonStatus(ButtonNumber(CurrentMenu, 6), 0, ButtText, &Blue);
 }
 
-void Define_Menu11()                                          // Known as Menu 2
-
-{
-  int button = 0;
-
-  button = CreateButton(11, 0);
-  AddButtonStatus(button, "Capture^Snap", &DGrey);
-  AddButtonStatus(button, " ", &Black);
-
-  button = CreateButton(11, 1);
-  AddButtonStatus(button, "Menu 2", &Black);
-
-  button = CreateButton(11, 2);
-  AddButtonStatus(button, "Markers", &Blue);
-
-  button = CreateButton(11, 3);
-  AddButtonStatus(button, "Freq^Presets", &Blue);
-
-  button = CreateButton(11, 4);
-  AddButtonStatus(button, "Settings", &Blue);
-
-  button = CreateButton(11, 5);
-  AddButtonStatus(button, "Config", &Blue);
-
-  button = CreateButton(11, 6);
-  AddButtonStatus(button, "System", &Blue);
-
-  button = CreateButton(11, 7);
-  AddButtonStatus(button, "Return to^Main Menu", &DBlue);
-
-  button = CreateButton(11, 8);
-  AddButtonStatus(button, "Freeze", &Blue);
-  AddButtonStatus(button, "Unfreeze", &Green);
-}
 
 void Define_Menu12()                                          // Waterfall Config Menu
 {
@@ -4793,14 +5107,14 @@ void Define_Menu13()                                          // Waterfall Confi
   button = CreateButton(13, 1);
   AddButtonStatus(button, "Other Apps^Menu", &Black);
 
-  //button = CreateButton(12, 2);
-  //AddButtonStatus(button, "Set Wfall^Base Level", &Blue);
+  button = CreateButton(13, 2);
+  AddButtonStatus(button, "NF^Meter", &Blue);
 
-  //button = CreateButton(12, 3);
-  //AddButtonStatus(button, "Set Wfall^Range", &Blue);
+  button = CreateButton(13, 3);
+  AddButtonStatus(button, "Noise^Meter", &Blue);
 
-  //button = CreateButton(12, 4);
-  //AddButtonStatus(button, "Set Wfall^Time Span", &Blue);
+  button = CreateButton(13, 4);
+  AddButtonStatus(button, "DMM^Display", &Blue);
 
   //button = CreateButton(12, 5);
   //AddButtonStatus(button, "Waterfall^Normal", &Blue);
@@ -4816,6 +5130,91 @@ void Define_Menu13()                                          // Waterfall Confi
   button = CreateButton(13, 8);
   AddButtonStatus(button, "Freeze", &Blue);
   AddButtonStatus(button, "Unfreeze", &Green);
+}
+
+
+void Define_Menu14()  //  Sig Gen
+{
+  int button = 0;
+
+  button = CreateButton(14, 0);
+  AddButtonStatus(button, "Capture^Snap", &DGrey);
+  AddButtonStatus(button, " ", &Black);
+
+  button = CreateButton(14, 1);
+  AddButtonStatus(button, "Sig Gen^Off", &Black);
+  AddButtonStatus(button, "Sig Gen^On", &Red);
+
+  button = CreateButton(14, 2);
+  AddButtonStatus(button, "Freq^ ", &Blue);
+
+  button = CreateButton(14, 3);
+  AddButtonStatus(button, "DVB-S Mod^Off", &Blue);
+  AddButtonStatus(button, "DVB-S Mod^On", &Red);
+
+  button = CreateButton(14, 4);
+  AddButtonStatus(button, "Level^ ", &Blue);
+
+  button = CreateButton(14, 5);
+  AddButtonStatus(button, "Lev^down", &Blue);
+
+  button = CreateButton(14, 6);
+  AddButtonStatus(button, "Lev^up", &Blue);
+
+  button = CreateButton(14, 7);
+  AddButtonStatus(button, "Load^Firmware", &Blue);
+  AddButtonStatus(button, "Loading^Firmware", &Red);
+  AddButtonStatus(button, "Firmware^Loaded", &Green);
+
+  button = CreateButton(14, 8);
+  AddButtonStatus(button, "Return to^Main Menu", &Blue);
+  AddButtonStatus(button, " ", &Green);
+
+  button = CreateButton(14, 9);
+  AddButtonStatus(button, "Freeze", &Blue);
+  AddButtonStatus(button, "Unfreeze", &Green);
+}
+
+
+void Start_Highlights_Menu14()
+{
+  char button_text[31];
+  if (siggen_on == true)
+  {
+    SetButtonStatus(ButtonNumber(14, 1), 1);
+  }
+  else
+  {
+    SetButtonStatus(ButtonNumber(14, 1), 0);
+  }
+
+  snprintf(button_text, 30, "Freq^%0.3f", (float)(DisplayFreq) / 1000000);
+  AmendButtonStatus(ButtonNumber(14, 2), 0, button_text, &Blue);
+
+  if (ModOn == true)
+  {
+    SetButtonStatus(ButtonNumber(14, 3), 1);
+  }
+  else
+  {
+    SetButtonStatus(ButtonNumber(14, 3), 0);
+  }
+
+  snprintf(button_text, 30, "Level^%0.1f dBm", (float)(SG_OutputLevel) / 10);
+  AmendButtonStatus(ButtonNumber(14, 4), 0, button_text, &Blue);
+
+  if ((firmware_loaded == false) && (firmware_loading == false))
+  {
+    SetButtonStatus(ButtonNumber(14, 7), 0);
+  }
+  else if ((firmware_loading == true) && (firmware_loaded == false))
+  {
+    SetButtonStatus(ButtonNumber(14, 7), 1);
+  }
+  else
+  {
+    SetButtonStatus(ButtonNumber(14, 7), 2);
+  }
 }
 
 
@@ -5523,13 +5922,26 @@ void *PanelMonitor_thread(void *arg)
     ((byte) & 0x02 ? '1' : '0'), \
     ((byte) & 0x01 ? '1' : '0') 
 
+  const font_t *font_ptr = &font_dejavu_sans_18;   // 18pt
+
   int i;
-  //char SpanText[63];
+  char result[63];
+  char ipaddress[255];
+  char M1AText[255];
+  char M1BText[255];
+  char M2AText[255];
+  char M2BText[255];
+  char AttenText[255];
+  char OPText[20];
+  char OPDispText[255];
+  char TempText[255];
+  char CPUTemp[31];
 
   uint8_t M1A = 0;
   uint8_t M1B = 0;
   uint8_t M2A = 0;
   uint8_t M2B = 0;
+  int LimeTempValue;
 
   // Set up first MCP23017 for reading front panel switches
   mcp23017Setup (M1_BASE, 0x20);
@@ -5551,7 +5963,7 @@ void *PanelMonitor_thread(void *arg)
     pinMode (M2_BASE + i + 8, INPUT);
   }
 
-  // Read all the parameters and update display
+  // Read all the parameters and update the display every 10 mS
   do
   {
     // Read Multiplexers
@@ -5611,6 +6023,59 @@ void *PanelMonitor_thread(void *arg)
           usleep(10000);
           break;
       } 
+    }
+
+    if (ShowStatusPage == true)  // Show diagnostics
+    {
+      if (FirstStatusCall == true)  // Look up the temperatures
+      {
+        GetCPUTemp(CPUTemp);
+        LimeTempValue = LimeTemp();
+        FirstStatusCall = false;  // only do it on initial selection
+      }
+
+      // Page Title
+      TextMid(400, 450, "KeyLimePi RF Analyser Status", font_ptr, 0, 0, 0, 255, 255, 255);
+
+      // IP Address
+      strcpy(ipaddress, "IP Address: ");
+      strcpy(result, "Not connected");
+      GetIPAddr(result);
+      strcat(ipaddress, result);
+      Text(50, 420, ipaddress, font_ptr, 0, 0, 0, 255, 255, 255);
+
+      // Multiplexer 1
+      rectangle(50, 360, 700, 24, 0, 0, 0);
+      snprintf(M1AText, 50, "Multiplexer 1A: Raw = "BYTE_TO_BINARY_PATTERN, BYTE_TO_BINARY(M1A));
+      snprintf(M1BText, 50, "    1B: Raw = "BYTE_TO_BINARY_PATTERN, BYTE_TO_BINARY(M1B));
+      strcat(M1AText, M1BText);
+      Text(50, 360, M1AText, font_ptr, 0, 0, 0, 255, 255, 255);
+
+      // Multiplexer 2
+      rectangle(50, 330, 700, 24, 0, 0, 0);
+      snprintf(M2AText, 50, "Multiplexer 2A: Raw = "BYTE_TO_BINARY_PATTERN, BYTE_TO_BINARY(M2A));
+      snprintf(M2BText, 50, "    2B: Raw = "BYTE_TO_BINARY_PATTERN, BYTE_TO_BINARY(M2B));
+      strcat(M2AText, M2BText);
+      Text(50, 330, M2AText, font_ptr, 0, 0, 0, 255, 255, 255);
+
+      // Attenuator
+      rectangle(50, 270, 700, 24, 0, 0, 0);
+      snprintf(AttenText, 70, "Attenuator %d dB", atten);
+      Text(50, 270, AttenText, font_ptr, 0, 0, 0, 255, 255, 255);
+
+      // Selected Output
+      rectangle(50, 235, 700, 29, 0, 0, 0);
+      snprintf(OPDispText, 70, "Selected Output: %s", OPText);
+      Text(50, 240, OPDispText, font_ptr, 0, 0, 0, 255, 255, 255);
+
+      // Temperatures
+      rectangle(50, 200, 700, 29, 0, 0, 0);
+      snprintf(TempText, 70, "CPU %s,    LimeSDR Temp = %d 'C ", CPUTemp, LimeTempValue);
+      Text(50, 210, TempText, font_ptr, 0, 0, 0, 255, 255, 255);
+
+      // Exit message
+      TextMid(400, 5, "Touch screen to Exit", font_ptr, 0, 0, 0, 255, 255, 255);
+      publish();
     }
     usleep(10000);
   }
@@ -5785,6 +6250,8 @@ int main(void)
   printf ("Y Scale Factor = %f\n", scaleYvalue);
   printf ("hscreen = %d\n", hscreen);
 
+  StopExpressServer();  // Make sure that the SigGen is not running
+
   Define_Menu1();
   Define_Menu2();
   Define_Menu3();
@@ -5795,9 +6262,10 @@ int main(void)
   Define_Menu8();
   Define_Menu9();
   Define_Menu10();
-  Define_Menu11();
+  //Define_Menu11();
   Define_Menu12();
   Define_Menu13();
+  Define_Menu14();
   Define_Menu41();
 
   CheckConfigFile();
@@ -6123,6 +6591,13 @@ int main(void)
 
     tracecount++;
 
+    // Check if attenuator setting has changed
+    if (atten != displayed_atten)
+    {
+      DrawYaxisLabels();
+      displayed_atten = atten;
+    }
+
     publish();                                         // 
 
     if (monotonic_ms() >= nextwebupdate)
@@ -6133,13 +6608,6 @@ int main(void)
       {
         nextwebupdate = monotonic_ms() + 1000;  //Set next update for 1 second ahead
       }
-    }
-
-    // Check if attenuator setting has changed
-    if (atten != displayed_atten)
-    {
-      DrawYaxisLabels();
-      displayed_atten = atten;
     }
   }                                                   // End of main while loop
 

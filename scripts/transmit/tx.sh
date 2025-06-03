@@ -181,6 +181,7 @@ if [ "$MODEOUTPUT" == "LIMEMINI" ]; then
 
   $PATHBIN/"limesdr_dvb" -i videots -s $SYMBOLRATEPS -f $FECNUM"/"$FECDEN -r 1 -m DVBS2 -c QPSK -t $FREQOUTPUTHZ -g $LIME_GAINF -q 1 -D 27 -e 2 &
   #$PATHBIN/"limesdr_dvb" -i videots -s $SYMBOLRATEPS -f carrier -r 1 -m DVBS2 -c QPSK -t $FREQOUTPUTHZ -g $LIME_GAINF -q 1 -D 27 -e 2 &
+  #$PATHBIN/"limesdr_dvb" -s $SYMBOLRATEPS -f carrier -r 1 -m DVBS2 -c QPSK -t $FREQOUTPUTHZ -g $LIME_GAINF -q 1 -D 27 -e 2 &
 
 elif [ "$MODEOUTPUT" == "LIMEXTRX" ] || [ "$MODEOUTPUT" == "LIMEMINING" ]; then
 

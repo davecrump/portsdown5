@@ -22,9 +22,14 @@
 #include "../common/timing.h"
 #include "../common/hardware.h"
 #include "../common/ffunc.h"
+#include "../common/utils.h"
+#include "lmrx_utils.h"
+
+#define PI 3.14159265358979323846
 
 #define PATH_PCONFIG "/home/pi/portsdown/configs/portsdown_config.txt"
 #define PATH_SCONFIG "/home/pi/portsdown/configs/system_config.txt"
+#define PATH_LMCONFIG "/home/pi/portsdown/configs/longmynd_config.txt"
 
 typedef struct {int r, g, b;} color_t;    // Colour (used for buttons)
 
@@ -53,7 +58,7 @@ color_t Black = {.r = 0  , .g = 0  , .b = 0  };
 
 bool invert_display = true;
 
-#define MAX_BUTTON_ON_MENU 30
+#define MAX_BUTTON_ON_MENU 50
 #define MAX_MENUS 50
 
 int debug_level = 0;                   // 0 minimum, 1 medium, 2 max
@@ -116,6 +121,8 @@ int TouchY;
 int TouchTrigger = 0;
 bool touchneedsinitialisation = true;
 bool VirtualTouch = false;             // used to simulate a screen touch if a monitored event finishes
+int FinishedButton = 0;                // Used to indicate screentouch during TX or RX
+int touch_response = 0;                // set to 1 on touch and used to reboot display if it locks up
 
 // Mouse control variables
 bool mouse_connected = false;          // Set true if mouse detected at startup
@@ -128,7 +135,7 @@ bool reboot_required = false;          // used after hdmi display change
 
 // Web Control globals
 bool webcontrol = false;               // Enables remote control of touchscreen functions
-char ProgramName[255];                 // used to pass rpidatvgui char string to listener
+char ProgramName[255];                 // used to pass application name char string to listener
 int *web_x_ptr;                        // pointer
 int *web_y_ptr;                        // pointer
 int web_x;                             // click x 0 - 799 from left
@@ -138,6 +145,8 @@ char WebClickForAction[7] = "no";      // no/yes
 
 // Portsdown state variables
 char ScreenState[63] = "NormalMenu";
+bool boot_to_tx = false;
+bool boot_to_rx = false;
 
 bool test20 = false;
 bool test21 = false;
@@ -149,12 +158,64 @@ int limeGainSet[25] = {100, 99, 97, 96, 95,
                         79, 78, 76, 75, 74,
                         73, 71};
 
+// LongMynd RX Parameters. [0] is current.
+int LMRXfreq[22];           // Integer frequency in kHz 0 current, 1-10 q, 11-20 t, 21 second tuner current
+int LMRXsr[22];             // Symbol rate in K. 0 current, 1-6 q, 6-12 t, 13 second tuner current
+int LMRXqoffset;            // Offset in kHz
+int LMRXqtimeout;           // Tuner timeout for QO-100 in milliseconds
+int LMRXttimeout;            // Tuner timout for terrestrial in milliseconds
+int LMRXqscanwidth;         // Tuner scan width for QO-100 as % of SR
+int LMRXtscanwidth;         // Tuner scan width for terrestrial as % of SR
+int LMRXqvidchan;           // Video Channel for QO-100
+int LMRXtvidchan;           // Video Channel for terrestrial
+char LMRXinput[2];          // Input a or b
+char LMRXudpip[20];         // UDP IP address
+char LMRXudpport[10];       // UDP IP port
+char LMRXmode[10];          // sat or terr
+char LMRXaudio[15];         // rpi or usb or hdmi
+char LMRXvolts[7];          // off, v or h
+char RXmod[7];              // DVB-S or DVB-T
+bool VLCResetRequest = false; // Set on touchsscreen request for VLC to be reset  
+int  CurrentVLCVolume = 256;  // Read from config file                   
 
+// LongMynd RX Received Parameters for display
+bool timeOverlay = false;    // Display time overlay on received metadata and snaps
+time_t t;                    // current time
 
 // Threads
 pthread_t thtouchscreen;               //  listens to the touchscreen
 pthread_t thwebclick;                  //  Listens for clicks from web interface
 pthread_t thmouse;                     //  Listens to the mouse
+pthread_t thbutton;                    //  Listens during receive
+
+// ******************** Menus for Reference *********************************
+
+// 1  Main Menu
+// 2  (Apps Menu)
+// 3  Config Menu
+// 4  File MenuDATV Tools
+// 5  DATV Tools
+// 6  System Config
+// 7  Test Equipment
+// 8  Receive
+// 9
+// 10
+// 11 TX Modulation
+// 12 TX Encoding
+// 13 TX Output Device
+// 14 TX Video Format
+// 15 TX Video Source
+// 16 TX Frequency
+// 17 TX Symbol Rate
+// 18 TX FEC
+// 19 TX Band
+// 20 SDR Gain
+// 21 Start-up App
+// 22 Display and Control
+// 23 Receive Config
+// 24 Receive Presets
+// 41 Alpha Keyboard
+
 
 // ******************* External functions for reference *********************
 
@@ -165,6 +226,12 @@ pthread_t thmouse;                     //  Listens to the mouse
 // void GetIPAddr2(char IPAddress[18]);
 // void Get_wlan0_IPAddr(char IPAddress[18]);
 
+// *************** utils.c: ***************
+
+// void strcpyn(char *outstring, char *instring, int n);
+// bool is_valid_ip(char *ip_str);
+// bool valid_digit(char *ip_str);
+
 // ******************* Function Prototypes **********************************
 
 // Read and write the configuration
@@ -172,6 +239,7 @@ void GetConfigParam(char *PathConfigFile, char *Param, char *Value);
 void SetConfigParam(char *PathConfigFile, char *Param, char *Value);
 void CheckConfigFile();
 void ReadSavedParams();
+void ReadLMRXPresets();
 int file_exist (char *filename);
 
 // Handle touch and mouse
@@ -185,6 +253,7 @@ void handle_mouse();
 void *WebClickListener(void * arg);
 void parseClickQuerystring(char *query_string, int *x_ptr, int *y_ptr);
 FFUNC touchscreenClick(ffunc_session_t * session);
+void *WaitButtonLMRX(void * arg);
 void wait_touch();
 
 // Actually do useful things
@@ -227,6 +296,8 @@ void Define_Menu6();
 void Highlight_Menu6();
 void Define_Menu7();
 void Highlight_Menu7();
+void Define_Menu8();
+void Highlight_Menu8();
 void Define_Menu11();
 void Highlight_Menu11();
 void Define_Menu12();
@@ -251,7 +322,13 @@ void Define_Menu21();
 void Highlight_Menu21();
 void Define_Menu22();
 void Highlight_Menu22();
+void Define_Menu23();
+void Highlight_Menu23();
+void Define_Menu24();
+void Highlight_Menu24();
+void Define_Menu41();
 void Define_Menus();
+void Keyboard(char RequestText[63], char InitText[63], int MaxLength, char KeyboardReturn[63]);
 
 // Action Menu Buttons
 void selectTestEquip(int Button);
@@ -268,11 +345,25 @@ void SelectStartApp(int Button);
 void togglewebcontrol();
 void togglehdmiresolution();
 void togglescreenorientation();
-
+void SelectLMFREQ(int NoButton);
+void SelectLMSR(int NoButton);
+void toggleLMRXmode();
+void ChangeLMRXIP();
+void ChangeLMRXPort();
+void ChangeLMRXOffset();
+void ChangeLMTST();
+void ChangeLMSW();
+void ChangeLMChan();
+void ChangeLMPresetFreq(int NoButton);
+void ChangeLMPresetSR(int NoButton);
+void toggleLMRXinput();
+void CycleLNBVolts();
+void CycleLMRXaudio();
 
 // Useful stuff
 
 void InfoScreen();
+void checkTunerSettings();
 
 // Make things happen
 void UpdateWeb();
@@ -563,6 +654,144 @@ void ReadSavedParams()
   else
   {
     KeyLimePiEnabled = false;
+  }
+
+  // Read the LongMynd RX presets
+  ReadLMRXPresets();
+}
+
+
+/***************************************************************************//**
+ * @brief Reads the Presets from longmynd_config.txt and formats them for
+ *        Display and switching
+ *
+ * @param None.  Works on global variables
+ *
+ * @return void
+*******************************************************************************/
+
+void ReadLMRXPresets()
+{
+  int n;
+  char Value[15] = "";
+  char Param[20];
+
+  // Mode: sat or terr
+  GetConfigParam(PATH_LMCONFIG, "mode", LMRXmode);
+
+  // UDP output IP address:
+  GetConfigParam(PATH_LMCONFIG, "udpip", LMRXudpip);
+  
+  // UDP output port:
+  GetConfigParam(PATH_LMCONFIG, "udpport", LMRXudpport);
+
+  // Audio output port: (rpi or usb or hdmi)
+  GetConfigParam(PATH_LMCONFIG, "audio", LMRXaudio);
+
+  // QO-100 LNB Offset:
+  GetConfigParam(PATH_LMCONFIG, "qoffset", Value);
+  LMRXqoffset = atoi(Value);
+
+  // QO-100 Tuner Timeout time
+  GetConfigParam(PATH_LMCONFIG, "tstimeout", Value);
+  LMRXqtimeout = atoi(Value);
+
+  // Terrestrial Tuner Timeout time
+  GetConfigParam(PATH_LMCONFIG, "tstimeout1", Value);
+  LMRXttimeout = atoi(Value);
+
+  // QO-100 Tuner scan width
+  GetConfigParam(PATH_LMCONFIG, "scanwidth", Value);
+  LMRXqscanwidth = atoi(Value);
+
+  // Terrestrial Tuner scan width
+  GetConfigParam(PATH_LMCONFIG, "scanwidth1", Value);
+  LMRXtscanwidth = atoi(Value);
+
+  // Video Channel for QO-100
+  GetConfigParam(PATH_LMCONFIG, "chan", Value);
+  LMRXqvidchan = atoi(Value);
+
+  // Video Channel for terrestrial
+  GetConfigParam(PATH_LMCONFIG, "chan1", Value);
+  LMRXtvidchan = atoi(Value);
+
+  if (strcmp(LMRXmode, "sat") == 0)
+  {
+    // Input: a or b
+    GetConfigParam(PATH_LMCONFIG, "input", LMRXinput);
+
+    // Start up frequency
+    GetConfigParam(PATH_LMCONFIG, "freq0", Value);
+    LMRXfreq[0] = atoi(Value);
+
+    // Start up SR
+    GetConfigParam(PATH_LMCONFIG, "sr0", Value);
+    LMRXsr[0] = atoi(Value);
+  }
+  else    // Terrestrial
+  {
+    // Input: a or b
+    GetConfigParam(PATH_LMCONFIG, "input1", LMRXinput);
+
+    // Start up frequency
+    GetConfigParam(PATH_LMCONFIG, "freq1", Value);
+    LMRXfreq[0] = atoi(Value);
+
+    // Start up SR
+    GetConfigParam(PATH_LMCONFIG, "sr1", Value);
+    LMRXsr[0] = atoi(Value);
+  }
+
+  // Frequencies
+  for(n = 1; n < 11; n = n + 1)
+  {
+    // QO-100
+    snprintf(Param, 15, "qfreq%d", n);
+    GetConfigParam(PATH_LMCONFIG, Param, Value);
+    LMRXfreq[n] = atoi(Value);
+
+    // Terrestrial
+    snprintf(Param, 15, "tfreq%d", n);
+    GetConfigParam(PATH_LMCONFIG, Param, Value);
+    LMRXfreq[n + 10] = atoi(Value);
+  }
+
+  // Symbol Rates
+  for(n = 1; n <= 10; n = n + 1)
+  {
+    // QO-100
+    snprintf(Param, 15, "qsr%d", n);
+    GetConfigParam(PATH_LMCONFIG, Param, Value);
+    LMRXsr[n] = atoi(Value);
+
+    // Terrestrial
+    snprintf(Param, 15, "tsr%d", n);
+    GetConfigParam(PATH_LMCONFIG, Param, Value);
+    LMRXsr[n + 10] = atoi(Value);
+  }
+
+  // Modulation
+  GetConfigParam(PATH_LMCONFIG, "rxmod", Value);
+  if (strcmp(Value, "dvbt") == 0)
+  {
+    strcpy(RXmod, "DVB-T");
+  }
+  else
+  {
+    strcpy(RXmod, "DVB-S");
+  }
+
+  // Time Overlay
+  strcpy(Value, "off");
+  GetConfigParam(PATH_PCONFIG, "timeoverlay", Value);
+  if (strcmp(Value, "off") == 0)
+  {
+    timeOverlay = false;
+  }
+  else
+  {
+    timeOverlay = true;
   }
 }
 
@@ -1040,6 +1269,93 @@ FFUNC touchscreenClick(ffunc_session_t * session)
 }
 
 
+void *WaitButtonLMRX(void * arg)
+{
+  int rawX, rawY;
+  int count_time_ms;
+  FinishedButton = 1; // Start with Parameters on
+
+  while((FinishedButton == 1) || (FinishedButton = 2))
+  {
+    while(getTouchSample(&rawX, &rawY) == 0);  // Wait here for touch
+
+    if((scaledX <= 5 * wscreen / 40)  &&  (scaledY <= 2 * hscreen / 12) && (strcmp(DisplayType, "hdmi") != 0)) // Bottom left
+    {
+      printf("In snap zone, so take snap.\n");
+      system("/home/pi/portsdown/scripts/snap2.sh");
+    }
+    else if((scaledX <= 5 * wscreen / 40)  && (scaledY >= 10 * hscreen / 12) && (strcmp(DisplayType, "hdmi") != 0))  // Top left
+    {
+      printf("In restart VLC zone, so set for reset.\n");
+      VLCResetRequest = true;
+    }
+    else if ((scaledX <= 15 * wscreen / 40) && (scaledY <= 10 * hscreen / 12) && (scaledY >= 2 * hscreen / 12) && (strcmp(DisplayType, "hdmi") != 0))
+    {
+      printf("In parameter zone, so toggle parameter view.\n");
+      if (FinishedButton == 2)  // Toggle parameters on/off 
+      {
+        FinishedButton = 1; // graphics on
+      }
+      else
+      {
+        FinishedButton = 2; // graphics off
+      }
+    }
+    else if((scaledX >= 35 * wscreen / 40) && (scaledY >= 8 * hscreen / 12) && (strcmp(DisplayType, "hdmi") != 0))  // Top Right
+    {
+      printf("Volume Up.\n");
+      //AdjustVLCVolume(51);
+    }
+    else if((scaledX >= 35 * wscreen / 40) && (scaledY >= 4 * hscreen / 12) && (scaledY < 8 * hscreen / 12) && (strcmp(DisplayType, "hdmi") != 0))  // mid Right
+    {
+      printf("Volume Mute.\n");
+      //AdjustVLCVolume(-512);
+    }
+    else if((scaledX >= 35 * wscreen / 40) && (scaledY < 4 * hscreen / 12) && (strcmp(DisplayType, "hdmi") != 0))  // Bottom Right
+    {
+      printf("Volume Down.\n");
+      //AdjustVLCVolume(-51);
+    }
+    else
+    {
+      // Close VLC to reduce processor load first
+      system("/home/pi/portsdown/scripts/receive/lmvlcclose.sh");
+
+      // kill the receive process
+      system("sudo killall longmynd > /dev/null 2>/dev/null");
+
+      printf("Receive processes stopped.\n");
+      FinishedButton = 0;  // Exit receive
+      touch_response = 1;
+      count_time_ms = 0;
+
+      // wait here to make sure that touch_response is set back to 0
+      // If not, restart GUI
+      while ((touch_response == 1) && (count_time_ms < 500))
+      {
+        usleep(1000);
+        count_time_ms = count_time_ms + 1;
+      }
+      count_time_ms = 0;
+      while ((touch_response == 1) && (count_time_ms < 2500))
+      {
+        usleep(1000);
+        count_time_ms = count_time_ms + 1;
+      }
+
+      if (touch_response == 1) // count_time has elapsed and still no reponse
+      {
+        clearScreen(0, 0, 0);
+        exit(129);                 // Restart the GUI
+      }
+      return NULL;
+    }
+  }
+  return NULL;
+}
+
+
+
 void wait_touch()
 // Wait for Screen touch, ignore position, but then move on
 // Used to let user acknowledge displayed text
@@ -1065,9 +1381,1317 @@ void TransmitStop()
 
 
 void TransmitStart()
+{   // Legacy code for testing LimeXTRX
+  if ((strcmp(config.modeoutput, "LIMEXTRX") == 0)  || (strcmp(config.modeoutput, "LIMEMINING") == 0))
+  {
+    strcpy(ScreenState, "TXwithMenu");
+    system("/home/pi/portsdown/scripts/transmit/tx.sh &");
+  }
+  else  // new code
+  {
+    strcpy(ScreenState, "TXwithMenu");
+    system("/home/pi/portsdown/scripts/transmit/tx_rf.sh &");
+    system("/home/pi/portsdown/scripts/transmit/tx_video.sh &");
+  }
+}
+
+
+void LMRX(int NoButton)
 {
-  strcpy(ScreenState, "TXwithMenu");
-  system("/home/pi/portsdown/scripts/transmit/tx.sh &");
+  #define PATH_SCRIPT_LMRXMER     "/home/pi/portsdown/scripts/receive/lmmer.sh 2>&1"
+  #define PATH_SCRIPT_LMRXUDP     "/home/pi/portsdown/scripts/receive/lmudp.sh 2>&1"
+  #define PATH_SCRIPT_LMRXVLCUDP  "/home/pi/portsdown/scripts/receive/lmvlcudp.sh"
+  #define PATH_SCRIPT_LMRXVLCUDP2 "/home/pi/portsdown/scripts/receive/lmvlcudp2.sh"
+
+  //Local parameters:
+
+  FILE *fp;
+  int num;
+  int ret;
+  int fd_status_fifo;
+  int TUNEFREQ;
+
+  float MER;
+  float refMER;
+  int MERcount = 0;
+  float FREQ;
+  int STATE = 0;
+  int SR;
+  char Value[63];
+  bool Overlay_displayed = false;
+  char LinuxCommand[255];
+
+  // To be Global Paramaters:
+
+  char status_message_char[14];
+  char stat_string[255];
+  char udp_string[63];
+  char MERtext[63];
+  char MERNtext[63];
+  char STATEtext[63];
+  char FREQtext[63];
+  char SRtext[63];
+  char ServiceProvidertext[255] = " ";
+  char Servicetext[255] = " ";
+
+  char Itext[63] = " ";
+  char Qtext[63] = " ";
+  int  IQ[1024][2];
+  int  IQindex = 0;
+  int  nullsarray[100];
+  int  nullsindex = 0;
+  float avmag = 50.0;
+  int  i;
+  char NullRatiotext[63] = " ";
+  char FECtext[63] = " ";
+  char Modulationtext[63] = " ";
+  char Encodingtext[63] = " ";
+  char vlctext[255];
+  char AGCtext[255];
+  char AGC1text[255];
+  char AGC2text[255];
+  uint16_t AGC1 = 0;
+  uint16_t AGC2 = 3200;
+  float MERThreshold = 0;
+  int Parameters_currently_displayed = 1;  // 1 for displayed, 0 for blank
+  float previousMER = 0;
+  int FirstLock = 0;  // set to 1 on first lock, and 2 after parameter fade
+  clock_t LockTime;
+  bool webupdate_this_time = true;   // Only update web on alternate MER changes
+  char LastServiceProvidertext[255] = " ";
+  bool FirstReceive = true;
+  char TIMEtext[63];
+
+  int Qvalue, Ivalue, Itextvalue, Qtextvalue;
+
+  uint16_t TunerPollCount = 0;
+  bool TunerFound = false;
+
+  char ExtraText[63];
+  char line5[255];
+
+  // Set globals
+  FinishedButton = 1;
+  VLCResetRequest = false;
+
+  memset(IQ, 0, sizeof IQ);  // zero IQ array
+
+  // Display the correct background
+  if (strcmp(DisplayType, "hdmi") == 0)
+  {
+    clearScreen(0, 0, 0);    // do nothing?
+  }
+  else if ((NoButton == 1) || (NoButton == 5))   // diagnostics, LNB autoset and hdmi modes
+  {
+    switch (FBOrientation)
+    {
+    case 0:
+      strcpy(LinuxCommand, "sudo fbi -T 1 -noverbose -a /home/pi/portsdown/images/RX_Black.png ");
+      break;
+    case 90:
+      strcpy(LinuxCommand, "sudo fbi -T 1 -noverbose -a /home/pi/portsdown/images/RX_Black90.png ");
+      break;
+    case 180:
+      strcpy(LinuxCommand, "sudo fbi -T 1 -noverbose -a /home/pi/portsdown/images/RX_Black180.png ");
+      break;
+    case 270:
+      strcpy(LinuxCommand, "sudo fbi -T 1 -noverbose -a /home/pi/portsdown/images/RX_Black270.png ");
+      break;
+    }
+    //strcpy(LinuxCommand, "sudo fbi -T 1 -noverbose -a /home/pi/portsdown/images/RX_Black.png ");
+    strcat(LinuxCommand, ">/dev/null 2>/dev/null");
+    system(LinuxCommand);
+    strcpy(LinuxCommand, "(sleep 1; sudo killall -9 fbi >/dev/null 2>/dev/null) &");
+    system(LinuxCommand);
+  }
+  else if ((NoButton == 0) || (NoButton == 2))   // VLC modes
+  {
+    switch (FBOrientation)
+    {
+    case 0:
+      strcpy(LinuxCommand, "sudo fbi -T 1 -noverbose -a /home/pi/portsdown/images/RX_overlay.png ");
+      break;
+    case 90:
+      strcpy(LinuxCommand, "sudo fbi -T 1 -noverbose -a /home/pi/portsdown/images/RX_overlay90.png ");
+      break;
+    case 180:
+      strcpy(LinuxCommand, "sudo fbi -T 1 -noverbose -a /home/pi/portsdown/images/RX_overlay180.png ");
+      break;
+    case 270:
+      strcpy(LinuxCommand, "sudo fbi -T 1 -noverbose -a /home/pi/portsdown/images/RX_overlay270.png ");
+      break;
+    }
+
+    Overlay_displayed = true;
+    strcat(LinuxCommand, ">/dev/null 2>/dev/null");
+    system(LinuxCommand);
+    strcpy(LinuxCommand, "(sleep 1; sudo killall -9 fbi >/dev/null 2>/dev/null) &");
+    system(LinuxCommand);
+    UpdateWeb();
+  }
+  else // MER display modes
+  {
+    clearScreen(0, 0, 0);
+  }
+
+  // Initialise and calculate the text display
+  const font_t *font_ptr = &font_dejavu_sans_28;
+  int txtht =  font_ptr->ascent;
+  int txttot =  font_ptr->height;
+  int txtdesc = font_ptr->height - font_ptr->ascent;
+  int linepitch = (14 * txtht) / 10;
+
+  // Initialise the MER display
+  int bar_height;
+  int bar_centre = hscreen * 0.30;
+  int ls = wscreen * 38 / 40;
+  int wdth = (wscreen * 2 / 40) - 1;
+
+  // Create Wait Button thread
+  pthread_create (&thbutton, NULL, &WaitButtonLMRX, NULL);
+
+  // case 0 = DVB-S/S2 VLCFFUDP
+  // case 1 = DVB-S/S2 Receive Diagnostics
+  // case 2 = DVB-S/S2 VLCFFUDP2 No scan
+  // case 3 = DVB-S/S2 UDP
+  // case 4 = Beacon MER
+  // case 5 = Autoset LNB LO Freq
+  // case 6 = DVB-T VLC
+  // case 7 = not used
+  // case 8 = not used
+  // case 9 = DVB-T UDP
+
+  switch (NoButton)
+  {
+  case 0:
+  case 2:
+
+    if (NoButton == 0)
+    {
+      fp=popen(PATH_SCRIPT_LMRXVLCUDP, "r");
+    }
+    
+    if (NoButton == 2)
+    {
+      fp=popen(PATH_SCRIPT_LMRXVLCUDP2, "r");
+   }
+    
+    if(fp==NULL) printf("Process error\n");
+
+    printf("STARTING VLC with FFMPEG RX\n");
+
+    /* Open status FIFO for read only  */
+    ret = mkfifo("longmynd_status_fifo", 0666);
+    fd_status_fifo = open("longmynd_status_fifo", O_RDONLY); 
+
+    // Set the status fifo to be non-blocking on empty reads
+    fcntl(fd_status_fifo, F_SETFL, O_NONBLOCK);
+
+    if (fd_status_fifo < 0)
+    {
+      printf("Failed to open status fifo\n");
+    }
+    printf("Listening, ret = %d\n", ret);
+
+    while ((FinishedButton == 1) || (FinishedButton == 2)) // 1 is captions on, 2 is off
+    {
+      if (VLCResetRequest == true)
+      {
+        system("/home/pi/portsdown/scripts/receive/lmvlcreset.sh &");
+        VLCResetRequest = false;
+        FirstLock = 2;
+        FinishedButton = 1;
+      }
+
+      num = read(fd_status_fifo, status_message_char, 1);
+
+      if (num < 0)  // no character to read
+      {
+        usleep(500);
+        if (TunerFound == false)
+        {
+          TunerPollCount = TunerPollCount + 1;
+
+          if (TunerPollCount == 15)  // Tuner not responding
+          {
+            strcpy(line5, "Waiting for Tuner to Respond");
+            Text(wscreen * 6 / 40, hscreen - 1 * linepitch, line5, font_ptr, 0, 0, 0, 255, 255, 255);
+          }       
+          // printf("TPC = %d\n", TunerPollCount);
+          if (TunerPollCount > 2500)  // Maybe PicoTuner has locked up so reset USB bus power
+          {
+            strcpy(line5, "Resetting USB Bus                            ");
+            Text(wscreen * 6 / 40, hscreen - 1 * linepitch, line5, font_ptr, 0, 0, 0, 255, 255, 255);
+            system("sudo killall vlc");
+            system("sudo uhubctl -R -a 2");
+            MsgBox4(" ", "Touch Centre of Screen to Return to Receiver", " ", " ");
+            wait_touch();
+          }
+        }
+      }
+      else // there was a character to read
+      {
+        status_message_char[num]='\0';
+        // if (num>0) printf("%s\n",status_message_char);
+        
+        if (strcmp(status_message_char, "$") == 0)
+        {
+          TunerFound = true;
+
+          if (Overlay_displayed == true)
+          {
+            clearScreen(0, 0, 0);
+            Overlay_displayed = false;
+          }
+
+          if ((stat_string[0] == '1') && (stat_string[1] == ','))  // Decoder State
+          {
+            // Return State as an integer and a string
+            STATE = LMDecoderState(stat_string, STATEtext);
+          }
+
+          if ((stat_string[0] == '6') && (stat_string[1] == ','))  // Frequency
+          {
+            strcpy(FREQtext, stat_string);
+            chopN(FREQtext, 2);
+            FREQ = atof(FREQtext);
+            if (strcmp(LMRXmode, "sat") == 0)
+            {
+              FREQ = FREQ + LMRXqoffset;
+            }
+            FREQ = FREQ / 1000;
+            snprintf(FREQtext, 15, "%.3f MHz", FREQ);
+            //if ((TabBandLO[CurrentBand] < -0.5) || (TabBandLO[CurrentBand] > 0.5))      // band not direct
+            //{
+            //  strcat(FREQtext, " ");
+            //  strcat(FREQtext, TabBandLabel[CurrentBand]);                             // so add band label
+            //}
+          }
+
+          if ((stat_string[0] == '9') && (stat_string[1] == ','))  // SR in S
+          {
+            strcpy(SRtext, stat_string);
+            chopN(SRtext, 2);
+            SR = atoi(SRtext) / 1000;
+            snprintf(SRtext, 15, "%d kS", SR);
+          }
+
+          if ((stat_string[0] == '1') && (stat_string[1] == '3'))  // Service Provider
+          {
+            strcpy(ServiceProvidertext, stat_string);
+            chopN(ServiceProvidertext, 3);
+
+            // Force VLC reset if service provider has changed
+            if ((strlen(ServiceProvidertext) > 1) && (strlen(LastServiceProvidertext) > 1))
+            {
+              if (strcmp(ServiceProvidertext, LastServiceProvidertext) != 0)  // Service provider has changed
+              {
+                system("/home/pi/portsdown/scripts/receive/lmvlcreset.sh &");           // so reset VLC
+                strcpy(LastServiceProvidertext, ServiceProvidertext);
+              }
+            }
+
+            // deal with first receive case (no reset required)
+            if ((FirstReceive == true) && (strlen(ServiceProvidertext) > 1))
+            {
+              strcpy(LastServiceProvidertext, ServiceProvidertext);
+              FirstReceive = false;
+            }
+          }
+
+          if ((stat_string[0] == '1') && (stat_string[1] == '4'))  // Service
+          {
+            strcpy(Servicetext, stat_string);
+            chopN(Servicetext, 3);
+          }
+
+          if ((stat_string[0] == '1') && (stat_string[1] == '8'))  // MODCOD
+          {
+            MERThreshold = LMLookupMODCOD(stat_string, STATE, FECtext, Modulationtext);
+          }
+
+          if ((stat_string[0] == '1') && (stat_string[1] == '7'))  // Video and audio encoding
+          {
+            if (LMLookupVidEncoding(stat_string, ExtraText) == 0)
+            {
+              strcpy(Encodingtext, ExtraText);
+            }
+            strcpy(ExtraText, "");
+
+            if (LMLookupAudEncoding(stat_string, ExtraText) == 0)
+            {
+              strcat(Encodingtext, ExtraText);
+            }
+          }
+
+          if ((stat_string[0] == '2') && (stat_string[1] == '6'))  // AGC1 Setting
+          {
+            strcpy(AGC1text, stat_string);
+            chopN(AGC1text, 3);
+            AGC1 = atoi(AGC1text);
+          }
+
+          if ((stat_string[0] == '2') && (stat_string[1] == '7'))  // AGC2 Setting
+          {
+            strcpy(AGC2text, stat_string);
+            chopN(AGC2text, 3);
+            AGC2 = atoi(AGC2text);
+          }
+
+          if ((stat_string[0] == '1') && (stat_string[1] == '2'))  // MER
+          {
+            if (FinishedButton == 1)  // Parameters requested to be displayed
+            {
+
+              // If they weren't displayed before, set the previousMER to 0 
+              // so they get displayed and don't have to wait for an MER change
+              if (Parameters_currently_displayed != 1)
+              {
+                previousMER = 0;
+              }
+              Parameters_currently_displayed = 1;
+              strcpy(MERtext, stat_string);
+              chopN(MERtext, 3);
+              MER = atof(MERtext)/10;
+              if (MER > 51)  // Trap spurious MER readings
+              {
+                MER = 0;
+              }
+              snprintf(MERtext, 24, "MER %.1f (%.1f needed)", MER, MERThreshold);
+              snprintf(AGCtext, 24, "RF Input Level %d dB", CalcInputPwr(AGC1, AGC2));
+
+              rectangle(wscreen * 1 / 40, hscreen - 1 * linepitch - txtdesc, wscreen * 30 / 40, txttot, 0, 0, 0);
+              Text(wscreen * 1 / 40, hscreen - 1 * linepitch, STATEtext, font_ptr, 0, 0, 0, 255, 255, 255);
+              rectangle(wscreen * 1 / 40, hscreen - 2 * linepitch - txtdesc, wscreen * 19 / 40, txttot, 0, 0, 0);
+              Text(wscreen * 1 / 40, hscreen - 2 * linepitch, FREQtext, font_ptr, 0, 0, 0, 255, 255, 255);
+              rectangle(wscreen * 1 / 40, hscreen - 3 * linepitch - txtdesc, wscreen * 19 / 40, txttot, 0, 0, 0);
+              Text(wscreen * 1 / 40, hscreen - 3 * linepitch, SRtext, font_ptr, 0, 0, 0, 255, 255, 255);
+              rectangle(wscreen * 1 / 40, hscreen - 4 * linepitch - txtdesc, wscreen * 19 / 40, txttot, 0, 0, 0);
+              Text(wscreen * 1 / 40, hscreen - 4 * linepitch, Modulationtext, font_ptr, 0, 0, 0, 255, 255, 255);
+              rectangle(wscreen * 1 / 40, hscreen - 5 * linepitch - txtdesc, wscreen * 19 / 40, txttot, 0, 0, 0);
+              Text(wscreen * 1 / 40, hscreen - 5 * linepitch, FECtext, font_ptr, 0, 0, 0, 255, 255, 255);
+              rectangle(wscreen * 1 / 40, hscreen - 6 * linepitch - txtdesc, wscreen * 19 / 40, txttot, 0, 0, 0);
+              Text(wscreen * 1 / 40, hscreen - 6 * linepitch, ServiceProvidertext, font_ptr, 0, 0, 0, 255, 255, 255);
+              rectangle(wscreen * 1 / 40, hscreen - 7 * linepitch - txtdesc, wscreen * 19 / 40, txttot, 0, 0, 0);
+              Text(wscreen * 1 / 40, hscreen - 7 * linepitch, Servicetext, font_ptr, 0, 0, 0, 255, 255, 255);
+              rectangle(wscreen * 1 / 40, hscreen - 8 * linepitch - txtdesc, wscreen * 19 / 40, txttot, 0, 0, 0);
+              Text(wscreen * 1 / 40, hscreen - 8 * linepitch, Encodingtext, font_ptr, 0, 0, 0, 255, 255, 255);
+
+              rectangle(wscreen * 1 / 40, hscreen - 10 * linepitch - txtdesc, wscreen * 19 / 40, txttot, 0, 0, 0);
+              if (AGC1 < 1)  // Low input level
+              {
+                Text(wscreen * 1 / 40, hscreen - 10 * linepitch, AGCtext, font_ptr, 0, 0, 0, 255, 63, 63); // Red
+              }
+              else
+              {
+                Text(wscreen * 1 / 40, hscreen - 10 * linepitch, AGCtext, font_ptr, 0, 0, 0, 255, 255, 255); // White
+              }
+
+              rectangle(wscreen * 1 / 40, hscreen - 9 * linepitch - txtdesc, wscreen * 19 / 40, txttot, 0, 0, 0);
+              if (MER < MERThreshold + 0.1)
+              {
+                Text(wscreen * 1 / 40, hscreen - 9 * linepitch, MERtext, font_ptr, 0, 0, 0, 255, 63, 63);  // Red
+              }
+              else  // Auto-hide the parameter display after 5 seconds
+              {
+                if (FirstLock == 0) // This is the first time MER has exceeded threshold
+                {
+                  FirstLock = 1;
+                  LockTime = clock();  // Set first lock time
+                }
+                if ((clock() > LockTime + 600000) && (FirstLock == 1))  // About 5s since first lock
+                {
+                  FinishedButton = 2; // Hide parameters
+                  FirstLock = 2;      // and stop it trying to hide them again
+                }
+                Text(wscreen * 1 / 40, hscreen - 9 * linepitch, MERtext, font_ptr, 0, 0, 0, 255, 255, 255);  // Wht
+              }
+              publish();
+
+              // Only change VLC overlayfile if MER has changed
+              if (MER != previousMER)
+              {
+
+                // Strip trailing line feeds from text strings
+                ServiceProvidertext[strlen(ServiceProvidertext) - 1] = '\0';
+                Servicetext[strlen(Servicetext) - 1] = '\0';
+
+                // Build string for VLC
+                strcpy(vlctext, STATEtext);
+                strcat(vlctext, "%n");
+                strcat(vlctext, FREQtext);
+                strcat(vlctext, "%n");
+                strcat(vlctext, SRtext);
+                strcat(vlctext, "%n");
+                strcat(vlctext, Modulationtext);
+                strcat(vlctext, "%n");
+                strcat(vlctext, FECtext);
+                strcat(vlctext, "%n");
+                strcat(vlctext, ServiceProvidertext);
+                strcat(vlctext, "%n");
+                strcat(vlctext, Servicetext);
+                strcat(vlctext, "%n");
+                strcat(vlctext, Encodingtext);
+                strcat(vlctext, "%n");
+                strcat(vlctext, MERtext);
+                strcat(vlctext, "%n");
+                strcat(vlctext, AGCtext);
+                strcat(vlctext, "%n");
+                if (timeOverlay == true)
+                {
+                  // Retrieve the current time
+                  t = time(NULL);
+                  strftime(TIMEtext, sizeof(TIMEtext), "%H:%M %d %b %Y", gmtime(&t));
+                  strcat(vlctext, TIMEtext);
+                }
+                else
+                {
+                  strcat(vlctext, ".");
+                }
+                strcat(vlctext, "%nTouch Left to Hide Overlay%nTouch Centre to Exit");
+
+                FILE *fw=fopen("/home/pi/tmp/vlc_temp_overlay.txt","w+");
+                if(fw!=0)
+                {
+                  fprintf(fw, "%s\n", vlctext);
+                }
+                fclose(fw);
+
+                // Copy temp file to file to be read by VLC to prevent file collisions
+                system("cp /home/pi/tmp/vlc_temp_overlay.txt /home/pi/tmp/vlc_overlay.txt");
+
+                previousMER = MER;
+              }
+
+              Text(wscreen * 1 / 40, hscreen - 11 * linepitch, "Touch Centre to exit", font_ptr, 0, 0, 0, 255, 255, 255);
+              Text(wscreen * 1 / 40, hscreen - 12 * linepitch, "Touch Lower left for image capture", font_ptr, 0, 0, 0, 255, 255, 255);
+            
+            }
+            else
+            {
+              if (Parameters_currently_displayed == 1)
+              {
+                clearScreen(0, 0, 0);
+                Parameters_currently_displayed = 0;
+
+                FILE *fw=fopen("/home/pi/tmp/vlc_overlay.txt","w+");
+                if(fw!=0)
+                {
+                  fprintf(fw, " ");
+                }
+                fclose(fw);
+              }
+            }
+            // Update web on alternate MER changes (to reduce processor workload)
+            if (webupdate_this_time == true)
+            {
+              //refreshMouseBackground();
+              //draw_cursor_foreground(mouse_x, mouse_y);
+              UpdateWeb();
+              webupdate_this_time = false;
+            }
+            else
+            {
+              webupdate_this_time = true;
+            }
+          }
+          stat_string[0] = '\0';
+        }
+        else
+        {
+          strcat(stat_string, status_message_char);
+        }
+      }
+    }
+
+    close(fd_status_fifo); 
+    usleep(1000);
+    pclose(fp);
+    touch_response = 0; 
+    break;
+
+
+  case 1:  // DVB-S/S2 Receive Diagnostics
+    clearScreen(0, 0, 0);
+
+    fp=popen(PATH_SCRIPT_LMRXUDP, "r");
+    if(fp==NULL) printf("Process error\n");
+
+    printf("STARTING Receive Diagnostics\n");
+
+    // Open status FIFO
+    ret = mkfifo("longmynd_status_fifo", 0666);
+    fd_status_fifo = open("longmynd_status_fifo", O_RDONLY); 
+    if (fd_status_fifo < 0)
+    {
+      printf("Failed to open status fifo\n");
+    }
+
+    printf("FinishedButton = %d\n", FinishedButton);
+
+    while ((FinishedButton == 1) || (FinishedButton == 2)) // 1 is captions on, 2 is off
+    {
+      
+      // printf("%s", "Start Read\n");
+
+      num = read(fd_status_fifo, status_message_char, 1);
+      // printf("%s Num= %d \n", "End Read", num);
+      if (num >= 0 )
+      {
+        status_message_char[num]='\0';
+        //if (num>0) printf("%s\n",status_message_char);
+ 
+        if (strcmp(status_message_char, "$") == 0)
+        {
+
+          if ((stat_string[0] == '1') && (stat_string[1] == ','))  // Decoder State
+          {
+            // Return State as an integer and a string
+            STATE = LMDecoderState(stat_string, STATEtext);
+          }
+          if ((stat_string[0] == '1') && (stat_string[1] == '5'))  // Null Ratio
+          {
+            strcpy(NullRatiotext, stat_string);
+            chopN(NullRatiotext, 3);
+            nullsarray[nullsindex] = atoi(NullRatiotext);
+            nullsindex++;
+            if (nullsindex > 99)
+            {
+              nullsindex = 0;
+            }
+          }
+
+          if ((stat_string[0] == '6') && (stat_string[1] == ','))  // Frequency
+          {
+            strcpy(FREQtext, stat_string);
+            chopN(FREQtext, 2);
+            FREQ = atof(FREQtext);
+            if (strcmp(LMRXmode, "sat") == 0)
+            {
+              FREQ = FREQ + LMRXqoffset;
+            }
+            FREQ = FREQ / 1000;
+            snprintf(FREQtext, 15, "%.3f MHz", FREQ);
+          }
+
+          if ((stat_string[0] == '7') && (stat_string[1] == ','))  // I voltage
+          {
+            strcpy(Itext, stat_string);
+            chopN(Itext, 2);
+            Itextvalue = atoi(Itext);
+            if (Itextvalue < 128)
+            {
+              Ivalue = Itextvalue;
+            }
+            else
+            {
+              Ivalue = Itextvalue - 255;
+            }
+          }
+
+          if ((stat_string[0] == '8') && (stat_string[1] == ','))  // Q Voltage
+          {
+            strcpy(Qtext, stat_string);
+            chopN(Qtext, 2);
+            Qtextvalue = atoi(Qtext);
+            if (Qtextvalue < 128)
+            {
+              Qvalue = Qtextvalue;
+            }
+            else
+            {
+              Qvalue = Qtextvalue - 255;
+            }
+            //printf("I %d  Q %d\n", Ivalue, Qvalue);
+            //snprintf(udp_string, 15, "I %s, Q %s", Itext, Qtext);
+            IQ[IQindex][0] = Ivalue;
+            IQ[IQindex][1] = Qvalue;
+            IQindex++;
+            if (IQindex > 1023)
+            {
+              IQindex = 0;
+            }
+            //setPixel(600 + Ivalue, 300 + Qvalue, 255, 255, 128);
+          }
+
+          if ((stat_string[0] == '9') && (stat_string[1] == ','))  // SR in S
+          {
+            strcpy(SRtext, stat_string);
+            chopN(SRtext, 2);
+            SR = atoi(SRtext) / 1000;
+            snprintf(SRtext, 15, "%d kS", SR);
+          }
+
+          if ((stat_string[0] == '1') && (stat_string[1] == '3'))  // Service Provider
+          {
+            strcpy(ServiceProvidertext, stat_string);
+            chopN(ServiceProvidertext, 3);
+          }
+
+          if ((stat_string[0] == '1') && (stat_string[1] == '4'))  // Service
+          {
+            strcpy(Servicetext, stat_string);
+            chopN(Servicetext, 3);
+          }
+
+          if ((stat_string[0] == '1') && (stat_string[1] == '8'))  // MODCOD
+          {
+            MERThreshold = LMLookupMODCOD(stat_string, STATE, FECtext, Modulationtext);
+          }
+
+          if ((stat_string[0] == '1') && (stat_string[1] == '7'))  // Video and audio encoding
+          {
+            if (LMLookupVidEncoding(stat_string, ExtraText) == 0)
+            {
+              strcpy(Encodingtext, ExtraText);
+            }
+            strcpy(ExtraText, "");
+
+            if (LMLookupAudEncoding(stat_string, ExtraText) == 0)
+            {
+              strcat(Encodingtext, ExtraText);
+            }
+          }
+
+          if ((stat_string[0] == '2') && (stat_string[1] == '6'))  // AGC1 Setting
+          {
+            strcpy(AGC1text, stat_string);
+            chopN(AGC1text, 3);
+            AGC1 = atoi(AGC1text);
+          }
+
+          if ((stat_string[0] == '2') && (stat_string[1] == '7'))  // AGC2 Setting
+          {
+            strcpy(AGC2text, stat_string);
+            chopN(AGC2text, 3);
+            AGC2 = atoi(AGC2text);
+          }
+
+          if ((stat_string[0] == '1') && (stat_string[1] == '2'))  // MER
+          {
+            strcpy(MERtext, stat_string);
+            chopN(MERtext, 3);
+            MER = atof(MERtext)/10;
+
+            if (MER > 51)  // Trap spurious MER readings
+            {
+              MER = 0;
+              strcpy(MERNtext, " ");
+            }
+            else if (MER >= 10)
+            {
+              snprintf(MERNtext, 10, "%.1f", MER);
+            }
+            else
+            {
+              snprintf(MERNtext, 10, "%.1f  ", MER);
+            }
+            snprintf(MERtext, 24, "MER %.1f (%.1f needed)", MER, MERThreshold);
+            snprintf(AGCtext, 24, "RF Input Level %d dB", CalcInputPwr(AGC1, AGC2));
+
+            // Clear the screen without publishing
+            rectangle(0, 0, 799, 480, 0, 0, 0);
+
+            Text(wscreen * 1 / 40, hscreen - 1 * linepitch, STATEtext, font_ptr, 0, 0, 0, 255, 255, 255);
+            Text(wscreen * 1 / 40, hscreen - 2 * linepitch, FREQtext, font_ptr, 0, 0, 0, 255, 255, 255);
+            Text(wscreen * 1 / 40, hscreen - 3 * linepitch, SRtext, font_ptr, 0, 0, 0, 255, 255, 255);
+            Text(wscreen * 1 / 40, hscreen - 4 * linepitch, Modulationtext, font_ptr, 0, 0, 0, 255, 255, 255);
+            Text(wscreen * 1 / 40, hscreen - 5 * linepitch, FECtext, font_ptr, 0, 0, 0, 255, 255, 255);
+            Text(wscreen * 1 / 40, hscreen - 6 * linepitch, ServiceProvidertext, font_ptr, 0, 0, 0, 255, 255, 255);
+            Text(wscreen * 1 / 40, hscreen - 7 * linepitch, Servicetext, font_ptr, 0, 0, 0, 255, 255, 255);
+            Text(wscreen * 1 / 40, hscreen - 8 * linepitch, Encodingtext, font_ptr, 0, 0, 0, 255, 255, 255);
+
+            if (AGC1 < 1)  // Low input level
+            {
+              Text(wscreen * 1 / 40, hscreen - 10 * linepitch, AGCtext, font_ptr, 0, 0, 0, 255, 63, 63);
+            }
+            else
+            {
+              Text(wscreen * 1 / 40, hscreen - 10 * linepitch, AGCtext, font_ptr, 0, 0, 0, 255, 255, 255);
+            }
+
+            if (MER < MERThreshold + 0.1)
+            {
+              Text(wscreen * 1 / 40, hscreen - 9 * linepitch, MERtext, font_ptr, 0, 0, 0, 255, 63, 63);
+            }
+            else
+            {
+              Text(wscreen * 1 / 40, hscreen - 9 * linepitch, MERtext, font_ptr, 0, 0, 0, 255, 255, 255);
+            }
+
+            Text(wscreen * 1 / 40, hscreen - 12 * linepitch, "Touch Centre to Exit", font_ptr, 0, 0, 0, 255, 255, 255);
+
+            // Draw the Constellation
+            rectangle(523, 173, 255, 255, 0, 0, 0);
+            HorizLine(523, 300, 255, 255, 255, 255);
+            VertLine (650, 173, 255, 255, 255, 255);
+
+            float mag = 0;
+            float magsum = 0;
+            float nullstotal = 0;
+            float magerrorpower = 0;
+            float phase;
+            float phaseerrorpower = 0;
+            char magMERtext[63];
+            char phaseMERtext[63];
+
+            for (i = 0; i < 1024; i++)
+            {
+              setPixel(650 + IQ[i][0], 300 + IQ[i][1], 255, 255, 128);
+              mag = sqrt(IQ[i][0] * IQ[i][0] + IQ[i][0] * IQ[i][0]);
+              magsum = magsum + mag; 
+              magerrorpower = magerrorpower + (avmag - mag) * (avmag - mag);
+
+              if (IQ[i][0] == 0)
+              {
+                phase = PI / 4;
+              }
+              else
+              {
+                if (IQ[i][1] == 0)
+                {
+                  phase = 0;
+                }
+                else
+                {
+                  if ((IQ[i][0] > 0) && (IQ[i][1] > 0))  // top right quadrant
+                  {
+                    phase = atan((float)IQ[i][1] / (float)IQ[i][0]);
+                  }
+                  else if ((IQ[i][0] < 0) && (IQ[i][1] > 0))  // top left quadrant
+                  {
+                    phase = atan((float)IQ[i][1] / (-1 * (float)IQ[i][0]));
+                  }
+                  else if ((IQ[i][0] > 0) && (IQ[i][1] < 0))  // lower right quadrant
+                  {
+                    phase = atan((-1 * (float)IQ[i][1]) / (float)IQ[i][0]);
+                  }
+                  else if ((IQ[i][0] < 0) && (IQ[i][1] < 0))  // lower left quadrant
+                  {
+                    phase = atan((float)IQ[i][1] / (float)IQ[i][0]);
+                  }
+                }
+              }
+              phaseerrorpower = phaseerrorpower + ((phase - (PI / 4)) * (phase - (PI / 4)));
+            }
+
+            avmag = magsum/1024; // for use next time
+
+            // Now calculate MER components (QPSK only)
+            if (strcmp(FECtext, "QPSK") == 0)
+            {
+              magerrorpower = magerrorpower / 1024; // on a scale of 0 to 100 squared
+              magerrorpower = 10 * log10(magerrorpower / 100);
+              snprintf(magMERtext, 30, "Amplitude MER %0.1f dB", 14.5 - magerrorpower);
+              Text(wscreen * 21 / 40, hscreen - 10 * linepitch, magMERtext, font_ptr, 0, 0, 0, 255, 255, 255);
+
+              phaseerrorpower = phaseerrorpower / 1024;  // On a scale of 0 to PI/2 squared
+              phaseerrorpower = 10 * log10(phaseerrorpower / ((PI / 2) * (PI / 2)));
+              snprintf(phaseMERtext, 30, "Phase MER %0.1f dB", -6.5 - phaseerrorpower);
+              Text(wscreen * 21 / 40, hscreen - 11 * linepitch, phaseMERtext, font_ptr, 0, 0, 0, 255, 255, 255);
+            }
+
+            for (i = 0; i < 100; i++)
+            {
+              nullstotal = nullstotal + nullsarray[i];
+            }
+            snprintf(NullRatiotext, 15, "Nulls %0.1f%%", nullstotal / 100);
+            Text(wscreen * 1 / 40, hscreen - 11 * linepitch, NullRatiotext, font_ptr, 0, 0, 0, 255, 255, 255);
+
+            publish();            
+            UpdateWeb();
+          }
+          stat_string[0] = '\0';
+        }
+        else
+        {
+          strcat(stat_string, status_message_char);
+        }
+      }
+      else
+      {
+        FinishedButton = 0;
+      }
+    } 
+    close(fd_status_fifo); 
+    usleep(1000);
+
+    printf("Stopping receive process\n");
+    pclose(fp);
+
+    system("sudo killall lmudp.sh >/dev/null 2>/dev/null");
+    touch_response = 0; 
+    break;
+
+  case 3:  // DVB-S/S2 UDP Output
+    snprintf(udp_string, 63, "UDP Output to %s:%s", LMRXudpip, LMRXudpport);
+    fp=popen(PATH_SCRIPT_LMRXUDP, "r");
+    if(fp==NULL) printf("Process error\n");
+
+    printf("STARTING UDP Player RX\n");
+
+    // Open status FIFO
+    ret = mkfifo("longmynd_status_fifo", 0666);
+    fd_status_fifo = open("longmynd_status_fifo", O_RDONLY); 
+    if (fd_status_fifo < 0)
+    {
+      printf("Failed to open status fifo\n");
+    }
+
+    printf("FinishedButton = %d\n", FinishedButton);
+
+    while ((FinishedButton == 1) || (FinishedButton == 2)) // 1 is captions on, 2 is off
+    {
+      // printf("%s", "Start Read\n");
+
+      num = read(fd_status_fifo, status_message_char, 1);
+      // printf("%s Num= %d \n", "End Read", num);
+      if (num >= 0 )
+      {
+        status_message_char[num]='\0';
+        //if (num>0) printf("%s\n",status_message_char);
+ 
+        if (strcmp(status_message_char, "$") == 0)
+        {
+
+          if ((stat_string[0] == '1') && (stat_string[1] == ','))  // Decoder State
+          {
+            // Return State as an integer and a string
+            STATE = LMDecoderState(stat_string, STATEtext);
+          }
+
+          if ((stat_string[0] == '6') && (stat_string[1] == ','))  // Frequency
+          {
+            strcpy(FREQtext, stat_string);
+            chopN(FREQtext, 2);
+            FREQ = atof(FREQtext);
+            if (strcmp(LMRXmode, "sat") == 0)
+            {
+              FREQ = FREQ + LMRXqoffset;
+            }
+            FREQ = FREQ / 1000;
+            snprintf(FREQtext, 15, "%.3f MHz", FREQ);
+          }
+
+          if ((stat_string[0] == '9') && (stat_string[1] == ','))  // SR in S
+          {
+            strcpy(SRtext, stat_string);
+            chopN(SRtext, 2);
+            SR = atoi(SRtext) / 1000;
+            snprintf(SRtext, 15, "%d kS", SR);
+          }
+
+          if ((stat_string[0] == '1') && (stat_string[1] == '3'))  // Service Provider
+          {
+            strcpy(ServiceProvidertext, stat_string);
+            chopN(ServiceProvidertext, 3);
+          }
+
+          if ((stat_string[0] == '1') && (stat_string[1] == '4'))  // Service
+          {
+            strcpy(Servicetext, stat_string);
+            chopN(Servicetext, 3);
+          }
+
+          if ((stat_string[0] == '1') && (stat_string[1] == '8'))  // MODCOD
+          {
+            MERThreshold = LMLookupMODCOD(stat_string, STATE, FECtext, Modulationtext);
+          }
+
+          if ((stat_string[0] == '1') && (stat_string[1] == '7'))  // Video and audio encoding
+          {
+            if (LMLookupVidEncoding(stat_string, ExtraText) == 0)
+            {
+              strcpy(Encodingtext, ExtraText);
+            }
+            strcpy(ExtraText, "");
+
+            if (LMLookupAudEncoding(stat_string, ExtraText) == 0)
+            {
+              strcat(Encodingtext, ExtraText);
+            }
+          }
+
+          if ((stat_string[0] == '2') && (stat_string[1] == '6'))  // AGC1 Setting
+          {
+            strcpy(AGC1text, stat_string);
+            chopN(AGC1text, 3);
+            AGC1 = atoi(AGC1text);
+          }
+
+          if ((stat_string[0] == '2') && (stat_string[1] == '7'))  // AGC2 Setting
+          {
+            strcpy(AGC2text, stat_string);
+            chopN(AGC2text, 3);
+            AGC2 = atoi(AGC2text);
+          }
+
+          if ((stat_string[0] == '1') && (stat_string[1] == '2'))  // MER
+          {
+            strcpy(MERtext, stat_string);
+            chopN(MERtext, 3);
+            MER = atof(MERtext)/10;
+
+            if (MER > 51)  // Trap spurious MER readings
+            {
+              MER = 0;
+              strcpy(MERNtext, " ");
+            }
+            else if (MER >= 10)
+            {
+              snprintf(MERNtext, 10, "%.1f", MER);
+            }
+            else
+            {
+              snprintf(MERNtext, 10, "%.1f  ", MER);
+            }
+            snprintf(MERtext, 24, "MER %.1f (%.1f needed)", MER, MERThreshold);
+            snprintf(AGCtext, 24, "RF Input Level %d dB", CalcInputPwr(AGC1, AGC2));
+
+            rectangle(wscreen * 1 / 40, hscreen - 1 * linepitch - txtdesc, wscreen * 19 / 40, txttot, 0, 0, 0);
+            Text(wscreen * 1 / 40, hscreen - 1 * linepitch, STATEtext, font_ptr, 0, 0, 0, 255, 255, 255);
+            rectangle(wscreen * 1 / 40, hscreen - 2 * linepitch - txtdesc, wscreen * 19 / 40, txttot, 0, 0, 0);
+            Text(wscreen * 1 / 40, hscreen - 2 * linepitch, FREQtext, font_ptr, 0, 0, 0, 255, 255, 255);
+            rectangle(wscreen * 1 / 40, hscreen - 3 * linepitch - txtdesc, wscreen * 19 / 40, txttot, 0, 0, 0);
+            Text(wscreen * 1 / 40, hscreen - 3 * linepitch, SRtext, font_ptr, 0, 0, 0, 255, 255, 255);
+            rectangle(wscreen * 1 / 40, hscreen - 4 * linepitch - txtdesc, wscreen * 17 / 40, txttot, 0, 0, 0);
+            Text(wscreen * 1 / 40, hscreen - 4 * linepitch, Modulationtext, font_ptr, 0, 0, 0, 255, 255, 255);
+            rectangle(wscreen * 1 / 40, hscreen - 5 * linepitch - txtdesc, wscreen * 17 / 40, txttot, 0, 0, 0);
+            Text(wscreen * 1 / 40, hscreen - 5 * linepitch, FECtext, font_ptr, 0, 0, 0, 255, 255, 255);
+            rectangle(wscreen * 1 / 40, hscreen - 6 * linepitch - txtdesc, wscreen * 17 / 40, txttot, 0, 0, 0);
+            Text(wscreen * 1 / 40, hscreen - 6 * linepitch, ServiceProvidertext, font_ptr, 0, 0, 0, 255, 255, 255);
+            rectangle(wscreen * 1 / 40, hscreen - 7 * linepitch - txtdesc, wscreen * 17 / 40, txttot, 0, 0, 0);
+            Text(wscreen * 1 / 40, hscreen - 7 * linepitch, Servicetext, font_ptr, 0, 0, 0, 255, 255, 255);
+            rectangle(wscreen * 1 / 40, hscreen - 8 * linepitch - txtdesc, wscreen * 17 / 40, txttot, 0, 0, 0);
+            Text(wscreen * 1 / 40, hscreen - 8 * linepitch, Encodingtext, font_ptr, 0, 0, 0, 255, 255, 255);
+
+            rectangle(wscreen * 1 / 40, hscreen - 10 * linepitch - txtdesc, wscreen * 19 / 40, txttot, 0, 0, 0);
+            if (AGC1 < 1)  // Low input level
+            {
+              Text(wscreen * 1 / 40, hscreen - 10 * linepitch, AGCtext, font_ptr, 0, 0, 0, 255, 63, 63);
+            }
+            else
+            {
+              Text(wscreen * 1 / 40, hscreen - 10 * linepitch, AGCtext, font_ptr, 0, 0, 0, 255, 255, 255);
+            }
+
+            rectangle(wscreen * 1 / 40, hscreen - 9 * linepitch - txtdesc, wscreen * 19 / 40, txttot, 0, 0, 0);
+            if (MER < MERThreshold + 0.1)
+            {
+              Text(wscreen * 1 / 40, hscreen - 9 * linepitch, MERtext, font_ptr, 0, 0, 0, 255, 63, 63);
+            }
+            else
+            {
+              Text(wscreen * 1 / 40, hscreen - 9 * linepitch, MERtext, font_ptr, 0, 0, 0, 255, 255, 255);
+            }
+
+            Text(wscreen * 1 / 40, hscreen - 11 * linepitch, udp_string, font_ptr, 0, 0, 0, 255, 255, 255);
+            Text(wscreen * 1 / 40, hscreen - 12 * linepitch, "Touch Centre to Exit", font_ptr, 0, 0, 0, 255, 255, 255);
+
+            // Display large MER number
+            LargeText(wscreen * 18 / 40, hscreen * 19 / 48, 5, MERNtext, &font_dejavu_sans_32, 0, 0, 0, 255, 255, 255);
+            //refreshMouseBackground();
+            //draw_cursor_foreground(mouse_x, mouse_y);
+            publish();            
+            UpdateWeb();
+          }
+          stat_string[0] = '\0';
+        }
+        else
+        {
+          strcat(stat_string, status_message_char);
+        }
+      }
+      else
+      {
+        FinishedButton = 0;
+      }
+    } 
+    close(fd_status_fifo); 
+    usleep(1000);
+
+    printf("Stopping receive process\n");
+    pclose(fp);
+
+    system("sudo killall lmudp.sh >/dev/null 2>/dev/null");
+    touch_response = 0; 
+    break;
+
+  case 4:  // MER Display
+    snprintf(udp_string, 63, "UDP Output to %s:%s", LMRXudpip, LMRXudpport);
+    fp=popen(PATH_SCRIPT_LMRXMER, "r");
+    if(fp==NULL) printf("Process error\n");
+
+    printf("STARTING MER Display\n");
+
+    // Open status FIFO
+    ret = mkfifo("longmynd_status_fifo", 0666);
+    fd_status_fifo = open("longmynd_status_fifo", O_RDONLY); 
+    if (fd_status_fifo < 0)
+    {
+      printf("Failed to open status fifo\n");
+    }
+
+    while ((FinishedButton == 1) || (FinishedButton == 2)) // 1 is captions on, 2 is off
+    {
+      num = read(fd_status_fifo, status_message_char, 1);
+
+      if (num >= 0 )
+      {
+        status_message_char[num]='\0';
+        if (strcmp(status_message_char, "$") == 0)
+        {
+
+          if ((stat_string[0] == '1') && (stat_string[1] == ','))  // Decoder State
+          {
+            // Return State as an integer and a string
+            STATE = LMDecoderState(stat_string, STATEtext);
+            strcat(STATEtext, " MER:");
+          }
+
+          if ((stat_string[0] == '2') && (stat_string[1] == '6'))  // AGC1 Setting
+          {
+            strcpy(AGC1text, stat_string);
+            chopN(AGC1text, 3);
+            AGC1 = atoi(AGC1text);
+          }
+
+          if ((stat_string[0] == '2') && (stat_string[1] == '7'))  // AGC2 Setting
+          {
+            strcpy(AGC2text, stat_string);
+            chopN(AGC2text, 3);
+            AGC2 = atoi(AGC2text);
+          }
+
+          if ((stat_string[0] == '1') && (stat_string[1] == '2'))  // MER
+          {
+            strcpy(MERtext, stat_string);
+            chopN(MERtext, 3);
+            MER = atof(MERtext)/10;
+            if (MER > 51)  // Trap spurious MER readings
+            {
+              MER = 0;
+              strcpy(MERtext, " ");
+            }
+            else if (MER >= 10)
+            {
+              snprintf(MERtext, 10, "%.1f", MER);
+            }
+            else
+            {
+              snprintf(MERtext, 10, "%.1f  ", MER);
+            }
+
+            snprintf(AGCtext, 24, "RF Input Level %d dB", CalcInputPwr(AGC1, AGC2));
+
+            // Set up for the tuning bar
+
+            if ((MER > 0.2) && (MERcount < 9))  // Wait for a valid MER
+            {
+              MERcount = MERcount + 1;
+            }
+            if (MERcount == 9)                 // Third valid MER
+            {
+              refMER = MER;
+              MERcount = 10;
+            }
+
+            rectangle(0, 0, 800, 480, 0, 0, 0);  // Clear the back buffer
+
+            if (AGC1 < 1)  // Low input level
+            {
+              Text(wscreen * 1 / 40, hscreen - 11 * linepitch, AGCtext, font_ptr, 0, 0, 0, 255, 63, 63); // red
+            }
+            else
+            {
+              Text(wscreen * 1 / 40, hscreen - 11 * linepitch, AGCtext, font_ptr, 0, 0, 0, 255, 255, 255); // red
+            }
+
+            Text(wscreen * 1 / 40, hscreen - 1 * linepitch, STATEtext, font_ptr, 0, 0, 0, 255, 255, 255);
+
+            LargeText(wscreen * 1 / 40, hscreen - 9 * linepitch, 4, MERtext, &font_dejavu_sans_72, 0, 0, 0, 255, 255, 255);
+
+            Text(wscreen * 1 / 40, hscreen - 12 * linepitch, "Touch Centre to Exit", font_ptr, 0, 0, 0, 255, 255, 255);
+
+            if (MERcount == 10)
+            {
+              bar_height = hscreen * (MER - refMER) / 8; // zero is reference
+              // valid pixels are 1 to wscreen (800) and 1 to hscreen (480)
+
+              rectangle(ls - wdth, bar_centre -1, wdth, 2, 255, 255, 255); // White Reference line
+              if (MER > refMER)  // Green rectangle
+              {
+                if ((bar_centre + bar_height ) > hscreen)  // off the top
+                {
+                  bar_height = hscreen - bar_centre;
+                }
+                rectangle(ls, bar_centre, wdth, bar_height, 0, 255, 0); // Green bar
+              }
+              else              // Red rectangle
+              {
+                if ((bar_centre + bar_height ) < 1)  // off the bottom
+                {
+                  bar_height = 1 - bar_centre;
+                }
+                rectangle(ls, bar_centre + bar_height, wdth, 0 - bar_height, 255, 0, 0); // Red bar
+              }
+            }
+            publish();
+            UpdateWeb();
+          }
+          stat_string[0] = '\0';
+        }
+        else
+        {
+          strcat(stat_string, status_message_char);
+        }
+      }
+      else
+      {
+        FinishedButton = 0;
+      }
+    } 
+    close(fd_status_fifo); 
+    usleep(1000);
+
+    printf("Stopping receive process\n");
+    pclose(fp);
+
+    system("sudo killall lmmer.sh >/dev/null 2>/dev/null");
+    touch_response = 0; 
+    break;
+
+  case 5:  // AutoSet LNB Frequency
+
+    clearScreen(0, 0, 0);
+    fp=popen(PATH_SCRIPT_LMRXMER, "r");
+    if(fp==NULL) printf("Process error\n");
+
+    printf("STARTING Autoset LNB LO Freq\n");
+    int oldLMRXqoffset = LMRXqoffset;
+    LMRXqoffset = 0;
+
+    // Open status FIFO
+    ret = mkfifo("longmynd_status_fifo", 0666);
+    fd_status_fifo = open("longmynd_status_fifo", O_RDONLY); 
+    if (fd_status_fifo < 0)
+    {
+      printf("Failed to open status fifo\n");
+    }
+    while ((FinishedButton == 1) || (FinishedButton == 2)) // 1 is captions on, 2 is off
+    {
+      num = read(fd_status_fifo, status_message_char, 1);
+      if (num >= 0 )
+      {
+        status_message_char[num]='\0';
+        if (strcmp(status_message_char, "$") == 0)
+        {
+
+          if ((stat_string[0] == '1') && (stat_string[1] == ','))  // Decoder State
+          {
+            // Return State as an integer and a string
+            STATE = LMDecoderState(stat_string, STATEtext);
+          }
+
+          if ((stat_string[0] == '6') && (stat_string[1] == ','))  // Frequency
+          {
+            strcpy(FREQtext, stat_string);
+            chopN(FREQtext, 2);
+            FREQ = atof(FREQtext);
+            TUNEFREQ = atoi(FREQtext);
+            if (strcmp(LMRXmode, "sat") == 0)
+            {
+              FREQ = FREQ + LMRXqoffset;
+            }
+            FREQ = FREQ / 1000;
+            snprintf(FREQtext, 15, "%.3f MHz", FREQ);
+          }
+
+          if ((stat_string[0] == '1') && (stat_string[1] == '2'))  // MER
+          {
+            strcpy(MERtext, stat_string);
+            chopN(MERtext, 3);
+            MER = atof(MERtext)/10;
+            if (MER > 51)  // Trap spurious MER readings
+            {
+              MER = 0;
+            }
+            snprintf(MERtext, 24, "MER %.1f", MER);
+
+            // Set up for Frequency capture
+
+            if ((MER > 0.2) && (MERcount < 9))  // Wait for a valid MER
+            {
+              MERcount = MERcount + 1;
+            }
+            if (MERcount == 9)                 // Third valid MER
+            {
+              refMER = MER;
+              MERcount = 10;
+            }
+
+            rectangle(wscreen * 1 / 40, hscreen - 1 * linepitch - txtdesc, wscreen * 19 / 40, txttot, 0, 0, 0);
+            Text(wscreen * 1 / 40, hscreen - 1 * linepitch, STATEtext, font_ptr, 0, 0, 0, 255, 255, 255);
+            rectangle(wscreen * 1 / 40, hscreen - 3 * linepitch - txtdesc, wscreen * 19 / 40, txttot, 0, 0, 0);
+            Text(wscreen * 1 / 40, hscreen - 3 * linepitch, MERtext, font_ptr, 0, 0, 0, 255, 255, 255);
+
+            Text(wscreen * 1.0 / 40.0, hscreen - 4.5 * linepitch, "Previous LNB Offset", font_ptr, 0, 0, 0, 255, 255, 255);
+            snprintf(FREQtext, 15, "%d kHz", oldLMRXqoffset);
+            Text(wscreen * 1.0 / 40.0, hscreen - 5.5 * linepitch, FREQtext, font_ptr, 0, 0, 0, 255, 255, 255);
+       
+            // Make sure that the Tuner frequency is sensible
+            if ((TUNEFREQ < 143000) || (TUNEFREQ > 2650000))
+            {
+              TUNEFREQ = 0;
+            }
+
+            if ((MERcount == 10) && (LMRXqoffset == 0) && (TUNEFREQ != 0))
+            {
+              Text(wscreen * 1.0 / 40.0, hscreen - 7.0 * linepitch, "Calculated New LNB Offset", font_ptr, 0, 0, 0, 255, 255, 255);
+              LMRXqoffset = 10491500 - TUNEFREQ;
+              snprintf(FREQtext, 15, "%d kHz", LMRXqoffset);
+              Text(wscreen * 1.0 / 40.0, hscreen - 8.0 * linepitch, FREQtext, font_ptr, 0, 0, 0, 255, 255, 255);
+              Text(wscreen * 1.0 / 40.0, hscreen - 9.0 * linepitch, "Saved to memory card", font_ptr, 0, 0, 0, 255, 255, 255);
+              snprintf(Value, 15, "%d", LMRXqoffset);
+              SetConfigParam(PATH_LMCONFIG, "qoffset", Value);
+            }
+            if ((MERcount == 10) && (LMRXqoffset != 0)) // Done, so just display results
+            {
+              Text(wscreen * 1.0 / 40.0, hscreen - 7.0 * linepitch, "Calculated New LNB Offset", font_ptr, 0, 0, 0, 255, 255, 255);
+              snprintf(FREQtext, 15, "%d kHz", LMRXqoffset);
+              Text(wscreen * 1.0 / 40.0, hscreen - 8.0 * linepitch, FREQtext, font_ptr, 0, 0, 0, 255, 255, 255);
+            }
+            Text(wscreen * 1.0 / 40.0, hscreen - 11.5 * linepitch, "Touch Centre of screen to exit", font_ptr, 0, 0, 0, 255, 255, 255);
+
+            publish();
+            UpdateWeb();
+          }
+          stat_string[0] = '\0';
+
+        }
+        else
+        {
+          strcat(stat_string, status_message_char);
+        }
+      }
+      else
+      {
+        FinishedButton = 0;
+      }
+    } 
+    close(fd_status_fifo); 
+    usleep(1000);
+
+    printf("Stopping receive process\n");
+    pclose(fp);
+
+    system("sudo killall lmmer.sh >/dev/null 2>/dev/null");
+    touch_response = 0; 
+    break;
+  }
+  system("sudo killall longmynd >/dev/null 2>/dev/null");
+  system("sudo killall vlc >/dev/null 2>/dev/null");
+  pthread_join(thbutton, NULL);
 }
 
 
@@ -1119,7 +2743,7 @@ void CreateButtons()
   int menu;
   int button;
 
-  for (menu = 0; menu < MAX_MENUS; menu++)
+  for (menu = 0; menu < 41; menu++)            // All except keyboard
   {
     for (button = 0; button < MAX_BUTTON_ON_MENU; button++)
     {
@@ -1158,6 +2782,90 @@ void CreateButtons()
       ButtonArray[menu][button].h = h;
       ButtonArray[menu][button].IndexStatus = 0;
     }
+  }
+
+  menu = 41; 
+  for (button = 0; button < MAX_BUTTON_ON_MENU; button++)
+  {
+    w = 65;
+    h = 59;
+
+    if (button <= 9)  // Space bar and < > - Enter, Bkspc
+    {
+      switch (button)
+      {
+      case 0:                   // Space Bar
+          y = 0;
+          x = 165; // wscreen * 5 / 24;
+          w = 296; // wscreen * 9 /24;
+          break;
+      case 1:                  // del
+          y = 0;
+          x = 726; //wscreen * 11 / 12;
+          break;
+      case 2:                  // <
+          y = 0;
+          x = 528; //wscreen * 8 / 12;
+          break;
+      case 3:                  // >
+          y = 0;
+          x = 594; // wscreen * 9 / 12;
+          break;
+      case 4:                  // -
+          y = 0;
+          x = 660; // wscreen * 10 / 12;
+          break;
+      case 5:                  // Clear
+          y = 0;
+          x = 0;
+          w = 131; // 2 * wscreen/12;
+          break;
+      case 6:                 // Left Shift
+          y = hscreen/8;
+          x = 0;
+          break;
+      case 7:                 // Right Shift
+          y = hscreen/8;
+          x = 726; // wscreen * 11 / 12;
+          break;
+      case 8:                 // Enter
+          y = 2 * hscreen/8;
+          x = 660; // wscreen * 10 / 12;
+          w = 131; // 2 * wscreen/12;
+          h = 119;
+          break;
+      case 9:                 // Backspace
+          y = 4 * hscreen / 8;
+          x = 693; // wscreen * 21 / 24;
+          w = 98; // 3 * wscreen/24;
+          break;
+      }
+    }
+    if ((button >= 10) && (button <= 19))  // ZXCVBNM,./
+    {
+      y = hscreen/8;
+      x = (button - 9) * 66;
+    }
+    if ((button >= 20) && (button <= 29))  // ASDFGHJKL
+    {
+      y = 2 * hscreen / 8;
+      x = ((button - 19) * 66) - 33;
+    }
+    if ((button >= 30) && (button <= 39))  // QWERTYUIOP
+    {
+      y = 3 * hscreen / 8;
+      x = (button - 30) * 66;
+    }
+    if ((button >= 40) && (button <= 49))  // 1234567890
+    {
+      y = 4 * hscreen / 8;
+      x = ((button - 39) * 66) - 33;
+    }
+    ButtonArray[menu][button].x = x;
+    ButtonArray[menu][button].y = y;
+    ButtonArray[menu][button].w = w;
+    ButtonArray[menu][button].h = h;
+    ButtonArray[menu][button].IndexStatus = 0;
   }
 }
 
@@ -1488,9 +3196,9 @@ void redrawMenu()
     case 7:
       Highlight_Menu7();
       break;
-//    case 8:
-//      Highlight_Menu8();
-//      break;
+    case 8:
+      Highlight_Menu8();
+      break;
 //    case 9:
 //      Highlight_Menu9();
 //      break;
@@ -1533,19 +3241,14 @@ void redrawMenu()
     case 22:
       Highlight_Menu22();
       break;
+    case 23:
+      Highlight_Menu23();
+      break;
+    case 24:
+      Highlight_Menu24();
+      break;
   }
   
-  //if ((CurrentMenu != 38) && (CurrentMenu != 41)) // If not yes/no or the keyboard
-  //{
-  //  clearScreen();
-  //  clearScreen();  // Second clear screen sometimes required on return from fbi images
-  //}
-  // Draw the backgrounds for the smaller menus
-  //if ((CurrentMenu >= 11) && (CurrentMenu <= 40))  // 10-button menus
-  //{
-  //  rectangle(10, 12, wscreen - 18, hscreen * 2 / 6 + 12, 127, 127, 127);
-  //}
-
   // Draw each button in turn
 
   for(i = 0; i <= MAX_BUTTON_ON_MENU - 1; i++)
@@ -1854,7 +3557,7 @@ void Highlight_Menu1()
     AmendButtonStatus(1, 24, 0, "Source^Pi Cam", &Blue);
     AmendButtonStatus(1, 24, 1, "Source^Pi Cam", &Green);
   }
-  if (strcmp(config.videosource, "webCam") == 0)
+  if (strcmp(config.videosource, "WebCam") == 0)
   {
     AmendButtonStatus(1, 24, 0, "Source^Web Cam", &Blue);
     AmendButtonStatus(1, 24, 1, "Source^Web Cam", &Green);
@@ -1979,6 +3682,8 @@ void Define_Menu4()
 
   AddButtonStatus(4, 2, "Info", &Blue);
 
+  AddButtonStatus(4, 3, "KN", &Blue);
+
   AddButtonStatus(4, 4, "Return to^Main Menu", &Blue);
 
 
@@ -1992,7 +3697,7 @@ void Highlight_Menu4()
 
 void Define_Menu5()
 {
-  strcpy(MenuTitle[5], "Portsdown 5 DATV Tools Menu (4)");
+  strcpy(MenuTitle[5], "Portsdown 5 DATV Tools Menu (5)");
 
   AddButtonStatus(5, 5, "IPTS^Monitor", &Blue);
 
@@ -2029,14 +3734,44 @@ void Define_Menu7()
 {
   strcpy(MenuTitle[7], "Portsdown 5 Test Equipment Menu (7)");
 
+  AddButtonStatus(7, 20, "KeyLimePi^BandViewer", &Blue);
+  AddButtonStatus(7, 20, "KeyLimePi^BandViewer", &Grey);
+
+  AddButtonStatus(7, 21, "KeyLimePi^NF Meter", &Blue);
+  AddButtonStatus(7, 21, "KeyLimePi^NF Meter", &Grey);
+
+  AddButtonStatus(7, 22, "KeyLimePi^Noise Meter", &Blue);
+  AddButtonStatus(7, 22, "KeyLimePi^Noise Meter", &Grey);
+
+  AddButtonStatus(7, 23, "KeyLimePi^Power Meter", &Blue);
+  AddButtonStatus(7, 23, "KeyLimePi^Power Meter", &Grey);
+
   AddButtonStatus(7, 15, "LimeSDR^BandViewer", &Blue);
-  AddButtonStatus(7, 15, "LimeSDR^BandViewer", &Green);
+  AddButtonStatus(7, 15, "LimeSDR^BandViewer", &Grey);
 
   AddButtonStatus(7, 16, "LimeSDR NG^BandViewer", &Blue);
-  AddButtonStatus(7, 16, "LimeSDR NG^BandViewer", &Green);
+  AddButtonStatus(7, 16, "LimeSDR NG^BandViewer", &Grey);
 
-  //AddButtonStatus(7, 17, "720p^720x1280", &Blue);
-  //AddButtonStatus(7, 17, "720p^720x1280", &Green);
+  AddButtonStatus(7, 17, "LimeSDR^NF Meter", &Blue);
+  AddButtonStatus(7, 17, "LimeSDR^NF Meter", &Grey);
+
+  AddButtonStatus(7, 18, "LimeSDR NG^NF Meter", &Blue);
+  AddButtonStatus(7, 18, "LimeSDR NG^NF Meter", &Grey);
+
+  AddButtonStatus(7, 18, "LimeSDR^Noise Meter", &Blue);
+  AddButtonStatus(7, 18, "LimeSDR^Noise Meter", &Grey);
+
+  AddButtonStatus(7, 10, "Signal^Generator", &Blue);
+  AddButtonStatus(7, 10, "Signal^Generator", &Grey);
+
+  AddButtonStatus(7, 11, "Frequency^Sweeper", &Blue);
+  AddButtonStatus(7, 11, "Frequency^Sweeper", &Grey);
+
+  AddButtonStatus(7, 12, "DMM^Display", &Blue);
+  AddButtonStatus(7, 12, "DMM^ Display", &Grey);
+
+  AddButtonStatus(7, 13, "AD Power^Detector", &Blue);
+  AddButtonStatus(7, 13, "AD Power^Detector", &Grey);
 
   AddButtonStatus(7, 0, "Switch to^KeyLimePi SA", &Blue);
   AddButtonStatus(7, 0, "Switch to^KeyLimePi SA", &Grey);
@@ -2045,14 +3780,389 @@ void Define_Menu7()
 }
 
 
-
-
 void Highlight_Menu7()
 {
+  int i;
+
+  for (i = 15; i < 19; i++)
+  {
+    SetButtonStatus(7, i, 0);
+  }
+  for (i = 20; i < 24; i++)
+  {
+    SetButtonStatus(7, i, 0);
+  }
+
   SetButtonStatus(7, 0, 0);
+
   if (KeyLimePiEnabled == false)
   {
     SetButtonStatus(7, 0, 1);
+    SetButtonStatus(7, 20, 1);
+    SetButtonStatus(7, 21, 1);
+    SetButtonStatus(7, 22, 1);
+    SetButtonStatus(7, 23, 1);
+  }
+  else
+  {
+    SetButtonStatus(7, 0, 1);
+    SetButtonStatus(7, 15, 1);
+    SetButtonStatus(7, 16, 1);
+    SetButtonStatus(7, 17, 1);
+    SetButtonStatus(7, 18, 1);
+  }
+}
+
+
+void Define_Menu8()
+{
+  strcpy(MenuTitle[8], "Portsdown Receiver Menu (8)"); 
+
+  // Bottom Row, Menu 8
+
+  AddButtonStatus(8, 0, "RECEIVE", &Blue);
+  AddButtonStatus(8, 0, "RECEIVE", &Grey);
+
+  AddButtonStatus(8, 1, "Receive^Diagnostics", &Blue);
+  AddButtonStatus(8, 1, "Receive^Diagnostics", &Grey);
+
+  AddButtonStatus(8, 2, "RX DVB-S2^Exact Freq", &Blue);
+  AddButtonStatus(8, 2, "RX DVB-S2^Exact Freq", &Grey);
+
+  AddButtonStatus(8, 3, "Play to^UDP Stream", &Blue);
+  AddButtonStatus(8, 3, "Play to^UDP Stream", &Grey);
+
+  AddButtonStatus(8, 4, "Beacon^MER", &Blue);
+  AddButtonStatus(8, 4, "Beacon^MER", &Grey);
+  AddButtonStatus(8, 4, "Band Viewer^on RX freq", &Blue);
+  AddButtonStatus(8, 4, "Band Viewer^on RX freq", &Grey);
+
+  // 2nd Row, Menu 8.  
+
+  AddButtonStatus(8, 5, " ", &Blue);
+  AddButtonStatus(8, 5, " ", &Green);
+
+  AddButtonStatus(8, 6, " ", &Blue);
+  AddButtonStatus(8, 6, " ", &Green);
+
+  AddButtonStatus(8, 7, " ", &Blue);
+  AddButtonStatus(8, 7, " ", &Green);
+
+  AddButtonStatus(8, 8, " ", &Blue);
+  AddButtonStatus(8, 8, " ", &Green);
+
+  AddButtonStatus(8, 9, " ", &Blue);
+  AddButtonStatus(8, 9, " ", &Green);
+
+  // 3rd line up Menu 8
+
+  AddButtonStatus(8, 10, " ", &Blue);
+  AddButtonStatus(8, 10, " ", &Green);
+
+  AddButtonStatus(8, 11, " ", &Blue);
+  AddButtonStatus(8, 11, " ", &Green);
+
+  AddButtonStatus(8, 12, " ", &Blue);
+  AddButtonStatus(8, 12, " ", &Green);
+
+  AddButtonStatus(8, 13," ",&Blue);
+  AddButtonStatus(8, 13," ",&Green);
+
+  AddButtonStatus(8, 14," ",&Blue);
+  AddButtonStatus(8, 14," ",&Green);
+
+  // 4th line up Menu 8
+
+  AddButtonStatus(8, 15, " ", &Blue);
+  AddButtonStatus(8, 15, " ", &Green);
+
+  AddButtonStatus(8, 16, " ", &Blue);
+  AddButtonStatus(8, 16, " ", &Green);
+
+  AddButtonStatus(8, 17, " ", &Blue);
+  AddButtonStatus(8, 17, " ", &Green);
+
+  AddButtonStatus(8, 18, " ", &Blue);
+  AddButtonStatus(8, 18, " ", &Green);
+
+  AddButtonStatus(8, 19, " ", &Blue);
+  AddButtonStatus(8, 19, " ", &Green);
+
+  // 5th line up Menu 8
+
+  AddButtonStatus(8, 20, " ", &Blue);
+  AddButtonStatus(8, 20, " ", &Green);
+
+  AddButtonStatus(8, 21, " ", &Blue);
+  AddButtonStatus(8, 21, " ", &Green);
+
+  AddButtonStatus(8, 22, " ", &Blue);
+  AddButtonStatus(8, 22, " ", &Green);
+
+  AddButtonStatus(8, 23, " ", &Blue);
+  AddButtonStatus(8, 23, " ", &Green);
+
+  AddButtonStatus(8, 24, " ", &Blue);
+  AddButtonStatus(8, 24, " ", &Green);
+
+  // - Top of Menu 8
+
+  AddButtonStatus(8, 25, "QO-100", &Blue);
+  AddButtonStatus(8, 25, "Terre^strial", &Blue);
+
+  AddButtonStatus(8, 27, "EXIT", &Blue);
+  AddButtonStatus(8, 27, "EXIT", &Red);
+
+  AddButtonStatus(8, 28, "Config", &Blue);
+  AddButtonStatus(8, 28, "Config", &Green);
+
+  AddButtonStatus(8, 29, "DVB-S/S2", &Blue);
+  AddButtonStatus(8, 29, "DVB-T/T2", &Blue);
+}
+
+
+void Highlight_Menu8()
+{
+  int indexoffset = 0;
+  char LMBtext[11][21];
+  char LMBStext[31];
+  int i;
+  int FreqIndex;
+  div_t div_10;
+  div_t div_100;
+  div_t div_1000;
+
+  if (strcmp(RXmod, "DVB-S") == 0)
+  {
+    strcpy(MenuTitle[8], "Portsdown DVB-S/S2 Receiver Menu (8)"); 
+    SetButtonStatus(8, 1, 0);
+    SetButtonStatus(8, 1, 0);
+    SetButtonStatus(8, 1, 0);
+  }
+  else
+  {
+    strcpy(MenuTitle[8], "Portsdown DVB-T/T2 Receiver Menu (8)"); 
+    SetButtonStatus(8, 1, 1);
+    SetButtonStatus(8, 1, 1);
+    SetButtonStatus(8, 1, 1);
+  }
+
+  // Sort Beacon MER Button / BandViewer Button
+
+  if (strcmp(LMRXmode, "terr") == 0)
+  {
+    indexoffset = 10;
+//    if((CheckLimeMiniConnect() == 0) || (CheckLimeUSBConnect() == 0) || (CheckAirspyConnect() == 0) || (CheckRTL() == 0)
+//        || (CheckSDRPlay() == 0) || (CheckPlutoIPConnect() == 0))
+    {
+      SetButtonStatus(8, 4, 2);
+    }
+//    else  // Grey out BandViewer Button
+//    {
+      SetButtonStatus(8, 4, 3);
+//    }
+  }
+  else     // QO-100
+  {
+    if (strcmp(RXmod, "DVB-T") == 0)  // Grey out for DVB-T
+    {
+      SetButtonStatus(8, 4, 1);
+    }
+    else                             // DVB-S or S2
+    {
+      SetButtonStatus(8, 4, 0);
+    }
+  }
+
+  // Freq buttons
+
+  for(i = 1; i <= 10; i = i + 1)
+  {
+    if (i <= 5)
+    {
+      FreqIndex = i + 5 + indexoffset;
+    }
+    else
+    {
+      FreqIndex = i + indexoffset - 5;    
+    }
+    div_10 = div(LMRXfreq[FreqIndex], 10);
+    div_1000 = div(LMRXfreq[FreqIndex], 1000);
+
+    if(div_10.rem != 0)  // last character not zero, so make answer of form xxx.xxx
+    {
+      snprintf(LMBtext[i], 15, "%d.%03d", div_1000.quot, div_1000.rem);
+    }
+    else
+    {
+      div_100 = div(LMRXfreq[FreqIndex], 100);
+
+      if(div_100.rem != 0)  // last but one character not zero, so make answer of form xxx.xx
+      {
+        snprintf(LMBtext[i], 15, "%d.%02d", div_1000.quot, div_1000.rem / 10);
+      }
+      else
+      {
+        if(div_1000.rem != 0)  // last but two character not zero, so make answer of form xxx.x
+        {
+          snprintf(LMBtext[i], 15, "%d.%d", div_1000.quot, div_1000.rem / 100);
+        }
+        else  // integer MHz, so just xxx.0
+        {
+          snprintf(LMBtext[i], 15, "%d.0", div_1000.quot);
+        }
+      }
+    }
+    if (i == 5)
+    {
+      strcat(LMBtext[i], "^Keyboard");
+    }
+    else
+    {
+      strcat(LMBtext[i], "^MHz");
+    }
+
+    AmendButtonStatus(8, i + 4, 0, LMBtext[i], &Blue);
+    AmendButtonStatus(8, i + 4, 1, LMBtext[i], &Green);
+  }
+
+  if ( LMRXfreq[0] == LMRXfreq[6 + indexoffset] )
+  {
+    SelectInGroupOnMenu(8, 5, 14, 5, 1);
+  }
+  else if ( LMRXfreq[0] == LMRXfreq[7 + indexoffset] )
+  {
+    SelectInGroupOnMenu(8, 5, 14, 6, 1);
+  }
+  else if ( LMRXfreq[0] == LMRXfreq[8 + indexoffset] )
+  {
+    SelectInGroupOnMenu(8, 5, 14, 7, 1);
+  }
+  else if ( LMRXfreq[0] == LMRXfreq[9 + indexoffset] )
+  {
+    SelectInGroupOnMenu(8, 5, 14, 8, 1);
+  }
+  else if ( LMRXfreq[0] == LMRXfreq[10 + indexoffset] )
+  {
+    SelectInGroupOnMenu(8, 5, 14, 9, 1);
+  }
+  else if ( LMRXfreq[0] == LMRXfreq[1 + indexoffset] )
+  {
+    SelectInGroupOnMenu(8, 5, 14, 10, 1);
+  }
+  else if ( LMRXfreq[0] == LMRXfreq[2 + indexoffset] )
+  {
+    SelectInGroupOnMenu(8, 5, 14, 11, 1);
+  }
+  else if ( LMRXfreq[0] == LMRXfreq[3 + indexoffset] )
+  {
+    SelectInGroupOnMenu(8, 5, 14, 12, 1);
+  }
+  else if ( LMRXfreq[0] == LMRXfreq[4 + indexoffset] )
+  {
+    SelectInGroupOnMenu(8, 5, 14, 13, 1);
+  }
+  else if ( LMRXfreq[0] == LMRXfreq[5 + indexoffset] )
+  {
+    SelectInGroupOnMenu(8, 5, 14, 14, 1);
+  }
+
+  // SR buttons
+
+  if (strcmp(LMRXmode, "terr") == 0)
+  {
+    indexoffset = 10;
+  }
+  else
+  {
+    indexoffset = 0;
+  }
+
+  if (strcmp(RXmod, "DVB-S") == 0)  // DVB-S/S2
+  {
+    for(i = 1; i <= 10; i = i + 1)
+    {
+      snprintf(LMBStext, 21, "SR^%d", LMRXsr[i + indexoffset]);
+
+      if (i == 5)                                  // keyboard
+      {
+       snprintf(LMBStext, 21, "SR %d^Keyboard", LMRXsr[i + indexoffset]);
+      }
+
+      AmendButtonStatus(8, 14 + i, 0, LMBStext, &Blue);
+      AmendButtonStatus(8, 14 + i, 1, LMBStext, &Green);
+    }
+  }
+  else                             // DVB-T
+  {
+    for(i = 1; i <= 10; i = i + 1)
+    {
+      snprintf(LMBStext, 21, "Bandwidth^%d kHz", LMRXsr[i + indexoffset]);
+
+      if (i == 5)                                  // keyboard
+      {
+       snprintf(LMBStext, 21, "BW %d^Keyboard", LMRXsr[i + indexoffset]);
+      }
+
+      AmendButtonStatus(8, 14 + i, 0, LMBStext, &Blue);
+      AmendButtonStatus(8, 14 + i, 1, LMBStext, &Green);
+    }
+  }
+
+  if ( LMRXsr[0] == LMRXsr[1 + indexoffset] )
+  {
+    SelectInGroupOnMenu(8, 15, 24, 15, 1);
+  }
+  else if ( LMRXsr[0] == LMRXsr[2 + indexoffset] )
+  {
+    SelectInGroupOnMenu(8, 15, 24, 16, 1);
+  }
+  else if ( LMRXsr[0] == LMRXsr[3 + indexoffset] )
+  {
+    SelectInGroupOnMenu(8, 15, 24, 17, 1);
+  }
+  else if ( LMRXsr[0] == LMRXsr[4 + indexoffset] )
+  {
+    SelectInGroupOnMenu(8, 15, 24, 18, 1);
+  }
+  else if ( LMRXsr[0] == LMRXsr[5 + indexoffset] )
+  {
+    SelectInGroupOnMenu(8, 15, 24, 19, 1);
+  }
+  else if ( LMRXsr[0] == LMRXsr[6 + indexoffset] )
+  {
+    SelectInGroupOnMenu(8, 15, 24, 20, 1);
+  }
+  else if ( LMRXsr[0] == LMRXsr[7 + indexoffset] )
+  {
+    SelectInGroupOnMenu(8, 15, 24, 21, 1);
+  }
+  else if ( LMRXsr[0] == LMRXsr[8 + indexoffset] )
+  {
+    SelectInGroupOnMenu(8, 15, 24, 22, 1);
+  }
+  else if ( LMRXsr[0] == LMRXsr[9 + indexoffset] )
+  {
+    SelectInGroupOnMenu(8, 15, 24, 23, 1);
+  }
+  else if ( LMRXsr[0] == LMRXsr[10 + indexoffset] )
+  {
+    SelectInGroupOnMenu(8, 15, 24, 24, 1);
+  }
+
+  if (strcmp(LMRXmode, "sat") == 0)
+  {
+    strcpy(LMBStext, "QO-100 (");
+    strcat(LMBStext, LMRXinput);
+    strcat(LMBStext, ")^ ");
+    AmendButtonStatus(8, 25, 0, LMBStext, &Blue);
+  }
+  else
+  {
+    strcpy(LMBStext, " ^Terrestrial (");
+    strcat(LMBStext, LMRXinput);
+    strcat(LMBStext, ")");
+    AmendButtonStatus(8, 25, 0, LMBStext, &Blue);
   }
 }
 
@@ -2746,6 +4856,588 @@ void Highlight_Menu22()
 }
 
 
+void Define_Menu23()
+{
+  strcpy(MenuTitle[23], "Receive Configuration Menu (23)");
+
+  // Bottom Row, Menu 23
+
+  AddButtonStatus(23, 0, "UDP^IP", &Blue);
+
+  AddButtonStatus(23, 1, "UDP^Port", &Blue);
+
+  AddButtonStatus(23, 2, "Set Preset^Freqs & SRs", &Blue);
+
+  //AddButtonStatus(23, 3, "Overlay^Off", &Blue);
+
+  AddButtonStatus(23, 4, "Return to^RX Menu", &Blue);
+
+  // 2nd Row, Menu 23
+
+  AddButtonStatus(23, 5, "Sat LNB^Offset", &Blue);
+
+  AddButtonStatus(23, 6, "Autoset^LNB Offset", &Blue);
+  AddButtonStatus(23, 6, "Autoset^LNB Offset", &Grey);
+
+  AddButtonStatus(23, 7, "Input^A", &Blue);
+  AddButtonStatus(23, 7, "Input^B", &Blue);
+
+  AddButtonStatus(23, 8, "LNB Volts^OFF", &Blue);
+  AddButtonStatus(23, 8, "LNB Volts^18 Horiz", &Green);
+  AddButtonStatus(23, 8, "LNB Volts^13 Vert", &Green);
+
+  AddButtonStatus(23, 9, "Audio out^RPi Jack", &Blue);
+  AddButtonStatus(23, 9, "Audio out^USB Dongle", &Blue);
+  AddButtonStatus(23, 9, "Audio out^HDMI", &Grey);
+
+  // 3rd Row, Menu 23
+
+  AddButtonStatus(23, 10, "Tuner^Timeout", &Blue);
+
+  AddButtonStatus(23, 11, "Tuner Scan^Width", &Blue);
+
+  AddButtonStatus(23, 12, "TS Video^Channel", &Blue);
+
+  AddButtonStatus(23, 13, "Modulation^DVB-S/S2", &Blue);
+  AddButtonStatus(23, 13, "Modulation^DVB-T", &Grey);
+
+  //AddButtonStatus(23, 14, "Show Touch^Overlay", &Blue);
+
+  AddButtonStatus(23, 25, "QO-100", &Blue);
+  AddButtonStatus(23, 25, "Terrestrial^ ", &Blue);
+}
+
+
+void Highlight_Menu23()
+{
+  char LMBtext[63];
+
+  if (strcmp(LMRXmode, "sat") == 0)
+  {
+    strcpy(MenuTitle[23], "Portsdown QO-100 Receiver Configuration (23)"); 
+    strcpy(LMBtext, "QO-100^Input ");
+    strcat(LMBtext, LMRXinput);
+    SetButtonStatus(23, 6, 0);
+  }
+  else
+  {
+    strcpy(MenuTitle[23], "Portsdown Terrestrial Receiver Configuration (23)"); 
+    strcpy(LMBtext, "Terrestrial^Input ");
+    strcat(LMBtext, LMRXinput);
+    SetButtonStatus(23, 6, 1);
+  }
+  AmendButtonStatus(23, 7, 0, LMBtext, &Blue);
+
+  if (strcmp(LMRXvolts, "off") == 0)
+  {
+    SetButtonStatus(23, 8, 0);
+  }
+  if (strcmp(LMRXvolts, "h") == 0)
+  {
+    SetButtonStatus(23, 8, 1);
+  }
+  if (strcmp(LMRXvolts, "v") == 0)
+  {
+    SetButtonStatus(23, 8, 2);
+  }
+
+  if (strcmp(LMRXaudio, "rpi") == 0)
+  {
+    SetButtonStatus(23, 9, 0);
+  }
+  else if (strcmp(LMRXaudio, "usb") == 0)
+  {
+    SetButtonStatus(23, 9, 1);
+  }
+  else
+  {
+    SetButtonStatus(23, 9, 2);
+  }
+
+  if (strcmp(RXmod, "DVB-S") == 0)
+  {
+    SetButtonStatus(23, 13, 0);
+  }
+  else
+  {
+    SetButtonStatus(23, 13, 1);
+  }
+
+  if (strcmp(LMRXmode, "sat") == 0)
+  {
+    SetButtonStatus(23, 25, 0);
+  }
+  else
+  {
+    SetButtonStatus(23, 25, 1);
+  }
+}
+
+
+void Define_Menu24()
+{
+  strcpy(MenuTitle[24], "Receive Presets Menu (24)");
+
+  AddButtonStatus(24, 4, "Return to^RX Menu", &Blue);
+
+  // 2nd Row, Menu 24.  
+
+  AddButtonStatus(24, 5, " ", &Blue);
+  AddButtonStatus(24, 5, " ", &Green);
+
+  AddButtonStatus(24, 6, " ", &Blue);
+  AddButtonStatus(24, 6, " ", &Green);
+
+  AddButtonStatus(24, 7, " ", &Blue);
+  AddButtonStatus(24, 7, " ", &Green);
+
+  AddButtonStatus(24, 8, " ", &Blue);
+  AddButtonStatus(24, 8, " ", &Green);
+
+  AddButtonStatus(24, 9, " ", &Blue);
+  AddButtonStatus(24, 9, " ", &Green);
+
+  // 3rd line up Menu 24
+
+  AddButtonStatus(24, 10, " ", &Blue);
+  AddButtonStatus(24, 10, " ", &Green);
+
+  AddButtonStatus(24, 11, " ", &Blue);
+  AddButtonStatus(24, 11, " ", &Green);
+
+  AddButtonStatus(24, 12, " ", &Blue);
+  AddButtonStatus(24, 12, " ", &Green);
+
+  AddButtonStatus(24, 13," ",&Blue);
+  AddButtonStatus(24, 13," ",&Green);
+
+  AddButtonStatus(24, 14," ",&Blue);
+  AddButtonStatus(24, 14," ",&Green);
+
+  // 4th line up Menu 24
+
+  AddButtonStatus(24, 15, " ", &Blue);
+  AddButtonStatus(24, 15, " ", &Green);
+
+  AddButtonStatus(24, 16, " ", &Blue);
+  AddButtonStatus(24, 16, " ", &Green);
+
+  AddButtonStatus(24, 17, " ", &Blue);
+  AddButtonStatus(24, 17, " ", &Green);
+
+  AddButtonStatus(24, 18, " ", &Blue);
+  AddButtonStatus(24, 18, " ", &Green);
+
+  AddButtonStatus(24, 19, " ", &Blue);
+  AddButtonStatus(24, 19, " ", &Green);
+
+  // 5th line up Menu 24
+
+  AddButtonStatus(24, 20, " ", &Blue);
+  AddButtonStatus(24, 20, " ", &Green);
+
+  AddButtonStatus(24, 21, " ", &Blue);
+  AddButtonStatus(24, 21, " ", &Green);
+
+  AddButtonStatus(24, 22, " ", &Blue);
+  AddButtonStatus(24, 22, " ", &Green);
+
+  AddButtonStatus(24, 23, " ", &Blue);
+  AddButtonStatus(24, 23, " ", &Green);
+
+  AddButtonStatus(24, 24, " ", &Blue);
+  AddButtonStatus(24, 24, " ", &Green);
+
+  AddButtonStatus(24, 25, "QO-100", &Blue);
+  AddButtonStatus(24, 25, "Terrestrial^ ", &Blue);
+}
+
+
+void Highlight_Menu24()
+{
+  int indexoffset = 0;
+  char LMBtext[11][21];
+  char LMBStext[31];
+  int i;
+  int FreqIndex;
+  div_t div_10;
+  div_t div_100;
+  div_t div_1000;
+
+
+  // Sort Sat/Terr switching
+
+  if (strcmp(LMRXmode, "terr") == 0)
+  {
+    indexoffset = 10;
+    strcpy(MenuTitle[24], "Terrestrial Receive Presets Menu (24)");
+  }
+  else
+  {
+    strcpy(MenuTitle[24], "QO-100 Receive Presets Menu (24)");
+  }
+
+  // Freq buttons
+
+  for(i = 1; i <= 10; i = i + 1)
+  {
+    if (i <= 5)
+    {
+      FreqIndex = i + 5 + indexoffset;
+    }
+    else
+    {
+      FreqIndex = i + indexoffset - 5;    
+    }
+    div_10 = div(LMRXfreq[FreqIndex], 10);
+    div_1000 = div(LMRXfreq[FreqIndex], 1000);
+
+    if(div_10.rem != 0)  // last character not zero, so make answer of form xxx.xxx
+    {
+      snprintf(LMBtext[i], 15, "%d.%03d", div_1000.quot, div_1000.rem);
+    }
+    else
+    {
+      div_100 = div(LMRXfreq[FreqIndex], 100);
+
+      if(div_100.rem != 0)  // last but one character not zero, so make answer of form xxx.xx
+      {
+        snprintf(LMBtext[i], 15, "%d.%02d", div_1000.quot, div_1000.rem / 10);
+      }
+      else
+      {
+        if(div_1000.rem != 0)  // last but two character not zero, so make answer of form xxx.x
+        {
+          snprintf(LMBtext[i], 15, "%d.%d", div_1000.quot, div_1000.rem / 100);
+        }
+        else  // integer MHz, so just xxx.0
+        {
+          snprintf(LMBtext[i], 15, "%d.0", div_1000.quot);
+        }
+      }
+    }
+    strcat(LMBtext[i], "^MHz");
+
+    AmendButtonStatus(24, i + 4, 0, LMBtext[i], &Blue);
+    AmendButtonStatus(24, i + 4, 1, LMBtext[i], &Green);
+  }
+
+  if ( LMRXfreq[0] == LMRXfreq[6 + indexoffset] )
+  {
+    SelectInGroupOnMenu(24, 5, 14, 5, 1);
+  }
+  else if ( LMRXfreq[0] == LMRXfreq[7 + indexoffset] )
+  {
+    SelectInGroupOnMenu(24, 5, 14, 6, 1);
+  }
+  else if ( LMRXfreq[0] == LMRXfreq[8 + indexoffset] )
+  {
+    SelectInGroupOnMenu(24, 5, 14, 7, 1);
+  }
+  else if ( LMRXfreq[0] == LMRXfreq[9 + indexoffset] )
+  {
+    SelectInGroupOnMenu(24, 5, 14, 8, 1);
+  }
+  else if ( LMRXfreq[0] == LMRXfreq[10 + indexoffset] )
+  {
+    SelectInGroupOnMenu(24, 5, 14, 9, 1);
+  }
+  else if ( LMRXfreq[0] == LMRXfreq[1 + indexoffset] )
+  {
+    SelectInGroupOnMenu(24, 5, 14, 10, 1);
+  }
+  else if ( LMRXfreq[0] == LMRXfreq[2 + indexoffset] )
+  {
+    SelectInGroupOnMenu(24, 5, 14, 11, 1);
+  }
+  else if ( LMRXfreq[0] == LMRXfreq[3 + indexoffset] )
+  {
+    SelectInGroupOnMenu(24, 5, 14, 12, 1);
+  }
+  else if ( LMRXfreq[0] == LMRXfreq[4 + indexoffset] )
+  {
+    SelectInGroupOnMenu(24, 5, 14, 13, 1);
+  }
+  else if ( LMRXfreq[0] == LMRXfreq[5 + indexoffset] )
+  {
+    SelectInGroupOnMenu(24, 5, 14, 14, 1);
+  }
+
+  for(i = 1; i <= 10; i = i + 1)
+  {
+    snprintf(LMBStext, 21, "SR^%d", LMRXsr[i + indexoffset]);
+
+    AmendButtonStatus(24, 14 + i, 0, LMBStext, &Blue);
+    AmendButtonStatus(24, 14 + i, 1, LMBStext, &Green);
+  }
+
+  if ( LMRXsr[0] == LMRXsr[1 + indexoffset] )
+  {
+    SelectInGroupOnMenu(24, 15, 24, 15, 1);
+  }
+  else if ( LMRXsr[0] == LMRXsr[2 + indexoffset] )
+  {
+    SelectInGroupOnMenu(24, 15, 24, 16, 1);
+  }
+  else if ( LMRXsr[0] == LMRXsr[3 + indexoffset] )
+  {
+    SelectInGroupOnMenu(24, 15, 24, 17, 1);
+  }
+  else if ( LMRXsr[0] == LMRXsr[4 + indexoffset] )
+  {
+    SelectInGroupOnMenu(24, 15, 24, 18, 1);
+  }
+  else if ( LMRXsr[0] == LMRXsr[5 + indexoffset] )
+  {
+    SelectInGroupOnMenu(24, 15, 24, 19, 1);
+  }
+  else if ( LMRXsr[0] == LMRXsr[6 + indexoffset] )
+  {
+    SelectInGroupOnMenu(24, 15, 24, 20, 1);
+  }
+  else if ( LMRXsr[0] == LMRXsr[7 + indexoffset] )
+  {
+    SelectInGroupOnMenu(24, 15, 24, 21, 1);
+  }
+  else if ( LMRXsr[0] == LMRXsr[8 + indexoffset] )
+  {
+    SelectInGroupOnMenu(24, 15, 24, 22, 1);
+  }
+  else if ( LMRXsr[0] == LMRXsr[9 + indexoffset] )
+  {
+    SelectInGroupOnMenu(24, 15, 24, 23, 1);
+  }
+  else if ( LMRXsr[0] == LMRXsr[10 + indexoffset] )
+  {
+    SelectInGroupOnMenu(24, 15, 24, 24, 1);
+  }
+  if (strcmp(LMRXmode, "sat") == 0)
+  {
+    SetButtonStatus(24, 25, 0);
+  }
+  else
+  {
+    SetButtonStatus(24, 25, 1);
+  }
+}
+
+
+void Define_Menu41()
+{
+
+  AddButtonStatus(22, 4, "Return to^Main Menu", &Blue);
+
+  strcpy(MenuTitle[41], " "); 
+
+  AddButtonStatus(41, 0, "SPACE", &Blue);
+  AddButtonStatus(41, 0, "SPACE", &LBlue);
+  AddButtonStatus(41, 0, "SPACE", &Blue);
+  AddButtonStatus(41, 0, "SPACE", &LBlue);
+  AddButtonStatus(41, 1, "del", &Blue);
+  AddButtonStatus(41, 1, "del", &LBlue);
+  AddButtonStatus(41, 1, "del", &Blue);
+  AddButtonStatus(41, 1, "del", &LBlue);
+  AddButtonStatus(41, 2, "<", &Blue);
+  AddButtonStatus(41, 2, "<", &LBlue);
+  AddButtonStatus(41, 2, "<", &Blue);
+  AddButtonStatus(41, 2, "<", &LBlue);
+  AddButtonStatus(41, 3, ">", &Blue);
+  AddButtonStatus(41, 3, ">", &LBlue);
+  AddButtonStatus(41, 3, ">", &Blue);
+  AddButtonStatus(41, 3, ">", &LBlue);
+  AddButtonStatus(41, 4, "-", &Blue);
+  AddButtonStatus(41, 4, "-", &LBlue);
+  AddButtonStatus(41, 4, "_", &Blue);
+  AddButtonStatus(41, 4, "_", &LBlue);
+  AddButtonStatus(41, 5, "Clear", &Blue);
+  AddButtonStatus(41, 5, "Clear", &LBlue);
+  AddButtonStatus(41, 5, "Clear", &Blue);
+  AddButtonStatus(41, 5, "Clear", &LBlue);
+  AddButtonStatus(41, 6, "^", &LBlue);
+  AddButtonStatus(41, 6, "^", &Blue);
+  AddButtonStatus(41, 6, "^", &Blue);
+  AddButtonStatus(41, 6, "^", &LBlue);
+  AddButtonStatus(41, 7, "^", &LBlue);
+  AddButtonStatus(41, 7, "^", &Blue);
+  AddButtonStatus(41, 7, "^", &Blue);
+  AddButtonStatus(41, 7, "^", &LBlue);
+  AddButtonStatus(41, 8, "Enter", &Blue);
+  AddButtonStatus(41, 8, "Enter", &LBlue);
+  AddButtonStatus(41, 8, "Enter", &Blue);
+  AddButtonStatus(41, 8, "Enter", &LBlue);
+  AddButtonStatus(41, 9, "<=", &Blue);
+  AddButtonStatus(41, 9, "<=", &LBlue);
+  AddButtonStatus(41, 9, "<=", &Blue);
+  AddButtonStatus(41, 9, "<=", &LBlue);
+
+  AddButtonStatus(41, 10, "Z", &Blue);
+  AddButtonStatus(41, 10, "Z", &LBlue);
+  AddButtonStatus(41, 10, "z", &Blue);
+  AddButtonStatus(41, 10, "z", &LBlue);
+  AddButtonStatus(41, 11, "X", &Blue);
+  AddButtonStatus(41, 11, "X", &LBlue);
+  AddButtonStatus(41, 11, "x", &Blue);
+  AddButtonStatus(41, 11, "x", &LBlue);
+  AddButtonStatus(41, 12, "C", &Blue);
+  AddButtonStatus(41, 12, "C", &LBlue);
+  AddButtonStatus(41, 12, "c", &Blue);
+  AddButtonStatus(41, 12, "c", &LBlue);
+  AddButtonStatus(41, 13, "V", &Blue);
+  AddButtonStatus(41, 13, "V", &LBlue);
+  AddButtonStatus(41, 13, "v", &Blue);
+  AddButtonStatus(41, 13, "v", &LBlue);
+  AddButtonStatus(41, 14, "B", &Blue);
+  AddButtonStatus(41, 14, "B", &LBlue);
+  AddButtonStatus(41, 14, "b", &Blue);
+  AddButtonStatus(41, 14, "b", &LBlue);
+  AddButtonStatus(41, 15, "N", &Blue);
+  AddButtonStatus(41, 15, "N", &LBlue);
+  AddButtonStatus(41, 15, "n", &Blue);
+  AddButtonStatus(41, 15, "n", &LBlue);
+  AddButtonStatus(41, 16, "M", &Blue);
+  AddButtonStatus(41, 16, "M", &LBlue);
+  AddButtonStatus(41, 16, "m", &Blue);
+  AddButtonStatus(41, 16, "m", &LBlue);
+  AddButtonStatus(41, 17, ",", &Blue);
+  AddButtonStatus(41, 17, ",", &LBlue);
+  AddButtonStatus(41, 17, "!", &Blue);
+  AddButtonStatus(41, 17, "!", &LBlue);
+  AddButtonStatus(41, 18, ".", &Blue);
+  AddButtonStatus(41, 18, ".", &LBlue);
+  AddButtonStatus(41, 18, ".", &Blue);
+  AddButtonStatus(41, 18, ".", &LBlue);
+  AddButtonStatus(41, 19, "/", &Blue);
+  AddButtonStatus(41, 19, "/", &LBlue);
+  AddButtonStatus(41, 19, "?", &Blue);
+  AddButtonStatus(41, 19, "?", &LBlue);
+
+  AddButtonStatus(41, 20, "A", &Blue);
+  AddButtonStatus(41, 20, "A", &LBlue);
+  AddButtonStatus(41, 20, "a", &Blue);
+  AddButtonStatus(41, 20, "a", &LBlue);
+  AddButtonStatus(41, 21, "S", &Blue);
+  AddButtonStatus(41, 21, "S", &LBlue);
+  AddButtonStatus(41, 21, "s", &Blue);
+  AddButtonStatus(41, 21, "s", &LBlue);
+  AddButtonStatus(41, 22, "D", &Blue);
+  AddButtonStatus(41, 22, "D", &LBlue);
+  AddButtonStatus(41, 22, "d", &Blue);
+  AddButtonStatus(41, 22, "d", &LBlue);
+  AddButtonStatus(41, 23, "F", &Blue);
+  AddButtonStatus(41, 23, "F", &LBlue);
+  AddButtonStatus(41, 23, "f", &Blue);
+  AddButtonStatus(41, 23, "f", &LBlue);
+  AddButtonStatus(41, 24, "G", &Blue);
+  AddButtonStatus(41, 24, "G", &LBlue);
+  AddButtonStatus(41, 24, "g", &Blue);
+  AddButtonStatus(41, 24, "g", &LBlue);
+  AddButtonStatus(41, 25, "H", &Blue);
+  AddButtonStatus(41, 25, "H", &LBlue);
+  AddButtonStatus(41, 25, "h", &Blue);
+  AddButtonStatus(41, 25, "h", &LBlue);
+  AddButtonStatus(41, 26, "J", &Blue);
+  AddButtonStatus(41, 26, "J", &LBlue);
+  AddButtonStatus(41, 26, "j", &Blue);
+  AddButtonStatus(41, 26, "j", &LBlue);
+  AddButtonStatus(41, 27, "K", &Blue);
+  AddButtonStatus(41, 27, "K", &LBlue);
+  AddButtonStatus(41, 27, "k", &Blue);
+  AddButtonStatus(41, 27, "k", &LBlue);
+  AddButtonStatus(41, 28, "L", &Blue);
+  AddButtonStatus(41, 28, "L", &LBlue);
+  AddButtonStatus(41, 28, "l", &Blue);
+  AddButtonStatus(41, 28, "l", &LBlue);
+
+  //AddButtonStatus(41, 29, "/", &Blue);
+  //AddButtonStatus(41, 29, "/", &LBlue);
+  //AddButtonStatus(41, 29, "/", &Blue);
+  //AddButtonStatus(41, 29, "/", &LBlue);
+
+  AddButtonStatus(41, 30, "Q", &Blue);
+  AddButtonStatus(41, 30, "Q", &LBlue);
+  AddButtonStatus(41, 30, "q", &Blue);
+  AddButtonStatus(41, 30, "q", &LBlue);
+  AddButtonStatus(41, 31, "W", &Blue);
+  AddButtonStatus(41, 31, "W", &LBlue);
+  AddButtonStatus(41, 31, "w", &Blue);
+  AddButtonStatus(41, 31, "w", &LBlue);
+  AddButtonStatus(41, 32, "E", &Blue);
+  AddButtonStatus(41, 32, "E", &LBlue);
+  AddButtonStatus(41, 32, "e", &Blue);
+  AddButtonStatus(41, 32, "e", &LBlue);
+  AddButtonStatus(41, 33, "R", &Blue);
+  AddButtonStatus(41, 33, "R", &LBlue);
+  AddButtonStatus(41, 33, "r", &Blue);
+  AddButtonStatus(41, 33, "r", &LBlue);
+  AddButtonStatus(41, 34, "T", &Blue);
+  AddButtonStatus(41, 34, "T", &LBlue);
+  AddButtonStatus(41, 34, "t", &Blue);
+  AddButtonStatus(41, 34, "t", &LBlue);
+  AddButtonStatus(41, 35, "Y", &Blue);
+  AddButtonStatus(41, 35, "Y", &LBlue);
+  AddButtonStatus(41, 35, "y", &Blue);
+  AddButtonStatus(41, 35, "y", &LBlue);
+  AddButtonStatus(41, 36, "U", &Blue);
+  AddButtonStatus(41, 36, "U", &LBlue);
+  AddButtonStatus(41, 36, "u", &Blue);
+  AddButtonStatus(41, 36, "u", &LBlue);
+  AddButtonStatus(41, 37, "I", &Blue);
+  AddButtonStatus(41, 37, "I", &LBlue);
+  AddButtonStatus(41, 37, "i", &Blue);
+  AddButtonStatus(41, 37, "i", &LBlue);
+  AddButtonStatus(41, 38, "O", &Blue);
+  AddButtonStatus(41, 38, "O", &LBlue);
+  AddButtonStatus(41, 38, "o", &Blue);
+  AddButtonStatus(41, 38, "o", &LBlue);
+  AddButtonStatus(41, 39, "P", &Blue);
+  AddButtonStatus(41, 39, "P", &LBlue);
+  AddButtonStatus(41, 39, "p", &Blue);
+  AddButtonStatus(41, 39, "p", &LBlue);
+
+  AddButtonStatus(41, 40, "1", &Blue);
+  AddButtonStatus(41, 40, "1", &LBlue);
+  AddButtonStatus(41, 40, "1", &Blue);
+  AddButtonStatus(41, 40, "1", &LBlue);
+  AddButtonStatus(41, 41, "2", &Blue);
+  AddButtonStatus(41, 41, "2", &LBlue);
+  AddButtonStatus(41, 41, "2", &Blue);
+  AddButtonStatus(41, 41, "2", &LBlue);
+  AddButtonStatus(41, 42, "3", &Blue);
+  AddButtonStatus(41, 42, "3", &LBlue);
+  AddButtonStatus(41, 42, "3", &Blue);
+  AddButtonStatus(41, 42, "3", &LBlue);
+  AddButtonStatus(41, 43, "4", &Blue);
+  AddButtonStatus(41, 43, "4", &LBlue);
+  AddButtonStatus(41, 43, "4", &Blue);
+  AddButtonStatus(41, 43, "4", &LBlue);
+  AddButtonStatus(41, 44, "5", &Blue);
+  AddButtonStatus(41, 44, "5", &LBlue);
+  AddButtonStatus(41, 44, "5", &Blue);
+  AddButtonStatus(41, 44, "5", &LBlue);
+  AddButtonStatus(41, 45, "6", &Blue);
+  AddButtonStatus(41, 45, "6", &LBlue);
+  AddButtonStatus(41, 45, "6", &Blue);
+  AddButtonStatus(41, 45, "6", &LBlue);
+  AddButtonStatus(41, 46, "7", &Blue);
+  AddButtonStatus(41, 46, "7", &LBlue);
+  AddButtonStatus(41, 46, "7", &Blue);
+  AddButtonStatus(41, 46, "7", &LBlue);
+  AddButtonStatus(41, 47, "8", &Blue);
+  AddButtonStatus(41, 47, "8", &LBlue);
+  AddButtonStatus(41, 47, "8", &Blue);
+  AddButtonStatus(41, 47, "8", &LBlue);
+  AddButtonStatus(41, 48, "9", &Blue);
+  AddButtonStatus(41, 48, "9", &LBlue);
+  AddButtonStatus(41, 48, "9", &Blue);
+  AddButtonStatus(41, 48, "9", &LBlue);
+  AddButtonStatus(41, 49, "0", &Blue);
+  AddButtonStatus(41, 49, "0", &LBlue);
+  AddButtonStatus(41, 49, "0", &Blue);
+  AddButtonStatus(41, 49, "0", &LBlue);
+}
+
+
+
 void Define_Menus()
 {
   Define_Menu1();
@@ -2755,6 +5447,7 @@ void Define_Menus()
   Define_Menu5();
   Define_Menu6();
   Define_Menu7();
+  Define_Menu8();
   Define_Menu11();
   Define_Menu12();
   Define_Menu13();
@@ -2767,7 +5460,426 @@ void Define_Menus()
   Define_Menu20();
   Define_Menu21();
   Define_Menu22();
+  Define_Menu23();
+  Define_Menu24();
+
+  Define_Menu41();
 }
+
+
+/***************************************************************************//**
+ * @brief Lets the user edit an alpha-numeric string of up to 55 characters
+ *
+ * @param RequestText (str) Displayed as user question
+ * @param InitText (str) Initial text for editing
+ * @param MaxLength (str) Max length of returned string
+ * @param KeyboardReturn (str) The returned string
+ *
+ * @return void
+*******************************************************************************/
+
+void Keyboard(char RequestText[63], char InitText[63], int MaxLength, char KeyboardReturn[63])
+{
+  char EditText[63];
+  strcpy (EditText, InitText);
+  int token;
+  int PreviousMenu;
+  int i;
+  int CursorPos;
+  char thischar[2];
+  int KeyboardShift = 1;
+  int ShiftStatus = 0;
+  char KeyPressed[2];
+  char PreCuttext[63];
+  char PostCuttext[63];
+  bool refreshed;
+  int rawX;
+  int rawY;
+  
+  // Store away currentMenu
+  PreviousMenu = CurrentMenu;
+
+  // Trim EditText to MaxLength
+  if (strlen(EditText) > MaxLength)
+  {
+    strncpy(EditText, &EditText[0], MaxLength);
+    EditText[MaxLength] = '\0';
+  }
+
+  // Set cursor position to next character after EditText
+  CursorPos = strlen(EditText);
+
+  // On initial call set Menu to 41
+  CurrentMenu = 41;
+
+  refreshed = false;
+
+  // Set up text
+  clearScreen(0, 0, 0);
+  const font_t       *font_ptr = &font_dejavu_sans_28;
+  const font_t *small_font_ptr = &font_dejavu_sans_20;
+
+  // Look up pitch for W (87), the widest caharcter
+  int charPitch = font_ptr->characters[87].render_width;
+
+  for (;;)
+  {
+    if (!refreshed)
+    {
+      // Sort Shift changes
+      ShiftStatus = 2 - (2 * KeyboardShift); // 0 = Upper, 2 = lower
+      for (i = 0; i <= 49; i = i + 1)
+      {
+        if (ButtonArray[CurrentMenu][i].IndexStatus > 0)  // If button needs to be drawn
+        {
+          SetButtonStatus(41, i, ShiftStatus);
+        }
+      }  
+
+      // Display the keys here as they would overwrite the text later
+      redrawMenu();
+
+      // Display Instruction Text
+
+      if (font_width_string(font_ptr, RequestText) < 780)  // OK at normal font size
+      {
+        Text(10, 420 , RequestText, font_ptr, 0, 0, 0, 255, 255, 255);
+      }
+      else                                                 // Reduce font size
+      {
+        Text(10, 420 , RequestText, small_font_ptr, 0, 0, 0, 255, 255, 255);
+      }
+
+      // Blank out the text line to erase the previous text and cursor
+      rectangle(10, 310, 780, 90, 0, 0, 0);
+
+      // Display Text for Editing
+
+      if (strlen(EditText) < 29)                // Text to edit fits on one line
+      {
+        for (i = 1; i <= strlen(EditText); i = i + 1)
+        {
+          strncpy(thischar, &EditText[i-1], 1);
+          thischar[1] = '\0';
+          if (i > MaxLength)
+          {
+            TextMid(i * charPitch, 330, thischar, font_ptr, 0, 0, 0, 255, 63, 63);    // Red text
+          }
+          else
+          {
+            TextMid(i * charPitch, 330, thischar, font_ptr, 0, 0, 0, 255, 255, 255);   // White text
+          }
+        }
+
+        // Draw the cursor
+        rectangle(12 + charPitch * CursorPos, 320, 2, 40, 255, 255, 255);
+        publishRectangle(0, 302, 800, 178);
+        refreshed = true;
+      }
+      else                                   // Two editing lines 
+      {
+        for (i = 1; i <= 28; i = i + 1)
+        {
+          strncpy(thischar, &EditText[i-1], 1);
+          thischar[1] = '\0';
+          if (i > MaxLength)
+          {
+            TextMid(i * charPitch, 360, thischar, font_ptr, 0, 0, 0, 255, 63, 63);    // Red text
+          }
+          else
+          {
+            TextMid(i * charPitch, 360, thischar, font_ptr, 0, 0, 0, 255, 255, 255);   // White text
+          }
+        }
+
+        for (i = 29; i <= strlen(EditText); i = i + 1)
+        {
+          strncpy(thischar, &EditText[i-1], 1);
+          thischar[1] = '\0';
+          if (i > MaxLength)
+          {
+            TextMid((i - 28) * charPitch, 320, thischar, font_ptr, 0, 0, 0, 255, 63, 63);    // Red text
+          }
+          else
+          {
+            TextMid((i - 28) * charPitch, 320, thischar, font_ptr, 0, 0, 0, 255, 255, 255);   // White text
+          }
+        }
+
+        // Draw the cursor
+        if (CursorPos < 28)
+        {
+          rectangle(12 + charPitch * CursorPos, 350, 2, 40, 255, 255, 255);
+        }
+        else
+        {
+          rectangle(12 + charPitch * (CursorPos - 28), 310, 2, 40, 255, 255, 255);
+        }
+
+        publishRectangle(0, 302, 800, 178);
+        refreshed = true;
+      }
+
+    }
+
+    // Wait for key press
+    if (getTouchSample(&rawX, &rawY) == 0) continue;
+    refreshed = false;
+
+    token = IsMenuButtonPushed(rawX, rawY);
+    printf("Keyboard Token %d\n", token);
+
+    // Highlight special keys when touched
+    if ((token == 1) || (token == 5) || (token == 8) || (token == 9) || (token == 2) || (token == 3)) // Del, Clear, Enter, backspace, L and R arrows
+    {
+      SetButtonStatus(41, token, 1);
+      redrawButton(41, token);
+      usleep(300000);
+      SetButtonStatus(41, token, 0);
+      redrawButton(41, token);
+    }
+
+    if (token == 8)  // Enter pressed
+    {
+      if (strlen(EditText) > MaxLength) 
+      {
+        strncpy(KeyboardReturn, &EditText[0], MaxLength);
+        KeyboardReturn[MaxLength] = '\0';
+      }
+      else
+      {
+        strcpy(KeyboardReturn, EditText);
+      }
+      CurrentMenu = PreviousMenu;
+      printf("Exiting KeyBoard with String \"%s\"\n", KeyboardReturn);
+      break;
+    }
+    else
+    {    
+      if (KeyboardShift == 1)     // Upper Case
+      {
+        switch (token)
+        {
+        case 0:  strcpy(KeyPressed, " "); break;
+        case 4:  strcpy(KeyPressed, "-"); break;
+        case 10: strcpy(KeyPressed, "Z"); break;
+        case 11: strcpy(KeyPressed, "X"); break;
+        case 12: strcpy(KeyPressed, "C"); break;
+        case 13: strcpy(KeyPressed, "V"); break;
+        case 14: strcpy(KeyPressed, "B"); break;
+        case 15: strcpy(KeyPressed, "N"); break;
+        case 16: strcpy(KeyPressed, "M"); break;
+        case 17: strcpy(KeyPressed, ","); break;
+        case 18: strcpy(KeyPressed, "."); break;
+        case 19: strcpy(KeyPressed, "/"); break;
+        case 20: strcpy(KeyPressed, "A"); break;
+        case 21: strcpy(KeyPressed, "S"); break;
+        case 22: strcpy(KeyPressed, "D"); break;
+        case 23: strcpy(KeyPressed, "F"); break;
+        case 24: strcpy(KeyPressed, "G"); break;
+        case 25: strcpy(KeyPressed, "H"); break;
+        case 26: strcpy(KeyPressed, "J"); break;
+        case 27: strcpy(KeyPressed, "K"); break;
+        case 28: strcpy(KeyPressed, "L"); break;
+        case 30: strcpy(KeyPressed, "Q"); break;
+        case 31: strcpy(KeyPressed, "W"); break;
+        case 32: strcpy(KeyPressed, "E"); break;
+        case 33: strcpy(KeyPressed, "R"); break;
+        case 34: strcpy(KeyPressed, "T"); break;
+        case 35: strcpy(KeyPressed, "Y"); break;
+        case 36: strcpy(KeyPressed, "U"); break;
+        case 37: strcpy(KeyPressed, "I"); break;
+        case 38: strcpy(KeyPressed, "O"); break;
+        case 39: strcpy(KeyPressed, "P"); break;
+        case 40: strcpy(KeyPressed, "1"); break;
+        case 41: strcpy(KeyPressed, "2"); break;
+        case 42: strcpy(KeyPressed, "3"); break;
+        case 43: strcpy(KeyPressed, "4"); break;
+        case 44: strcpy(KeyPressed, "5"); break;
+        case 45: strcpy(KeyPressed, "6"); break;
+        case 46: strcpy(KeyPressed, "7"); break;
+        case 47: strcpy(KeyPressed, "8"); break;
+        case 48: strcpy(KeyPressed, "9"); break;
+        case 49: strcpy(KeyPressed, "0"); break;
+        }
+      }
+      else                          // Lower Case
+      {
+        switch (token)
+        {
+        case 0:  strcpy(KeyPressed, " "); break;
+        case 4:  strcpy(KeyPressed, "_"); break;
+        case 10: strcpy(KeyPressed, "z"); break;
+        case 11: strcpy(KeyPressed, "x"); break;
+        case 12: strcpy(KeyPressed, "c"); break;
+        case 13: strcpy(KeyPressed, "v"); break;
+        case 14: strcpy(KeyPressed, "b"); break;
+        case 15: strcpy(KeyPressed, "n"); break;
+        case 16: strcpy(KeyPressed, "m"); break;
+        case 17: strcpy(KeyPressed, "!"); break;
+        case 18: strcpy(KeyPressed, "."); break;
+        case 19: strcpy(KeyPressed, "?"); break;
+        case 20: strcpy(KeyPressed, "a"); break;
+        case 21: strcpy(KeyPressed, "s"); break;
+        case 22: strcpy(KeyPressed, "d"); break;
+        case 23: strcpy(KeyPressed, "f"); break;
+        case 24: strcpy(KeyPressed, "g"); break;
+        case 25: strcpy(KeyPressed, "h"); break;
+        case 26: strcpy(KeyPressed, "j"); break;
+        case 27: strcpy(KeyPressed, "k"); break;
+        case 28: strcpy(KeyPressed, "l"); break;
+        case 30: strcpy(KeyPressed, "q"); break;
+        case 31: strcpy(KeyPressed, "w"); break;
+        case 32: strcpy(KeyPressed, "e"); break;
+        case 33: strcpy(KeyPressed, "r"); break;
+        case 34: strcpy(KeyPressed, "t"); break;
+        case 35: strcpy(KeyPressed, "y"); break;
+        case 36: strcpy(KeyPressed, "u"); break;
+        case 37: strcpy(KeyPressed, "i"); break;
+        case 38: strcpy(KeyPressed, "o"); break;
+        case 39: strcpy(KeyPressed, "p"); break;
+        case 40: strcpy(KeyPressed, "1"); break;
+        case 41: strcpy(KeyPressed, "2"); break;
+        case 42: strcpy(KeyPressed, "3"); break;
+        case 43: strcpy(KeyPressed, "4"); break;
+        case 44: strcpy(KeyPressed, "5"); break;
+        case 45: strcpy(KeyPressed, "6"); break;
+        case 46: strcpy(KeyPressed, "7"); break;
+        case 47: strcpy(KeyPressed, "8"); break;
+        case 48: strcpy(KeyPressed, "9"); break;
+        case 49: strcpy(KeyPressed, "0"); break;
+        }
+      }
+
+      // If shift key has been pressed Change Case
+      if ((token == 6) || (token == 7))
+      {
+        if (KeyboardShift == 1)
+        {
+          KeyboardShift = 0;
+        }
+        else
+        {
+          KeyboardShift = 1;
+        }
+      }
+      else if (token == 1)   // del
+      {
+        if (CursorPos < strlen(EditText))
+        {
+          // Copy the text to the left of the deleted character
+          strncpy(PreCuttext, &EditText[0], CursorPos);
+          PreCuttext[CursorPos] = '\0';
+
+
+          // Copy the text to the right of the deleted character
+          strncpy(PostCuttext, &EditText[CursorPos + 1], strlen(EditText));
+          PostCuttext[strlen(EditText) - CursorPos + 1] = '\0';
+
+          // Now combine them
+          strcat(PreCuttext, PostCuttext);
+          strcpy (EditText, PreCuttext);
+        }
+      }
+      else if (token == 9)   // backspace
+      {
+        if (CursorPos == 1)
+        {
+           // Copy the text to the right of the deleted character
+          strncpy(PostCuttext, &EditText[1], strlen(EditText) - 1);
+          PostCuttext[strlen(EditText) - 1] = '\0';
+          strcpy (EditText, PostCuttext);
+          CursorPos = 0;
+        }
+        if (CursorPos > 1)
+        {
+          // Copy the text to the left of the deleted character
+          strncpy(PreCuttext, &EditText[0], CursorPos - 1);
+          PreCuttext[CursorPos-1] = '\0';
+
+          if (CursorPos == strlen(EditText))
+          {
+            strcpy (EditText, PreCuttext);
+          }
+          else
+          {
+            // Copy the text to the right of the deleted character
+            strncpy(PostCuttext, &EditText[CursorPos], strlen(EditText));
+            PostCuttext[strlen(EditText)-CursorPos] = '\0';
+
+            // Now combine them
+            strcat(PreCuttext, PostCuttext);
+            strcpy (EditText, PreCuttext);
+          }
+          CursorPos = CursorPos - 1;
+        }
+      }
+      else if (token == 5)   // Clear
+      {
+        EditText[0]='\0';
+        CursorPos = 0;
+      }
+      else if (token == 2)   // left arrow
+      {
+        CursorPos = CursorPos - 1;
+        if (CursorPos < 0)
+        {
+          CursorPos = 0;
+        }
+      }
+      else if (token == 3)   // right arrow
+      {
+        CursorPos = CursorPos + 1;
+        if (CursorPos > strlen(EditText))
+        {
+          CursorPos = strlen(EditText);
+        }
+      }
+      else if ((token == 0) || (token == 4) || ((token >=10) && (token <= 49)))
+      {
+        // character Key has been touched, so highlight it for 300 ms
+ 
+        ShiftStatus = 3 - (2 * KeyboardShift); // 1 = Upper, 3 = lower
+        SetButtonStatus(41, token, ShiftStatus);
+        DrawButton(41, token);
+        redrawButton(41, token);
+        usleep(300000);
+        ShiftStatus = 2 - (2 * KeyboardShift); // 0 = Upper, 2 = lower
+        SetButtonStatus(41, token, ShiftStatus);
+        DrawButton(41, token);
+        redrawButton(41, token);
+
+        if (strlen(EditText) < 55) // Don't let it overflow beyond 2 lines
+        {
+        // Copy the text to the left of the insert point
+        strncpy(PreCuttext, &EditText[0], CursorPos);
+        PreCuttext[CursorPos] = '\0';
+          
+        // Append the new character to the pre-insert string
+        strcat(PreCuttext, KeyPressed);
+
+        // Append any text to the right if it exists
+        if (CursorPos == strlen(EditText))
+        {
+          strcpy (EditText, PreCuttext);
+        }
+        else
+        {
+          // Copy the text to the right of the inserted character
+          strncpy(PostCuttext, &EditText[CursorPos], strlen(EditText));
+          PostCuttext[strlen(EditText)-CursorPos] = '\0';
+
+          // Now combine them
+          strcat(PreCuttext, PostCuttext);
+          strcpy (EditText, PreCuttext);
+        }
+        CursorPos = CursorPos + 1;
+        }
+      }
+    }
+  }
+}
+
 
 
 void selectTestEquip(int Button)   // Test Equipment
@@ -2777,11 +5889,41 @@ void selectTestEquip(int Button)   // Test Equipment
     case 0:                              // KeyLimePi SA
       cleanexit(170);
       break;
+    case 10:                             // SigGen
+      cleanexit(130);
+      break;
+    case 11:                             // Frequency Sweeper
+      cleanexit(139);
+      break;
+    case 12:                             // DMM Display
+      cleanexit(142);
+      break;
+    case 13:                             // AD Power Meter
+      cleanexit(137);
+      break;
     case 15:                             // LimeSDR BandViewer
       cleanexit(136);
       break;
     case 16:                             // LimeSDR NG BandViewer
       cleanexit(151);
+      break;
+    case 17:                             // LimeSDR NF Meter
+      cleanexit(138);
+      break;
+    case 18:                             // LimeSDR NG NF Meter
+      cleanexit(152);
+      break;
+    case 20:                             // KeyLimePi BandViewer
+      cleanexit(175);
+      break;
+    case 21:                             // KeyLimePi NF Meter
+      cleanexit(138);
+      break;
+    case 22:                             // KeyLimePi Noise Meter
+      cleanexit(147);
+      break;
+    case 23:                             // KeyLimePi Bolo Power Meter
+      cleanexit(174);
       break;
   }
 }
@@ -3307,6 +6449,551 @@ void togglescreenorientation()
 }
 
 
+void SelectLMFREQ(int NoButton)  // LongMynd Frequency
+{
+  char Value[255];
+
+  NoButton = NoButton - 9; // top row 1 - 5 bottom -4 - 0
+
+  if (NoButton < 1)
+  {
+    NoButton = NoButton + 10;
+  }
+  // Buttons 1 - 10
+
+  if (strcmp(LMRXmode, "terr") == 0)
+  {
+    NoButton = NoButton + 10;
+    LMRXfreq[0] = LMRXfreq[NoButton];
+    snprintf(Value, 25, "%d", LMRXfreq[0]);
+    SetConfigParam(PATH_LMCONFIG, "freq1", Value);
+  }
+  else // Sat
+  {
+    LMRXfreq[0] = LMRXfreq[NoButton];
+    snprintf(Value, 25, "%d", LMRXfreq[0]);
+    SetConfigParam(PATH_LMCONFIG, "freq0", Value);
+  }
+}
+
+
+void SelectLMSR(int NoButton)  // LongMynd Symbol Rate
+{
+  char Value[255];
+
+  NoButton = NoButton - 14;  // Translate to 1 - 10
+
+  if (strcmp(LMRXmode, "terr") == 0)
+  {
+    NoButton = NoButton + 10;
+    LMRXsr[0] = LMRXsr[NoButton];
+    snprintf(Value, 15, "%d", LMRXsr[0]);
+    SetConfigParam(PATH_LMCONFIG, "sr1", Value);
+  }
+  else // Sat
+  {
+    LMRXsr[0] = LMRXsr[NoButton];
+    snprintf(Value, 15, "%d", LMRXsr[0]);
+    SetConfigParam(PATH_LMCONFIG, "sr0", Value);
+  }
+}
+
+
+void toggleLMRXmode()
+{
+  char Value[255];
+
+  if (strcmp(LMRXmode, "sat") == 0)
+  {
+    strcpy(LMRXmode, "terr");
+
+    // Read in latest values for use
+    GetConfigParam(PATH_LMCONFIG, "freq1", Value);
+    LMRXfreq[0] = atoi(Value);
+    GetConfigParam(PATH_LMCONFIG, "sr1", Value);
+    LMRXsr[0] = atoi(Value);
+    GetConfigParam(PATH_LMCONFIG, "input1", Value);
+    strcpy(LMRXinput, Value);
+  }
+  else
+  {
+    strcpy(LMRXmode, "sat");
+
+    // Read in latest values for use
+    GetConfigParam(PATH_LMCONFIG, "freq0", Value);
+    LMRXfreq[0] = atoi(Value);
+    GetConfigParam(PATH_LMCONFIG, "sr0", Value);
+    LMRXsr[0] = atoi(Value);
+    GetConfigParam(PATH_LMCONFIG, "input", Value);
+    strcpy(LMRXinput, Value);
+  }
+  SetConfigParam(PATH_LMCONFIG, "mode", LMRXmode);
+}
+
+
+void ChangeLMRXIP()
+{
+  char RequestText[63];
+  char InitText[63];
+  char KeyboardReturn[63];
+  bool IsValid = false;
+  char LMRXIPCopy[31];
+
+  while (IsValid == false)
+  {
+    strcpy(RequestText, "Enter the new UDP IP Destination for the RX TS");
+    strcpyn(InitText, LMRXudpip, 17);
+    Keyboard(RequestText, InitText, 17, KeyboardReturn);
+  
+    strcpy(LMRXIPCopy, KeyboardReturn);
+    if(is_valid_ip(LMRXIPCopy) == true)
+    {
+      IsValid = true;
+    }
+  }
+  printf("Receiver UDP IP Destination set to: %s\n", KeyboardReturn);
+
+  // Save IP to Local copy and Config File
+  strcpy(LMRXudpip, KeyboardReturn);
+  SetConfigParam(PATH_LMCONFIG, "udpip", LMRXudpip);
+}
+
+
+void ChangeLMRXPort()
+{
+  char RequestText[63];
+  char InitText[63];
+  char KeyboardReturn[63];
+  bool IsValid = false;
+
+  while (IsValid == false)
+  {
+    strcpy(RequestText, "Enter the new UDP Port Number for the RX TS");
+    strcpyn(InitText, LMRXudpport, 10);
+    Keyboard(RequestText, InitText, 10, KeyboardReturn);
+  
+    if(strlen(KeyboardReturn) > 0)
+    {
+      IsValid = true;
+    }
+  }
+  printf("LMRX UDP Port set to: %s\n", KeyboardReturn);
+
+  // Save port to local copy and Config File
+  strcpy(LMRXudpport, KeyboardReturn);
+  SetConfigParam(PATH_LMCONFIG, "udpport", LMRXudpport);
+}
+
+
+void ChangeLMRXOffset()
+{
+  char RequestText[63];
+  char InitText[63];
+  char KeyboardReturn[63];
+  bool IsValid = false;
+
+  while (IsValid == false)
+  {
+    strcpy(RequestText, "Enter the new QO-100 LNB Offset in kHz");
+    snprintf(InitText, 10, "%d", LMRXqoffset);
+    Keyboard(RequestText, InitText, 10, KeyboardReturn);
+  
+    if((atoi(KeyboardReturn) > 1000000) && (atoi(KeyboardReturn) < 76000000))
+    {
+      IsValid = true;
+    }
+  }
+  printf("LMRXOffset set to: %s kHz\n", KeyboardReturn);
+
+  // Save offset to Config File
+  LMRXqoffset = atoi(KeyboardReturn);
+  SetConfigParam(PATH_LMCONFIG, "qoffset", KeyboardReturn);
+}
+
+
+void ChangeLMTST()
+{
+  char RequestText[63];
+  char InitText[63];
+  char KeyboardReturn[63];
+  bool IsValid = false;
+
+  if (strcmp(LMRXmode, "sat") == 0)
+  {
+    strcpy(RequestText, "Enter the new Tuner Timeout for QO-100 in ms");
+    snprintf(InitText, 12, "%d", LMRXqtimeout);
+  }
+  else  //Terrestrial
+  {
+    strcpy(RequestText, "Enter the new Tuner Timeout for terrestrial in ms");
+    snprintf(InitText, 12, "%d", LMRXttimeout);
+  }
+
+  while (IsValid == false)
+  {
+    Keyboard(RequestText, InitText, 10, KeyboardReturn);
+  
+    if (((atoi(KeyboardReturn) >= 500) && (atoi(KeyboardReturn) <= 60000)) || (atoi(KeyboardReturn) == -1))
+    {
+      IsValid = true;
+    }
+  }
+  printf("Tuner Timeout set to: %s ms\n", KeyboardReturn);
+
+  // Save offset to Config File
+  if (strcmp(LMRXmode, "sat") == 0)
+  {
+    LMRXqtimeout = atoi(KeyboardReturn);
+    SetConfigParam(PATH_LMCONFIG, "tstimeout", KeyboardReturn);
+  }
+  else
+  {
+    LMRXttimeout = atoi(KeyboardReturn);
+    SetConfigParam(PATH_LMCONFIG, "tstimeout1", KeyboardReturn);
+  }
+}
+
+
+void ChangeLMSW()
+{
+  char RequestText[63];
+  char InitText[63];
+  char KeyboardReturn[63];
+  bool IsValid = false;
+
+  if (strcmp(LMRXmode, "sat") == 0)
+  {
+    snprintf(InitText, 4, "%d", LMRXqscanwidth);
+    strcpy(RequestText, "Enter scan half-width as % of SR for QO-100");
+  }
+  else  //Terrestrial
+  {
+    snprintf(InitText, 4, "%d", LMRXtscanwidth);
+    strcpy(RequestText, "Enter scan half-width as % of SR for terrestrial");
+  }
+
+  while (IsValid == false)
+  {
+    Keyboard(RequestText, InitText, 10, KeyboardReturn);
+  
+    if((atoi(KeyboardReturn) >= 10) && (atoi(KeyboardReturn) <= 500))
+    {
+      IsValid = true;
+    }
+  }
+  printf("Scan Width set to: %s %% of SR\n", KeyboardReturn);
+
+  // Save scan width to Config File
+  if (strcmp(LMRXmode, "sat") == 0)
+  {
+    LMRXqscanwidth = atoi(KeyboardReturn);
+    SetConfigParam(PATH_LMCONFIG, "scanwidth", KeyboardReturn);
+  }
+  else
+  {
+    LMRXtscanwidth = atoi(KeyboardReturn);
+    SetConfigParam(PATH_LMCONFIG, "scanwidth1", KeyboardReturn);
+  }
+}
+
+
+void ChangeLMChan()
+{
+  char RequestText[63];
+  char InitText[63];
+  bool IsValid = false;
+  char KeyboardReturn[63];
+  char IntCheck[63];
+
+  //  Retrieve (1 char) Current Sat or Terr channel
+  if (strcmp(LMRXmode, "sat") == 0)
+  {
+    strcpy(RequestText, "Enter TS Video Channel, 0 for default");
+    snprintf(InitText, 4, "%d", LMRXqvidchan);
+  }
+  else  //Terrestrial
+  {
+    strcpy(RequestText, "Enter TS Video Channel, 0 for default");
+    snprintf(InitText, 4, "%d", LMRXtvidchan);
+  }
+
+  while (IsValid == false)
+  {
+    Keyboard(RequestText, InitText, 10, KeyboardReturn);
+
+    if(strcmp(KeyboardReturn, "") == 0)  // Set null to 0
+    {
+      strcpy(KeyboardReturn, "0");
+    }
+
+    snprintf(IntCheck, 9, "%d", atoi(KeyboardReturn));
+    if(strcmp(IntCheck, KeyboardReturn) == 0)           // Check answer is an integer
+    {
+      if((atoi(KeyboardReturn) >= 0) && (atoi(KeyboardReturn) <= 64000))
+      {
+        IsValid = true;
+      }
+    }
+  }
+  printf("Video Channel %s selected\n", KeyboardReturn);
+
+  // Save channel to Config File
+  if (strcmp(LMRXmode, "sat") == 0)
+  {
+    LMRXqvidchan = atoi(KeyboardReturn);
+    SetConfigParam(PATH_LMCONFIG, "chan", KeyboardReturn);
+  }
+  else
+  {
+    LMRXtvidchan = atoi(KeyboardReturn);
+    SetConfigParam(PATH_LMCONFIG, "chan1", KeyboardReturn);
+  }
+}
+
+
+void ChangeLMPresetFreq(int NoButton)
+{
+  char RequestText[63];
+  char InitText[63] = " ";
+  char PresetNo[3];
+  char Param[63];
+  div_t div_10;
+  div_t div_100;
+  div_t div_1000;
+  int FreqIndex;
+  int CheckValue = 0;
+  int Offset_to_Apply = 0;
+  char FreqkHz[63];
+  char KeyboardReturn[63];
+
+  // Convert button number to frequency array index
+  if (CallingMenu == 8)  // Called from receive Menu
+  {
+    FreqIndex = 10;
+  }
+  else  // called from LM freq Presets menu 
+  {
+    if (NoButton < 10)  // second row (5 - 9)
+    {
+      FreqIndex = NoButton + 1;    // 6 - 10
+    }
+    else                // third row (10 - 14)
+    {
+      FreqIndex = NoButton - 9;    // 1 - 5
+    }
+  }
+  if (strcmp(LMRXmode, "terr") == 0) // Add index for second set of freqs
+  {
+    FreqIndex = FreqIndex + 10;
+    strcpy(Param, "tfreq");
+  }
+  else
+  {
+    Offset_to_Apply = LMRXqoffset;
+    strcpy(Param, "qfreq");
+  }
+
+  // Define request string
+  strcpy(RequestText, "Enter new receive frequency in MHz");
+
+  // Define initial value and convert to MHz
+
+  if(LMRXfreq[FreqIndex] < 50000)  // below 50 MHz, so set to 146.5
+  {
+    strcpy(InitText, "146.5");
+  }
+  else
+  {
+    div_10 = div(LMRXfreq[FreqIndex], 10);
+    div_1000 = div(LMRXfreq[FreqIndex], 1000);
+
+    if(div_10.rem != 0)  // last character not zero, so make answer of form xxx.xxx
+    {
+      snprintf(InitText, 25, "%d.%03d", div_1000.quot, div_1000.rem);
+    }
+    else
+    {
+      div_100 = div(LMRXfreq[FreqIndex], 100);
+
+      if(div_100.rem != 0)  // last but one character not zero, so make answer of form xxx.xx
+      {
+        snprintf(InitText, 25, "%d.%02d", div_1000.quot, div_1000.rem / 10);
+      }
+      else
+      {
+        if(div_1000.rem != 0)  // last but two character not zero, so make answer of form xxx.x
+        {
+          snprintf(InitText, 25, "%d.%d", div_1000.quot, div_1000.rem / 100);
+        }
+        else  // integer MHz, so just xxx (no dp)
+        {
+          snprintf(InitText, 25, "%d", div_1000.quot);
+        }
+      }
+    }
+  }
+
+  // Ask for new value
+  while ((CheckValue - Offset_to_Apply < 50000) || (CheckValue - Offset_to_Apply > 2600000))
+  {
+    Keyboard(RequestText, InitText, 10, KeyboardReturn);
+    CheckValue = (int)((1000 * atof(KeyboardReturn)) + 0.1);
+    printf("CheckValue = %d Offset = %d\n", CheckValue, Offset_to_Apply);
+  }
+
+  // Write freq to memory
+  LMRXfreq[FreqIndex] = CheckValue;
+
+  // Convert to string in kHz
+  snprintf(FreqkHz, 25, "%d", CheckValue);
+
+  // Write to Presets File as in-use frequency
+  if (strcmp(LMRXmode, "terr") == 0) // Terrestrial
+  {
+    SetConfigParam(PATH_LMCONFIG, "freq1", FreqkHz);        // Set in-use freq
+    FreqIndex = FreqIndex - 10;                             // subtract index for terrestrial freqs
+  }
+  else                               // Sat
+  {
+    SetConfigParam(PATH_LMCONFIG, "freq0", FreqkHz);        // Set in-use freq
+  }
+
+  // write freq to Stored Presets file
+  snprintf(PresetNo, 3, "%d", FreqIndex);
+  strcat(Param, PresetNo); 
+  SetConfigParam(PATH_LMCONFIG, Param, FreqkHz);
+}
+
+
+void ChangeLMPresetSR(int NoButton)
+{
+  char RequestText[63];
+  char InitText[63];
+  char PresetNo[31];
+  char Param[7];
+  int SRIndex;
+  int SRCheck = 0;
+  char KeyboardReturn[63];
+
+  // Convert button number to frequency array index
+
+  if (CallingMenu == 8)  // Called from receive Menu
+  {
+    SRIndex = 5;
+  }
+  else
+  {
+    // Correct button numbers to index numbers
+    SRIndex = NoButton - 14;
+  }
+
+  if (strcmp(LMRXmode, "terr") == 0) // Add index for second set of SRs
+  {
+    SRIndex = SRIndex + 10;
+    strcpy(Param, "tsr");
+  }
+  else
+  {
+    strcpy(Param, "qsr");
+  }
+
+  snprintf(PresetNo, 14, "%d", SRIndex);
+
+  while ((SRCheck < 30) || (SRCheck > 29999))
+  {
+    strcpy(RequestText, "Enter new Symbol Rate");
+
+    snprintf(InitText, 14, "%d", LMRXsr[SRIndex]);
+    Keyboard(RequestText, InitText, 4, KeyboardReturn);
+  
+    // Check valid value
+    SRCheck = atoi(KeyboardReturn);
+  }
+
+  // Update stored preset value and in-use value
+  LMRXsr[SRIndex] = SRCheck;
+  LMRXsr[0] = SRCheck;
+
+  // write SR to Config file for current
+  if (strcmp(LMRXmode, "terr") == 0) // terrestrial
+  {
+    SetConfigParam(PATH_LMCONFIG, "sr1", KeyboardReturn);
+    SRIndex = SRIndex - 10;
+  }
+  else
+  {
+    SetConfigParam(PATH_LMCONFIG, "sr0", KeyboardReturn);
+  }
+
+  // write SR to Presets file for preset
+  snprintf(PresetNo, 15, "%d", SRIndex);
+  strcat(Param, PresetNo); 
+  SetConfigParam(PATH_LMCONFIG, Param, KeyboardReturn);
+}
+
+
+void toggleLMRXinput()
+{
+  if (strcmp(LMRXinput, "a") == 0)
+  {
+    strcpy(LMRXinput, "b");
+  }
+  else
+  {
+    strcpy(LMRXinput, "a");
+  }
+
+  if (strcmp(LMRXmode, "sat") == 0)
+  {
+    SetConfigParam(PATH_LMCONFIG, "input", LMRXinput);
+  }
+  else
+  {
+    SetConfigParam(PATH_LMCONFIG, "input1", LMRXinput);
+  }
+}
+
+
+void CycleLNBVolts()
+{
+  if (strcmp(LMRXvolts, "h") == 0)
+  {
+    strcpy(LMRXvolts, "v");
+  }
+  else
+  {
+    if (strcmp(LMRXvolts, "off") == 0)
+    {
+      strcpy(LMRXvolts, "h");
+    }
+    else  // All other cases
+    {
+      strcpy(LMRXvolts, "off");
+    }
+  }
+  SetConfigParam(PATH_LMCONFIG, "lnbvolts", LMRXvolts);
+  strcpy(LMRXvolts, "off");
+  GetConfigParam(PATH_LMCONFIG, "lnbvolts", LMRXvolts);
+}
+
+
+void CycleLMRXaudio()
+{
+  if (strcmp(LMRXaudio, "rpi") == 0)
+  {
+    strcpy(LMRXaudio, "usb");
+  }
+  else if (strcmp(LMRXaudio, "usb") == 0)
+  {
+    strcpy(LMRXaudio, "hdmi");
+  }
+  else
+  {
+    strcpy(LMRXaudio, "rpi");
+  }
+  SetConfigParam(PATH_LMCONFIG, "audio", LMRXaudio);
+}
+
 void InfoScreen()
 {
   char IPAddress[18] = "Not connected";
@@ -3354,6 +7041,58 @@ void InfoScreen()
 
   // Wait for screen touch before exit
   wait_touch();
+}
+
+void checkTunerSettings()
+{
+  int basefreq;
+
+  // First check that an FTDI device or PicoTuner is connected
+  if (CheckTuner() != 0)
+  {
+    MsgBox4("No tuner connected", "Please check that you have either", "a MiniTiouner, PicoTuner or a Knucker connected", "Touch Screen to Continue");
+    wait_touch();
+  }
+
+  if (strcmp(LMRXmode, "sat") == 0)  // Correct for Sat freqs
+  {
+    basefreq = LMRXfreq[0] - LMRXqoffset;
+  }
+  else
+  {
+    basefreq = LMRXfreq[0];
+  }
+
+  if (strcmp(RXmod, "DVB-S") == 0)  // Check DVB-S Settings
+  {
+    // Frequency
+    if ((basefreq < 143500 ) || (basefreq > 2650000))
+    {
+      MsgBox4("Receive Frequency outside normal range", "of 143.5 MHz to 2650 MHz", "Tuner may not operate", "Touch Screen to Continue");
+      wait_touch();
+    }
+    if ((LMRXsr[0] < 66 ) || (LMRXsr[0] > 8000))
+    {
+      MsgBox4("Receive SR outside normal range", "of 66 kS to 8 MS", "Tuner may not operate", "Touch Screen to Continue");
+      wait_touch();
+    }
+  }
+  else                              // Check DVB-T settings
+  {
+    // Frequency
+    if ((basefreq < 50000 ) || (basefreq > 1000000))
+    {
+      MsgBox4("Receive Frequency outside normal range", "of 50 MHz to 1000 MHz", "Tuner may not operate", "Touch Screen to Continue");
+      wait_touch();
+    }
+    if ((LMRXsr[0] > 500 ) && (LMRXsr[0] != 1000) && (LMRXsr[0] != 1700) && (LMRXsr[0] != 2000) && (LMRXsr[0] != 4000)
+                           && (LMRXsr[0] != 5000) && (LMRXsr[0] != 6000) && (LMRXsr[0] != 7000) && (LMRXsr[0] != 8000))
+    {
+      MsgBox4("Receive bandwidth outside normal range", "of < 501 kHz or 1, 1.7, 2, 4, 5, 6, 7, or 8 MHz", 
+              "Tuner may not operate", "Touch Screen to Continue");
+      wait_touch();
+    }
+  }
 }
 
 
@@ -3572,6 +7311,11 @@ void waitForScreenAction()
             UpdateWeb();
           }
           break;
+        case 26:                                                      // Receive Menu
+          printf("MENU 8 \n");
+          CurrentMenu = 8;
+          redrawMenu();
+          break;
         case 27:
           printf("MENU 5 \n");         // DATV Tools Menu
           CurrentMenu = 5;
@@ -3646,6 +7390,8 @@ void waitForScreenAction()
           CurrentMenu = 1;
           redrawMenu();
           break;
+        case 3:                        // Back to Main Menu
+          break;
         case 4:                        // Back to Main Menu
           printf("MENU 1 \n");
           CurrentMenu = 1;
@@ -3702,16 +7448,91 @@ void waitForScreenAction()
           redrawMenu();
           break;
         case 0:
+        case 10:
+        case 11:
+        case 12:
+        case 13:
         case 15:
         case 16:
-        //case 17:
-        //case 18:
-        //case 19:
+        case 17:
+        case 18:
+        case 20:
+        case 21:
+        case 22:
+        case 23:
           selectTestEquip(i);          // Select test equip
           redrawMenu();                // Show 
           usleep(500000);
           CurrentMenu = 1;
           redrawMenu();                // and return to menu 1
+          break;
+        }
+        continue;
+      }
+      if (CurrentMenu == 8)            // Receive Menu
+      {
+        printf("Menu %d, Button %d\n", CallingMenu, i);
+        CallingMenu = 8;
+        switch (i)
+        {
+        case 0:                                           // VLC with ffmpeg
+        case 1:                                           // OMXPlayer
+        case 2:                                           // VLC
+        case 3:                                           // UDP Output
+        case 4:                                           // Beacon MER
+          checkTunerSettings();
+          LMRX(i);
+          clearScreen(0, 0, 0);
+          redrawMenu();
+          break;
+
+        case 5:                        // Change Freq
+        case 6:
+        case 7:
+        case 8:
+        case 10:
+        case 11:
+        case 12:
+        case 13:
+        case 14:
+          SelectLMFREQ(i);
+          redrawMenu();
+          break;
+        case 9:                                           // Change button freq
+          ChangeLMPresetFreq(i);
+          SelectLMFREQ(i);
+          redrawMenu();
+          break;
+        case 15:                                          // Change SR
+        case 16:
+        case 17:
+        case 18:
+        case 20:
+        case 21:
+        case 22:
+        case 23:
+        case 24:
+          SelectLMSR(i);
+          redrawMenu();
+          break;
+        case 19:                        // Change SR button value
+          ChangeLMPresetSR(i);
+          SelectLMSR(i);
+          redrawMenu();
+          break;
+        case 25:                        // Toggle QO-100/Terrestrial
+          toggleLMRXmode();
+          redrawMenu();
+          break;
+        case 27:                        // Back to Main Menu
+          printf("MENU 1 \n");
+          CurrentMenu = 1;
+          redrawMenu();
+          break;
+        case 28:                        // Receiver Config Menu
+          printf("MENU 23 \n");
+          CurrentMenu = 23;
+          redrawMenu();
           break;
         }
         continue;
@@ -4085,6 +7906,118 @@ void waitForScreenAction()
         }
         continue;
       }
+      if (CurrentMenu == 23)           // Receiver Config Menu
+      {
+        printf("Menu %d, Button %d\n", CallingMenu, i);
+        CallingMenu = 23;
+        switch (i)
+        {
+        case 0:                                         // Output UDP IP
+          ChangeLMRXIP();
+          redrawMenu();
+          break;
+        case 1:                                         // Output UDP port 
+          ChangeLMRXPort();
+          redrawMenu();
+          break;
+        case 2:                                         // Adjust Preset Freq and SRs
+          printf("MENU 24 \n");
+          CurrentMenu = 24;
+          redrawMenu();
+          break;
+        case 4:                                         // Back to Receive Menu
+          printf("MENU 8 \n");
+          CurrentMenu = 8;
+          redrawMenu();
+          break;
+        case 5:                                         // QO-100 LNB Offset 
+          ChangeLMRXOffset();
+          redrawMenu();
+          break;
+        case 6:                                         // Autoset QO-100 LNB Offset 
+          if (strcmp(LMRXmode, "sat") == 0)
+          {
+            checkTunerSettings();
+            LMRX(5);
+            clearScreen(0, 0, 0);
+            redrawMenu();
+          }
+          break;
+        case 7:                                         // Change Tuner input 
+          toggleLMRXinput();
+          redrawMenu();
+          break;
+        case 8:                                         // Change LNB Volts
+          CycleLNBVolts();
+          redrawMenu();
+          break;
+        case 9:                                         // Change Audio out
+          CycleLMRXaudio();
+          redrawMenu();
+          break;
+       case 10:                                         // Tuner Timeout 
+          ChangeLMTST();
+          redrawMenu();
+          break;
+        case 11:                                         // Tuner Scan Width 
+          ChangeLMSW();
+          redrawMenu();
+          break;
+        case 12:                                         // Tuner TS Video Channel 
+          ChangeLMChan();
+          redrawMenu();
+          break;
+        case 25:                        // Toggle QO-100/Terrestrial
+          toggleLMRXmode();
+          redrawMenu();
+          break;
+        }
+        continue;
+      }
+      if (CurrentMenu == 24)           // Receiver Presets Menu
+      {
+        printf("Menu %d, Button %d\n", CallingMenu, i);
+        CallingMenu = 24;
+        switch (i)
+        {
+        case 4:                                          // Back to Receive Menu
+          printf("MENU 8 \n");
+          CurrentMenu = 8;
+          redrawMenu();
+          break;
+        case 5:                                          // Frequencies 
+        case 6:                                          //  
+        case 7:                                          //  
+        case 8:                                          //  
+        case 9:                                          //  
+        case 10:                                         //  
+        case 11:                                         //  
+        case 12:                                         // 
+        case 13:                                         // 
+        case 14:                                         // 
+          ChangeLMPresetFreq(i);
+          redrawMenu();
+          break;
+        case 15:                                         // SRs 
+        case 16:                                         //  
+        case 17:                                         //  
+        case 18:                                         //  
+        case 19:                                         //  
+        case 20:                                         //  
+        case 21:                                         //  
+        case 22:                                         // 
+        case 23:                                         // 
+        case 24:                                         // 
+          ChangeLMPresetSR(i);
+          redrawMenu();
+          break;
+        case 25:                        // Toggle QO-100/Terrestrial
+          toggleLMRXmode();
+          redrawMenu();
+          break;
+        }
+        continue;
+      }
     }
   }
 }
@@ -4132,7 +8065,7 @@ int main(int argc, char **argv)
   //int NoDeviceEvent = 0;
   int screenXmax, screenXmin;
   int screenYmax, screenYmin;
-
+  int startupmenu = 1;
 
   char response[63];
 
@@ -4148,7 +8081,29 @@ int main(int argc, char **argv)
     sigaction(i, &sa, NULL);
   }
 
-  CurrentMenu = 1;
+  // Check startup request
+  if (argc > 2 )
+  {
+	for ( i = 1; i < argc - 1; i += 2 )
+    {
+      if (strcmp(argv[i], "-b") == 0)
+      {
+        if (strcmp(argv[i + 1], "tx") == 0)
+        {
+          boot_to_tx = true;
+        }
+        else if (strcmp(argv[i + 1], "rx") == 0)
+        {
+          boot_to_rx = true;
+        }
+        else
+        {
+          startupmenu = atoi(argv[i + 1] );
+          CurrentMenu = startupmenu;
+        }
+      }
+    }
+  }
 
   // Sort out display and control.  If touchscreen detected, use that (and set config) with optional web control.
   // If no touchscreen, check for mouse.  If mouse detected, use that and set hdmi720 if hdmi mode not selected
@@ -4225,7 +8180,6 @@ int main(int argc, char **argv)
   CreateButtons();
   Define_Menus();
   ReadSavedParams();
-  clearScreen(255, 255, 255);
   redrawMenu();
 
   printf("Waiting for button press on touchscreen\n");

@@ -15,6 +15,9 @@ sa_sdr: sa_sdr.c
 		../common/timing.c \
 		../common/ffunc.c \
 		../common/ffunc.h \
+		../common/hardware.c \
+        ../common/temperature.c \
+        ../common/siggen.c \
 		../common/font/font.c \
 		../common/font/dejavu_sans_18.c \
 		../common/font/dejavu_sans_20.c \

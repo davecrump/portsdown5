@@ -130,7 +130,8 @@ ChooseBandViewerSDR()
 # 148  Exit from portsdown gui requesting start of Pluto NF Meter
 # 149  Exit from portsdown gui requesting start of Pluto Noise Meter
 # 150  Run the Meteor Viewer
-# 151  Exit from gui requesting start of LimeSDR BandViewer
+# 151  Exit from gui requesting start of LimeSDR BandViewer for LimeSuiteNG
+# 152  Exit from gui requesting start of LimeSDR NF Meter for LimeSuiteNG
 # 160  Shutdown from GUI
 # 170  Spectrum Analyser Scheduler
 # 171  Spectrum Analyser DATV RX on IF
@@ -165,7 +166,7 @@ case "$MODE_STARTUP" in
     ChooseBandViewerSDR
     GUI_RETURN_CODE=$BANDVIEW_START_CODE
   ;;
-  Testmenu_boot)
+  TestMenu_boot)
     # Start the Portsdown in the test equipment menu
     GUI_RETURN_CODE=207
   ;;
@@ -412,6 +413,10 @@ echo
     ;;
     151)
       /home/pi/portsdown/bin/limeviewng
+      GUI_RETURN_CODE="$?"
+    ;;
+    152)
+      /home/pi/portsdown/bin/nf_meterng
       GUI_RETURN_CODE="$?"
     ;;
     160)
