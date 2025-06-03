@@ -234,7 +234,7 @@ if [ "$UPDATE" == "false" ]; then
 
   # Rotate the touchscreen 2 display to the normal orientation 
   if !(grep video=DSI-2 /boot/firmware/cmdline.txt) then
-    sudo sed -i '1s,$, video=DSI-2:720x1280@60,rotate=270,' /boot/firmware/cmdline.txt
+    sudo sed -i '1s,$, video=DSI-2:720x1280@60\,rotate=270,' /boot/firmware/cmdline.txt
   fi
 
   # Set the default HDMI 0 output to 720p60
@@ -287,7 +287,7 @@ if [ "$UPDATE" == "false" ]; then
     SUCCESS=$?; BuildLogMsg $SUCCESS "Wiring Pi Build"
   mv debian-template/wiringpi_3.14_arm64.deb .
     SUCCESS=$?; BuildLogMsg $SUCCESS "Moved wiringpi_3.14_arm64.deb"
-  sudo apt install ./wiringpi_3.4_arm64.deb
+  sudo apt install ./wiringpi_3.14_arm64.deb
     SUCCESS=$?; BuildLogMsg $SUCCESS "Installed Wiring Pi"
   cd /home/pi
 fi
@@ -579,7 +579,7 @@ if [ "$UPDATE" == "false" ]; then
     sudo reboot now
   fi
 
-elif   # Update
+else   # Update
 
   echo
   echo "--------------------------------------------"
@@ -587,6 +587,8 @@ elif   # Update
   echo "-----                                  -----"
   echo "-----           Rebooting now          -----"
   echo "--------------------------------------------"
+
+  sudo reboot now
 
 fi
 
