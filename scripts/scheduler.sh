@@ -132,6 +132,7 @@ ChooseBandViewerSDR()
 # 150  Run the Meteor Viewer
 # 151  Exit from gui requesting start of LimeSDR BandViewer for LimeSuiteNG
 # 152  Exit from gui requesting start of LimeSDR NF Meter for LimeSuiteNG
+# 155  Exit from gui requesting start of preferred BandViewer
 # 160  Shutdown from GUI
 # 170  Spectrum Analyser Scheduler
 # 171  Spectrum Analyser DATV RX on IF
@@ -418,6 +419,11 @@ echo
     152)
       /home/pi/portsdown/bin/nf_meterng
       GUI_RETURN_CODE="$?"
+    ;;
+    155)
+      # Start the Preferred Band Viewer
+      ChooseBandViewerSDR
+      GUI_RETURN_CODE=$BANDVIEW_START_CODE
     ;;
     160)
       sleep 1

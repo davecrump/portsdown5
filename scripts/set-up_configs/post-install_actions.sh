@@ -23,8 +23,10 @@ DisplayUpdateMsg() {
   # Display the update message on the desktop
   sudo fbi -T 1 -noverbose -a /home/pi/tmp/update.jpg >/dev/null 2>/dev/null
   (sleep 1; sudo killall -9 fbi >/dev/null 2>/dev/null) &  ## kill fbi once it has done its work
-#  /home/pi/rpidatv/scripts/single_screen_grab_for_web.sh &
+  /home/pi/portsdown/scripts/single_screen_grab_for_web.sh &
 }
+
+echo $(date -u) "Build Stage 2 Started" | sudo tee -a /home/pi/p5_initial_build_log.txt  > /dev/null
 
 BUILD_STATUS="Success"
 
@@ -77,7 +79,7 @@ if (grep 'Installing LimeNET Micro DE' /home/pi/p5_initial_build_log.txt) then
 
   export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/home/pi/LimeSuiteNG/build/lib/
 
-  # Compile Legacy Lime BandViewer
+  # Compile NG Lime BandViewer
   echo
   echo "----------------------------------------"
   echo "----- Compiling NG Lime BandViewer -----"
@@ -98,8 +100,11 @@ echo "Version number" | sudo tee -a /home/pi/p5_initial_build_log.txt  > /dev/nu
 head -c 9 /home/pi/portsdown/version_history.txt | sudo tee -a /home/pi/p5_initial_build_log.txt  > /dev/null
 
 if [ "$BUILD_STATUS" == "Fail" ] ; then
+  echo $(date -u) "Build Stage 2 Fail" | sudo tee -a /home/pi/p5_initial_build_log.txt  > /dev/null
   DisplayUpdateMsg "Build stage 2, failed\nread the log at\n/home/pi/p5_initial_build_log.txt"
   sleep 10
+else
+  echo $(date -u) "Build Stage 2 Complete" | sudo tee -a /home/pi/p5_initial_build_log.txt  > /dev/null
 fi
 
 cd /home/pi
