@@ -1,6 +1,6 @@
 #! /bin/bash
 
-# Compile portsdown gui, don't run SA Sceduler
+# Compile portsdown gui, don't run the Sceduler
 
 # set -x
 

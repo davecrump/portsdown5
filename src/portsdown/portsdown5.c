@@ -7211,7 +7211,7 @@ void waitForScreenAction()
           break;
         case 1:                                                      // BandViewer
           clearScreen(0, 0, 0);
-          cleanexit(136);
+          cleanexit(155);
           break;
         case 2:                                                      // Test Equipment
           printf("MENU 7 \n");                                       // Modulation Menu

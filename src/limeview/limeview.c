@@ -89,6 +89,8 @@ float gain;
 
 int scaledX, scaledY;
 
+int FBOrientation = 0;                 // 0, 90, 180 or 270
+
 int wbuttonsize = 100;
 int hbuttonsize = 50;
 int rawX, rawY;
@@ -199,6 +201,8 @@ void *WaitMouseEvent(void * arg);
 void *WebClickListener(void * arg);
 void parseClickQuerystring(char *query_string, int *x_ptr, int *y_ptr);
 FFUNC touchscreenClick(ffunc_session_t * session);
+void take_snap();
+void snap_from_menu();
 void do_snapcheck();
 int IsImageToBeChanged(int x,int y);
 int CheckLimeConnect();
@@ -489,6 +493,10 @@ void ReadSavedParams()
   GetConfigParam(PATH_CONFIG, "baseline20db", response);
   BaseLine20dB = atoi(response);
 
+  strcpy(response, "0");  // highlight null responses
+  GetConfigParam(PATH_SCONFIG, "fborientation", response);
+  FBOrientation = atoi(response);
+
   GetConfigParam(PATH_SCONFIG, "webcontrol", response);
   if (strcmp(response, "enabled") == 0)
   {
@@ -731,17 +739,80 @@ FFUNC touchscreenClick(ffunc_session_t * session)
 }
 
 
+void take_snap()
+{
+  FILE *fp;
+  char SnapIndex[255];
+  int SnapNumber;
+  char mvcmd[255];
+  char echocmd[255];
+  char SnapIndexText[255];
+
+  // Fetch the Next Snap serial number
+  fp = popen("cat /home/pi/snaps/snap_index.txt", "r");
+  if (fp == NULL) 
+  {
+    printf("Failed to run command\n" );
+    exit(1);
+  }
+  // Read the output a line at a time - output it. 
+  while (fgets(SnapIndex, 20, fp) != NULL)
+  {
+    //printf("%s", SnapIndex);
+  }
+
+  pclose(fp);
+
+  SnapNumber=atoi(SnapIndex);  // this is the next snap number to be saved.  Needs incrementing before exit
+printf("pre-fb2png\n");
+  fb2png(); // saves snap to /home/pi/tmp/snapshot.png
+printf("post-fb2png\n");
+
+  system("convert /home/pi/tmp/snapshot.png /home/pi/tmp/screen.jpg");
+
+  sprintf(SnapIndexText, "%d", SnapNumber);
+  strcpy(mvcmd, "cp /home/pi/tmp/screen.jpg /home/pi/snaps/snap");
+  strcat(mvcmd, SnapIndexText);
+  strcat(mvcmd, ".jpg >/dev/null 2>/dev/null");
+  system(mvcmd);
+
+  snprintf(echocmd, 50, "echo %d > /home/pi/snaps/snap_index.txt", SnapNumber + 1);
+  system (echocmd); 
+}
+
+
+void snap_from_menu()
+{
+  freeze = true; 
+  SetButtonStatus(ButtonNumber(CurrentMenu, 0), 1);  // hide the capture button 
+  UpdateWindow();                                    // paint the hide
+
+  while(! frozen)                                    // wait till the end of the scan
+  {
+    usleep(10);
+  }
+
+  take_snap();
+
+  SetButtonStatus(ButtonNumber(CurrentMenu, 0), 0);  // unhide the button
+  UpdateWindow();                                    // paint the un-hide
+  freeze = false;
+}
+
+
 void do_snapcheck()
 {
   FILE *fp;
-  char SnapIndex[256];
+  char SnapIndex[255];
   int SnapNumber;
   int Snap;
   int LastDisplayedSnap = -1;
   int rawX, rawY, rawPressure;
   int TCDisplay = -1;
 
-  char fbicmd[256];
+  char fbicmd[255];
+  char rotatecmd[255];
+  char labelcmd[255];
 
   // Fetch the Next Snap serial number
   fp = popen("cat /home/pi/snaps/snap_index.txt", "r");
@@ -766,15 +837,48 @@ void do_snapcheck()
     if(LastDisplayedSnap != Snap)  // only redraw if not already there
     {
       sprintf(SnapIndex, "%d", Snap);
-      strcpy(fbicmd, "sudo fbi -T 1 -noverbose -a /home/pi/snaps/snap");
-      strcat(fbicmd, SnapIndex);
-      strcat(fbicmd, ".jpg >/dev/null 2>/dev/null");
-      system(fbicmd);
+
+      if (FBOrientation == 180)
+      {
+        system("rm /home/pi/tmp/snapinverted.jpg >/dev/null 2>/dev/null");
+        system("rm /home/pi/tmp/labelledsnap.jpg >/dev/null 2>/dev/null");
+
+        // Label the snap before inverting it
+        strcpy(labelcmd, "convert /home/pi/snaps/snap");
+        strcat(labelcmd, SnapIndex);
+        strcat(labelcmd, ".jpg -pointsize 20 -fill white -draw 'text 5,460 \"Snap ");
+        strcat(labelcmd, SnapIndex);
+        strcat(labelcmd, "\"' /home/pi/tmp/labelledsnap.jpg");
+        system(labelcmd);
+
+        // Invert the labelled snap
+        strcpy(rotatecmd, "convert /home/pi/tmp/labelledsnap");
+        strcat(rotatecmd, ".jpg -rotate 180 /home/pi/tmp/snapinverted.jpg");
+        system(rotatecmd);
+
+        // Display it
+        strcpy(fbicmd, "sudo fbi -T 1 -noverbose -a /home/pi/tmp/snapinverted.jpg >/dev/null 2>/dev/null");
+        system(fbicmd);
+      }
+      else
+      {
+        // Label the snap
+        strcpy(labelcmd, "convert /home/pi/snaps/snap");
+        strcat(labelcmd, SnapIndex);
+        strcat(labelcmd, ".jpg -pointsize 20 -fill white -draw 'text 5,460 \"Snap ");
+        strcat(labelcmd, SnapIndex);
+        strcat(labelcmd, "\"' /home/pi/tmp/labelledsnap.jpg");
+        system(labelcmd);
+
+        // Display it
+        strcpy(fbicmd, "sudo fbi -T 1 -noverbose -a /home/pi/tmp/labelledsnap.jpg >/dev/null 2>/dev/null");
+        system(fbicmd);
+      }
       LastDisplayedSnap = Snap;
       UpdateWeb();
     }
 
-    if (getTouchSample(&rawX, &rawY, &rawPressure)==0) continue;
+    if (getTouchSample(&rawX, &rawY, &rawPressure) == 0) continue;
 
     system("sudo killall fbi >/dev/null 2>/dev/null");  // kill instance of fbi
 
@@ -797,16 +901,13 @@ void do_snapcheck()
   system("sudo killall fbi >/dev/null 2>/dev/null");  // kill any instance of fbi
 }
 
+
 int IsImageToBeChanged(int x,int y)
 {
   // Returns -1 for LHS touch, 0 for centre and 1 for RHS
 
   TransformTouchMap(x,y);       // Sorts out orientation and approx scaling of the touch map
 
-  if (scaledY >= hscreen/2)
-  {
-    return 0;
-  }
   if (scaledX <= wscreen/8)
   {
     return -1;
@@ -2895,15 +2996,7 @@ void *WaitButtonEvent(void * arg)
       switch (i)
       {
         case 0:                                            // Capture Snap
-          freeze = true; 
-          SetButtonStatus(ButtonNumber(CurrentMenu, 0), 1);  // hide the capture button 
-          UpdateWindow();                                    // paint the hide
-          while(! frozen);                                   // wait till the end of the scan
-          //system("/home/pi/rpidatv/scripts/snap2.sh");
-          fb2png();
-          SetButtonStatus(ButtonNumber(CurrentMenu, 0), 0);
-          UpdateWindow();
-          freeze = false;
+          snap_from_menu();
           break;
         case 2:                                            // Select Settings
           printf("Settings Menu 3 Requested\n");
@@ -2991,14 +3084,7 @@ void *WaitButtonEvent(void * arg)
       switch (i)
       {
         case 0:                                            // Capture Snap
-          freeze = true; 
-          SetButtonStatus(ButtonNumber(CurrentMenu, 0), 1);
-          UpdateWindow();
-          while(! frozen);
-          system("/home/pi/rpidatv/scripts/snap2.sh");
-          SetButtonStatus(ButtonNumber(CurrentMenu, 0), 0);
-          UpdateWindow();
-          freeze = false;
+          snap_from_menu();
           break;
         case 2:                                            // Peak
           if ((markeron == false) || (markermode != 2))
@@ -3124,14 +3210,7 @@ void *WaitButtonEvent(void * arg)
       switch (i)
       {
         case 0:                                            // Capture Snap
-          freeze = true; 
-          SetButtonStatus(ButtonNumber(CurrentMenu, 0), 1);
-          UpdateWindow();
-          while(! frozen);
-          system("/home/pi/rpidatv/scripts/snap2.sh");
-          SetButtonStatus(ButtonNumber(CurrentMenu, 0), 0);
-          UpdateWindow();
-          freeze = false;
+          snap_from_menu();
           break;
         case 2:                                            // Centre Freq
           ChangeLabel(i);
@@ -3198,14 +3277,7 @@ void *WaitButtonEvent(void * arg)
       switch (i)
       {
         case 0:                                            // Capture Snap
-          freeze = true; 
-          SetButtonStatus(ButtonNumber(CurrentMenu, 0), 1);
-          UpdateWindow();
-          while(! frozen);
-          system("/home/pi/rpidatv/scripts/snap2.sh");
-          SetButtonStatus(ButtonNumber(CurrentMenu, 0), 0);
-          UpdateWindow();
-          freeze = false;
+          snap_from_menu();
           break;
         case 2:                                            // Snap Viewer
           freeze = true;
@@ -3274,14 +3346,7 @@ void *WaitButtonEvent(void * arg)
       switch (i)
       {
         case 0:                                            // Capture Snap
-          freeze = true; 
-          SetButtonStatus(ButtonNumber(CurrentMenu, 0), 1);
-          UpdateWindow();
-          while(! frozen);
-          system("/home/pi/rpidatv/scripts/snap2.sh");
-          SetButtonStatus(ButtonNumber(CurrentMenu, 0), 0);
-          UpdateWindow();
-          freeze = false;
+          snap_from_menu();
           break;
         case 2:                                            // Classic SA Mode
           SetMode(i);
@@ -3353,15 +3418,7 @@ void *WaitButtonEvent(void * arg)
       switch (i)
       {
         case 0:                                            // Capture Snap
-          freeze = true; 
-          SetButtonStatus(ButtonNumber(CurrentMenu, 0), 1);
-          UpdateWindow();
-          while(! frozen);
-          system("/home/pi/rpidatv/scripts/snap2.sh");
-          SetButtonStatus(ButtonNumber(CurrentMenu, 0), 0);
-          Start_Highlights_Menu6();
-          UpdateWindow();
-          freeze = false;
+          snap_from_menu();
           break;
         case 2:                                            // 100 kHz
         case 3:                                            // 200 kHz
@@ -3407,14 +3464,7 @@ void *WaitButtonEvent(void * arg)
       switch (i)
       {
         case 0:                                            // Capture Snap
-          freeze = true; 
-          SetButtonStatus(ButtonNumber(CurrentMenu, 0), 1);
-          UpdateWindow();
-          while(! frozen);
-          system("/home/pi/rpidatv/scripts/snap2.sh");
-          SetButtonStatus(ButtonNumber(CurrentMenu, 0), 0);
-          UpdateWindow();
-          freeze = false;
+          snap_from_menu();
           break;
         case 2:                                            // pfreq1
         case 3:                                            // pfreq2 
@@ -3456,15 +3506,7 @@ void *WaitButtonEvent(void * arg)
       switch (i)
       {
         case 0:                                            // Capture Snap
-          freeze = true; 
-          SetButtonStatus(ButtonNumber(CurrentMenu, 0), 1);
-          UpdateWindow();
-          while(! frozen);
-          system("/home/pi/rpidatv/scripts/snap2.sh");
-          SetButtonStatus(ButtonNumber(CurrentMenu, 0), 0);
-          Start_Highlights_Menu8();
-          UpdateWindow();
-          freeze = false;
+          snap_from_menu();
           break;
         case 2:                                            // 100%
         case 3:                                            // 90%
@@ -3508,14 +3550,7 @@ void *WaitButtonEvent(void * arg)
       switch (i)
       {
         case 0:                                            // Capture Snap
-          freeze = true; 
-          SetButtonStatus(ButtonNumber(CurrentMenu, 0), 1);
-          UpdateWindow();
-          while(! frozen);
-          system("/home/pi/rpidatv/scripts/snap2.sh");
-          SetButtonStatus(ButtonNumber(CurrentMenu, 0), 0);
-          UpdateWindow();
-          freeze = false;
+          snap_from_menu();
           break;
         case 2:                                            // Freq Presets
           printf("Freq Presets Menu 10 Requested\n");
@@ -3567,14 +3602,7 @@ void *WaitButtonEvent(void * arg)
       switch (i)
       {
         case 0:                                            // Capture Snap
-          freeze = true; 
-          SetButtonStatus(ButtonNumber(CurrentMenu, 0), 1);
-          UpdateWindow();
-          while(! frozen);
-          system("/home/pi/rpidatv/scripts/snap2.sh");
-          SetButtonStatus(ButtonNumber(CurrentMenu, 0), 0);
-          UpdateWindow();
-          freeze = false;
+          snap_from_menu();
           break;
         case 2:                                            // pfreq1
         case 3:                                            // pfreq2 
@@ -3616,14 +3644,7 @@ void *WaitButtonEvent(void * arg)
       switch (i)
       {
         case 0:                                            // Capture Snap
-          freeze = true; 
-          SetButtonStatus(ButtonNumber(CurrentMenu, 0), 1);
-          UpdateWindow();
-          while(! frozen);
-          system("/home/pi/rpidatv/scripts/snap2.sh");
-          SetButtonStatus(ButtonNumber(CurrentMenu, 0), 0);
-          UpdateWindow();
-          freeze = false;
+          snap_from_menu();
           break;
         case 2:                                            // Back to Full Range
           Range20dB = false;
@@ -3683,14 +3704,7 @@ void *WaitButtonEvent(void * arg)
       switch (i)
       {
         case 0:                                            // Capture Snap
-          freeze = true; 
-          SetButtonStatus(ButtonNumber(CurrentMenu, 0), 1);
-          UpdateWindow();
-          while(! frozen);
-          system("/home/pi/rpidatv/scripts/snap2.sh");
-          SetButtonStatus(ButtonNumber(CurrentMenu, 0), 0);
-          UpdateWindow();
-          freeze = false;
+          snap_from_menu();
           break;
         case 2:                                            // Set Waterfall Base
         case 3:                                            // Set waterfall range
@@ -3744,8 +3758,6 @@ void *WaitButtonEvent(void * arg)
   }
   return NULL;
 }
-
-
 
 
 /////////////////////////////////////////////// DEFINE THE BUTTONS ///////////////////////////////

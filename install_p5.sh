@@ -247,6 +247,9 @@ if [ "$UPDATE" == "false" ]; then
     sudo sh -c "echo disable_splash=1 >> /boot/firmware/config.txt"
   fi
 
+  # Disable the automatic update of IP address on login screen (which overwrites menu)
+  sudo mv /etc/issue.d/IP.issue /etc/issue.d/IP.issue.old
+
   # If required, add the specific parameters for LimeSDR XTRX and LMN 2.0 DE
   if [ "$LMNDE" == "true" ]; then
     sudo sh -c "echo dtoverlay=pcie-32bit-dma >> /boot/firmware/config.txt"
@@ -265,9 +268,6 @@ if [ "$UPDATE" == "false" ]; then
   echo "alias ugui='/home/pi/portsdown/utils/uguir.sh'" >> /home/pi/.bash_aliases
   echo "alias gui='/home/pi/portsdown/utils/guir.sh'"  >> /home/pi/.bash_aliases
   echo "alias stop='/home/pi/portsdown/utils/stop.sh'"  >> /home/pi/.bash_aliases
-  echo "alias ulsa='/home/pi/portsdown/utils/ulsa.sh'"  >> /home/pi/.bash_aliases
-  echo "alias ulsabv='/home/pi/portsdown/utils/ulsabv.sh'"  >> /home/pi/.bash_aliases
-  echo "alias ulsch='/home/pi/portsdown/utils/ulsch.sh'"  >> /home/pi/.bash_aliases
 
   echo
   echo "Amendments made"
@@ -300,7 +300,8 @@ if [ "$UPDATE" == "true" ]; then
   echo "-------------------------------"
 
   rm -rf /home/pi/configs
-  cp -r /home/pi/portsdown/configs/ /home/pi/configs/
+  mkdir /home/pi/configs/
+  cp -r /home/pi/portsdown/configs/*.txt /home/pi/configs/
 
   # Delete previous Portsdown files
   rm -rf /home/pi/portsdown
@@ -329,17 +330,13 @@ if [ "$UPDATE" == "true" ]; then
   echo "----- Restoring Configs ------"
   echo "------------------------------"
 
-  # update factory configs
-  rm -rf /home/pi/configs/factory
-  cp -r /home/pi/portsdown/configs/factory /home/pi/configs/factory
+  # Copy configs
+  cp -rf /home/pi/configs/*.txt /home/pi/portsdown/configs/
 
-  # Delete new Portsdown configs
-  rm -rf /home/pi/portsdown/configs
+  # Remove the old directory
+  rm -rf /home/pi/configs/
 
-  # Restore the old Configs
-  cp -r /home/pi/configs/ /home/pi/portsdown/configs
 fi
-
 
 # Compile the main Portsdown 5 application
 echo
@@ -580,6 +577,14 @@ if [ "$UPDATE" == "false" ]; then
   fi
 
 else   # Update
+
+  echo $(date -u) " Update Complete" | sudo tee -a /home/pi/p5_initial_build_log.txt  > /dev/null
+
+  # Record the Version Number
+  head -c 9 /home/pi/portsdown/version_history.txt > /home/pi/portsdown/configs/installed_version.txt
+  echo -e "\n" >> /home/pi/portsdown/configs/installed_version.txt
+  echo "Version number" | sudo tee -a /home/pi/p5_initial_build_log.txt  > /dev/null
+  head -c 9 /home/pi/portsdown/version_history.txt | sudo tee -a /home/pi/p5_initial_build_log.txt  > /dev/null
 
   echo
   echo "--------------------------------------------"

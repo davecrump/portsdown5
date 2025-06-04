@@ -1577,8 +1577,6 @@ void fb2png()
     for (j = 0 ; j < pngHeight ; j++)       // For each line
     {
       fbYoffset = j * fbPitch;              // calculate input framebuffer offset at left hand end of line
-    printf("\n*********** Non Rotated snap\n\n");
-
 
       for (i = 0 ; i < pngWidth ; i++)      // for each pixel in the output png
       {
