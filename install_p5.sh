@@ -297,9 +297,9 @@ if [ "$UPDATE" == "false" ]; then
   cd WiringPi
   ./build debian
     SUCCESS=$?; BuildLogMsg $SUCCESS "Wiring Pi Build"
-  mv debian-template/wiringpi_3.14_arm64.deb .
-    SUCCESS=$?; BuildLogMsg $SUCCESS "Moved wiringpi_3.14_arm64.deb"
-  sudo apt install ./wiringpi_3.14_arm64.deb
+  mv debian-template/wiringpi_3.16_arm64.deb .
+    SUCCESS=$?; BuildLogMsg $SUCCESS "Moved wiringpi_3.16_arm64.deb"
+  sudo apt install ./wiringpi_3.16_arm64.deb
     SUCCESS=$?; BuildLogMsg $SUCCESS "Installed Wiring Pi"
   cd /home/pi
 fi
@@ -491,30 +491,30 @@ mv /home/pi/portsdown/src/limeview/limeview /home/pi/portsdown/bin/limeview
 cd /home/pi
 
 # Compile Legacy Noise Figure Meter
-echo
-echo "-----------------------------------------------"
-echo "----- Compiling Legacy Noise Figure Meter -----"
-echo "-----------------------------------------------"
+#echo
+#echo "-----------------------------------------------"
+#echo "----- Compiling Legacy Noise Figure Meter -----"
+#echo "-----------------------------------------------"
 
-cd /home/pi/portsdown/src/nf_meter
-make -j 4 -O
-  SUCCESS=$?; BuildLogMsg $SUCCESS "Lime NF Meter compile"
+#cd /home/pi/portsdown/src/nf_meter
+#make -j 4 -O
+#  SUCCESS=$?; BuildLogMsg $SUCCESS "Lime NF Meter compile"
 
-mv /home/pi/portsdown/src/nf_meter/nf_meter /home/pi/portsdown/bin/nf_meter
-cd /home/pi
+#mv /home/pi/portsdown/src/nf_meter/nf_meter /home/pi/portsdown/bin/nf_meter
+#cd /home/pi
 
 # Compile Legacy Noise Meter
-echo
-echo "----------------------------------------"
-echo "----- Compiling Legacy Noise Meter -----"
-echo "----------------------------------------"
+#echo
+#echo "----------------------------------------"
+#echo "----- Compiling Legacy Noise Meter -----"
+#echo "----------------------------------------"
 
-cd /home/pi/portsdown/src/noise_meter
-make -j 4 -O
-  SUCCESS=$?; BuildLogMsg $SUCCESS "Lime Noise Meter compile"
+#cd /home/pi/portsdown/src/noise_meter
+#make -j 4 -O
+#  SUCCESS=$?; BuildLogMsg $SUCCESS "Lime Noise Meter compile"
 
-mv /home/pi/portsdown/src/noise_meter/noise_meter /home/pi/portsdown/bin/noise_meter
-cd /home/pi
+#mv /home/pi/portsdown/src/noise_meter/noise_meter /home/pi/portsdown/bin/noise_meter
+#cd /home/pi
 
 if [ "$UPDATE" == "false" ]; then
 
