@@ -7729,8 +7729,10 @@ void CheckforUpdate()
     case 1:
       if (current == update)                      // Up to date, but force update
       {
-        system("/home/pi/portsdown/install_p5.sh --update &");
-        // printf("/home/pi/portsdown/install_p5.sh --update &\n");
+        system("wget -q https://github.com/BritishAmateurTelevisionClub/portsdown5/raw/main/install_p5.sh -O /home/pi/install_p5.sh");
+        system("chmod +x /home/pi/install_p5.sh");
+        system("/home/pi/install_p5.sh --update &");
+        // printf("/home/pi/install_p5.sh --update &\n");
       }
       else if ((update == 0) || (dev == 0))       // No internet
       {
@@ -7743,8 +7745,10 @@ void CheckforUpdate()
       }
       else                                        // Do a Normal update 
       {
-        system("/home/pi/portsdown/install_p5.sh --update &");
-        // printf("/home/pi/portsdown/install_p5.sh --update &\n");
+        system("wget -q https://github.com/BritishAmateurTelevisionClub/portsdown5/raw/main/install_p5.sh -O /home/pi/install_p5.sh");
+        system("chmod +x /home/pi/install_p5.sh");
+        system("/home/pi/install_p5.sh --update &");
+        // printf("/home/pi/install_p5.sh --update &\n");
       }
       break;
     case 2:
@@ -7800,20 +7804,22 @@ void CheckforUpdate()
   switch (choice)
   {
     case 1:
+      system("wget -q https://github.com/davecrump/portsdown5/raw/main/install_p5.sh -O /home/pi/install_p5.sh");
+      system("chmod +x /home/pi/install_p5.sh");
       if (current == dev)                      // Up to date with dev, so force dev update
       {
-        system("/home/pi/portsdown/install_p5.sh --update --development &");
-        // printf("/home/pi/portsdown/install_p5.sh --update --development &\n");
+        system("/home/pi/install_p5.sh --update --development &");
+        // printf("/home/pi/install_p5.sh --update --development &\n");
       }
       else if (current > dev)                  // Unusual error
       {
-        system("/home/pi/portsdown/install_p5.sh --update --development &");
-        // printf("/home/pi/portsdown/install_p5.sh --update --development &\n");
+        system("/home/pi/install_p5.sh --update --development &");
+        // printf("/home/pi/install_p5.sh --update --development &\n");
       }
       else                                        // Dev update available
       {
-        system("/home/pi/portsdown/install_p5.sh --update --development &");
-         // printf("/home/pi/portsdown/install_p5.sh --update --development &\n");
+        system("/home/pi/install_p5.sh --update --development &");
+         // printf("/home/pi/install_p5.sh --update --development &\n");
       }
       break;
     case 2:
