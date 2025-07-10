@@ -1,6 +1,7 @@
 #ifndef __HARDWARE_H__
 #define __HARDWARE_H__
 
+int FindMouseEvent();
 int CheckMouse();
 void GetIPAddr(char IPAddress[18]);
 void GetIPAddr2(char IPAddress[18]);

@@ -96,10 +96,12 @@ set -- "${POSITIONAL_ARGS[@]}" # restore positional parameters
 
 # Act on arguments
 if [ "$UPDATE" == "true" ]; then
-  echo "--------------------------------------------------------"
-  echo "----- Updating an exiasting Portsdown 5 build ----------"
-  echo "--------------------------------------------------------"
+  echo "-------------------------------------------------------"
+  echo "----- Updating an existing Portsdown 5 build ----------"
+  echo "-------------------------------------------------------"
   echo $(date -u) "Updating - NOT new install" | sudo tee -a /home/pi/p5_initial_build_log.txt  > /dev/null
+  # Stop the existing Portsdown process
+  /home/pi/portsdown/utils/stop.sh &
 fi
 if [ "$GIT_SRC" == "davecrump" ]; then
   echo "--------------------------------------------------------"
@@ -206,12 +208,22 @@ if [ "$UPDATE" == "false" ]; then
     SUCCESS=$?; BuildLogMsg $SUCCESS "mosquitto install"
   sudo apt-get -y install mosquitto-clients                       # For F5OEO firmware on Pluto and LibreSDR
     SUCCESS=$?; BuildLogMsg $SUCCESS "mosquitto-clients install"
-  #sudo apt-get -y install libgmock-dev                            # For LimeSuiteNG 
-  # SUCCESS=$?; BuildLogMsg $SUCCESS "libgmock-dev install"
+  #sudo apt-get -y install libgmock-dev                           # For LimeSuiteNG 
+    #SUCCESS=$?; BuildLogMsg $SUCCESS "libgmock-dev install"
   sudo apt-get -y install libasound2-dev                          # For LongMynd
     SUCCESS=$?; BuildLogMsg $SUCCESS "libasound2-dev install"
   sudo apt-get -y install libavahi-client-dev                     # For LibreSDR??
     SUCCESS=$?; BuildLogMsg $SUCCESS "libavahi-client-dev install"
+  sudo apt-get -y install libzstd-dev                             # For libiio
+    SUCCESS=$?; BuildLogMsg $SUCCESS "libzstd-dev"
+  sudo apt-get -y install libxml2-dev                             # For libiio
+    SUCCESS=$?; BuildLogMsg $SUCCESS "libxml2-dev"
+  sudo apt-get -y install bison                                   # For libiio
+    SUCCESS=$?; BuildLogMsg $SUCCESS "bison"
+  sudo apt-get -y install flex                                    # For libiio
+    SUCCESS=$?; BuildLogMsg $SUCCESS "flex"
+  sudo apt-get -y install libaio-dev                              # For libiio
+    SUCCESS=$?; BuildLogMsg $SUCCESS "libaio-dev"
 fi
 
 # Placeholder for New packages during update
@@ -350,45 +362,62 @@ make -j 4 -O
 mv /home/pi/portsdown/src/portsdown/portsdown5 /home/pi/portsdown/bin/portsdown5
 cd /home/pi
 
+if [ "$UPDATE" == "false" ]; then
+  # Install LimeSuite 23.11 as at 8 May 2024
+  # Commit 9dce3b6a6bd66537a2249ad27101345d31aafc89
+  echo
+  echo "--------------------------------------"
+  echo "----- Installing LimeSuite 22.09 -----"
+  echo "--------------------------------------"
 
-# Install LimeSuite 23.11 as at 8 May 2024
-# Commit 9dce3b6a6bd66537a2249ad27101345d31aafc89
-echo
-echo "--------------------------------------"
-echo "----- Installing LimeSuite 22.09 -----"
-echo "--------------------------------------"
+  wget https://github.com/myriadrf/LimeSuite/archive/9dce3b6a6bd66537a2249ad27101345d31aafc89.zip -O master.zip
+    SUCCESS=$?; BuildLogMsg $SUCCESS "LimeSuite download"
 
-wget https://github.com/myriadrf/LimeSuite/archive/9dce3b6a6bd66537a2249ad27101345d31aafc89.zip -O master.zip
-  SUCCESS=$?; BuildLogMsg $SUCCESS "LimeSuite download"
+  # Copy into place
+  unzip -o master.zip
+  cp -f -r LimeSuite-9dce3b6a6bd66537a2249ad27101345d31aafc89 LimeSuite
+  rm -rf LimeSuite-9dce3b6a6bd66537a2249ad27101345d31aafc89
+  rm master.zip
 
-# Copy into place
-unzip -o master.zip
-cp -f -r LimeSuite-9dce3b6a6bd66537a2249ad27101345d31aafc89 LimeSuite
-rm -rf LimeSuite-9dce3b6a6bd66537a2249ad27101345d31aafc89
-rm master.zip
+  # Compile LimeSuite
+  cd LimeSuite/
+  mkdir dirbuild
+  cd dirbuild/
+  cmake ../
+    SUCCESS=$?; BuildLogMsg $SUCCESS "LimeSuite cmake"
+  make -j 4 -O
+    SUCCESS=$?; BuildLogMsg $SUCCESS "LimeSuite make"
+  sudo make install
+  sudo ldconfig
+  cd /home/pi
 
-# Compile LimeSuite
-cd LimeSuite/
-mkdir dirbuild
-cd dirbuild/
-cmake ../
-  SUCCESS=$?; BuildLogMsg $SUCCESS "LimeSuite cmake"
-make -j 4 -O
-  SUCCESS=$?; BuildLogMsg $SUCCESS "LimeSuite make"
-sudo make install
-sudo ldconfig
-cd /home/pi
+  # Install udev rules for LimeSuite
+  cd LimeSuite/udev-rules
+  chmod +x install.sh
+  sudo /home/pi/LimeSuite/udev-rules/install.sh
+    SUCCESS=$?; BuildLogMsg $SUCCESS "LimeSuite udev rules"
+  cd /home/pi	
 
-# Install udev rules for LimeSuite
-cd LimeSuite/udev-rules
-chmod +x install.sh
-sudo /home/pi/LimeSuite/udev-rules/install.sh
-  SUCCESS=$?; BuildLogMsg $SUCCESS "LimeSuite udev rules"
-cd /home/pi	
+  # Record the LimeSuite Version	
+  echo "9dce3b6" >/home/pi/LimeSuite/commit_tag.txt
 
-# Record the LimeSuite Version	
-echo "9dce3b6" >/home/pi/LimeSuite/commit_tag.txt
+  # Install libiio for Pluto
+  echo
+  echo "---------------------------------------"
+  echo "----- Installing Libiio for Pluto -----"
+  echo "---------------------------------------"
 
+  cd /home/pi
+  git clone https://github.com/analogdevicesinc/libiio.git
+    SUCCESS=$?; BuildLogMsg $SUCCESS "git clone libiio"
+  cd libiio
+  cmake ./
+    SUCCESS=$?; BuildLogMsg $SUCCESS "cmake libiio"
+  make all
+    SUCCESS=$?; BuildLogMsg $SUCCESS "make libiio"
+  sudo make install
+  cd /home/pi
+fi
 
 # Compile legacy LimeSDR Toolbox
 echo

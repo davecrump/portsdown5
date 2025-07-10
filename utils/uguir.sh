@@ -9,6 +9,13 @@ then
   ps -ef | grep startup.sh | grep -v grep | awk '{print $2}' | xargs kill
 fi
 
+if pgrep -f -x "single_screen_grab_for_web.sh" >/dev/null
+then
+  ps -ef | grep single_screen_grab_for_web.sh | grep -v grep | awk '{print $2}' | xargs kill
+fi
+
+sudo killall fb2png >/dev/null 2>/dev/null
+
 sudo killall portsdown5 >/dev/null 2>/dev/null
 cd /home/pi/portsdown/src/portsdown
 # make clean
