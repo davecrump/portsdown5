@@ -23,6 +23,7 @@
 #include "../common/touch.h"
 #include "../common/graphics.h"
 #include "../common/timing.h"
+#include "../common/hardware.h"
 #include "../common/buffer/buffer_circular.h"
 #include "../common/ffunc.h"
 #include "../common/LMNspi/LMNspi.h"
@@ -189,6 +190,13 @@ char DisplayType[31];
 bool rotate_display = true;
 bool touchscreen_present = false;
 
+// ******************* External functions for reference *********************
+
+// *************** hardware.c: ***************
+
+// int FindMouseEvent();
+// int CheckMouse();
+
 ///////////////////////////////////////////// FUNCTION PROTOTYPES ///////////////////////////////
 
 void GetConfigParam(char *PathConfigFile, char *Param, char *Value);
@@ -206,7 +214,6 @@ void snap_from_menu();
 void do_snapcheck();
 int IsImageToBeChanged(int x,int y);
 int CheckLimeConnect();
-int CheckMouse();
 void UpdateWeb();
 void Keyboard(char RequestText[63], char InitText[63], int MaxLength);
 int openTouchScreen(int NoDevice);
@@ -542,13 +549,14 @@ void *WaitMouseEvent(void * arg)
   int y = 0;
   int scroll = 0;
   int fd;
-  //t inv_y;
+  char mouse_event_name[63];
 
   bool left_button_action = false;
+  snprintf(mouse_event_name, 63, "/dev/input/event%d", FindMouseEvent());
 
   // Note x = y = 0 at bottom left
 
-  if ((fd = open("/dev/input/event0", O_RDONLY)) < 0)
+  if ((fd = open(mouse_event_name, O_RDONLY)) < 0)
   {
     perror("evdev open");
     exit(1);
@@ -648,19 +656,6 @@ void *WaitMouseEvent(void * arg)
     //printf("Mouse X = %d, mouse Y = %d\n", x, y);
   }
 }
-
-
-//void handle_mouse()
-//{
-  // First check if mouse is connected
-//  if (CheckMouse() != 0)    // Mouse not connected
-//  {
-//    return;
-//  }
-//  mouse_connected = true;
-//  printf("Starting Mouse Thread\n");
-//  pthread_create (&thmouse, NULL, &WaitMouseEvent, NULL);
-//}
 
 
 void *WebClickListener(void * arg)
@@ -955,43 +950,6 @@ return 0;
   /* close */
   pclose(fp);
   return responseint;
-}
-
-
-/***************************************************************************//**
- * @brief Detects if a mouse is currently connected
- *
- * @param nil
- *
- * @return 0 if connected, 1 if not connected
-*******************************************************************************/
-
-int CheckMouse()
-{
-  FILE *fp;
-  char response_line[255];
-
-  fp = popen("ls -l /dev/input | grep 'mouse'", "r");
-  if (fp == NULL)
-  {
-    printf("Failed to run command\n" );
-    exit(1);
-  }
-
-  // Response is "crw-rw---- 1 root input 13, 32 Apr 29 17:02 mouse0" if present, null if not
-  // So, if there is a response, return 0.
-
-  /* Read the output a line at a time - output it. */
-  while (fgets(response_line, 250, fp) != NULL)
-  {
-    if (strlen(response_line) > 1)
-    {
-      pclose(fp);
-      return 0;
-    }
-  }
-  pclose(fp);
-  return 1;
 }
 
 
@@ -5276,7 +5234,6 @@ static void terminate(int sig)
 
 int main(void)
 {
-  int NoDeviceEvent=0;
   wscreen = 800;
   hscreen = 480;
   int screenXmax, screenXmin;
@@ -5315,52 +5272,50 @@ int main(void)
     LMNspi();
   }
 
+  // Sort out display and control.  If touchscreen detected, use that (and set config) with optional web control.
+  // If no touchscreen, check for mouse.  If mouse detected, use that and set hdmi720 if hdmi mode not selected
+  // Allow optional web control.  If no mouse, set hdmi720 and enable web control.
+
   // Check the display type in the config file
-  strcpy(response, "Element14_7");
+  strcpy(response, "not_set");
   GetConfigParam(PATH_SCONFIG, "display", response);
   strcpy(DisplayType, response);
 
-  // Check for presence of touchscreen
-  for(NoDeviceEvent = 0; NoDeviceEvent < 7; NoDeviceEvent++)
+  if ((strcmp(DisplayType, "Element14_7") == 0) || (strcmp(DisplayType, "touch2") == 0))
   {
-    if (openTouchScreen(NoDeviceEvent) == 1)
-    {
-      if(getTouchScreenDetails(&screenXmin, &screenXmax, &screenYmin, &screenYmax) == 1) break;
-    }
-  }
-  if(NoDeviceEvent != 7)  // Touchscreen detected
-  {
-    printf("Touchscreen detected\n");
+    printf("Touchscreen detected after boot\n");
     touchscreen_present = true;
 
-    // Set correct entry in config file if required.  No need to reboot
-    if ((strcmp(DisplayType, "Element14_7") != 0) && (strcmp(DisplayType, "dfrobot5") != 0))
+    // Open the touchscreen
+    for (i = 0; i < 7; i++)
     {
-      strcpy(DisplayType, "Element14_7");
-      SetConfigParam(PATH_SCONFIG, "display", "Element14_7");
+      if (openTouchScreen(i) == 1)
+      {
+        if(getTouchScreenDetails(&screenXmin, &screenXmax, &screenYmin, &screenYmax) == 1) break;
+      }
     }
 
     // Create Touchscreen thread
     pthread_create (&thtouchscreen, NULL, &WaitTouchscreenEvent, NULL);
-  }
-  else // No touchscreen detected, check for mouse
-  {
-    if (CheckMouse() == 0)
+
+    if (FindMouseEvent() >= 0)
     {
       mouse_connected = true;
       mouse_active = true;
       printf("Mouse Connected\n");
 
-      // If display not previously set to hdmi, correct it
-      if ((strcmp(DisplayType, "hdmi") != 0) && (strcmp(DisplayType, "hdmi480") != 0)
-        && (strcmp(DisplayType, "hdmi720") != 0) && (strcmp(DisplayType, "hdmi1080") != 0))
-      {
-        strcpy(DisplayType, "hdmi720");
-        SetConfigParam(PATH_SCONFIG, "display", "hdmi720");
-        // need a linux command here to edit the cmdline.txt file and a reboot
-        //system ("/home/pi/rpidatv/scripts/set_display_config.sh");
-        //system ("sudo reboot now");
-      }
+      // And start the mouse listener thread
+      printf("Starting Mouse Thread\n");
+      pthread_create (&thmouse, NULL, &WaitMouseEvent, NULL);
+    }
+  }
+  else // No touchscreen detected, check for mouse
+  {
+    if (FindMouseEvent() >= 0)
+    {
+      mouse_connected = true;
+      mouse_active = true;
+      printf("Mouse Connected\n");
 
       // And start the mouse listener thread
       printf("Starting Mouse Thread\n");
@@ -5370,18 +5325,16 @@ int main(void)
     {
       printf("Mouse not Connected\n");
 
-      SetConfigParam(PATH_SCONFIG, "webcontrol", "enabled");
-      webcontrol = true;
-
-      // If display not previously set to hdmi, correct it
-      if ((strcmp(DisplayType, "hdmi") != 0) && (strcmp(DisplayType, "hdmi480") != 0)
-        && (strcmp(DisplayType, "hdmi720") != 0) && (strcmp(DisplayType, "hdmi1080") != 0))
+      strcpy(response, "0");  // highlight null responses
+      GetConfigParam(PATH_SCONFIG, "webcontrol", response);
+      if (strcmp(response, "enabled") != 0)
       {
-        strcpy(DisplayType, "hdmi720");
-        SetConfigParam(PATH_SCONFIG, "display", "hdmi720");
-        // need a linux command here to edit the cmdline.txt file and a reboot
-        //system ("/home/pi/rpidatv/scripts/set_display_config.sh");
-        //system ("sudo reboot now");
+        SetConfigParam(PATH_SCONFIG, "webcontrol", "enabled");
+        webcontrol = true;
+
+        // Start the web click listener
+        pthread_create (&thwebclick, NULL, &WebClickListener, NULL);
+        printf("Created webclick listener thread\n");
       }
     }
   }

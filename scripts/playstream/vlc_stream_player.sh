@@ -4,8 +4,9 @@
 
 set -x
 
-PCONFIGFILE="/home/pi/rpidatv/portsdown/configs/portsdown_config.txt"
-RCONFIGFILE="/home/pi/rpidatv/portsdown/configs/longmynd_config.txt"
+PCONFIGFILE="/home/pi/portsdown/configs/portsdown_config.txt"
+RCONFIGFILE="/home/pi/portsdown/configs/longmynd_config.txt"
+PRESETFILE="/home/pi/portsdown/configs/stream_presets.txt"
 
 ############ FUNCTION TO READ CONFIG FILE #############################
 
@@ -28,25 +29,25 @@ EOF
 cd /home/pi
 
 # Read from receiver config file
-#AUDIO_OUT=$(get_config_var audio $RCONFIGFILE)
-#VLCVOLUME=$(get_config_var vlcvolume $PCONFIGFILE)
-AUDIO_OUT=hdmi
+AUDIO_OUT=$(get_config_var audio $RCONFIGFILE)
+VLCVOLUME=$(get_config_var vlcvolume $PCONFIGFILE)
 VLCVOLUME=128
 
-# Read in URL argument
-#STREAMURL=$1
-STREAMURL=rtmp://rtmp.batc.org.uk/live/gb3sq
+# Read in URL
+STREAMNUMBER=$(get_config_var selectedstream $PRESETFILE)
+STREAMREF=stream"$STREAMNUMBER"
+STREAMURL=$(get_config_var $STREAMREF $PRESETFILE)
 
 # Send audio to the correct port
 if [ "$AUDIO_OUT" == "rpi" ]; then
-  # Check for latest Buster update
+  # Check for Raspberry Pi 4
   aplay -l | grep -q 'bcm2835 Headphones'
   if [ $? == 0 ]; then
     AUDIO_DEVICE="hw:CARD=Headphones,DEV=0"
-  else
-    AUDIO_DEVICE="hw:CARD=ALSA,DEV=0"
+  else # Raspberry Pi 5
+    AUDIO_DEVICE=" "
   fi
-else
+else # USB Dongle
   AUDIO_DEVICE="hw:CARD=Device,DEV=0"
 fi
 if [ "$AUDIO_OUT" == "hdmi" ]; then
@@ -64,26 +65,22 @@ fi
 
 sudo killall vlc >/dev/null 2>/dev/null
 
-
 # Play a very short dummy file if this is a first start for VLC since boot
 # This makes sure the RX works on first selection after boot
-#if [[ ! -f /home/pi/tmp/vlcprimed ]]; then
-#  cvlc -I rc --rc-host 127.0.0.1:1111 -f --codec ffmpeg --video-title-timeout=100 \
-#    --width 800 --height 480 \
-#    --gain 3 --alsa-audio-device $AUDIO_DEVICE \
-#    /home/pi/rpidatv/video/blank.ts vlc:quit >/dev/null 2>/dev/null &
-#  sleep 1
-#  touch /home/pi/tmp/vlcprimed
-#  echo shutdown | nc 127.0.0.1 1111  >/dev/null 2>/dev/null
-#fi
+if [[ ! -f /home/pi/tmp/vlcprimed ]]; then
+  cvlc -I rc --rc-host 127.0.0.1:1111 -f --codec ffmpeg --video-title-timeout=100 \
+    --width 800 --height 480 \
+    --gain 3 --alsa-audio-device $AUDIO_DEVICE \
+    /home/pi/portsdown/videos/blank.ts vlc:quit >/dev/null 2>/dev/null &
+  sleep 1
+  touch /home/pi/tmp/vlcprimed
+  echo shutdown | nc 127.0.0.1 1111  >/dev/null 2>/dev/null
+fi
 
 # Start VLC
 
+cvlc -I rc --rc-host 127.0.0.1:1111 -f --video-title-timeout=100 \
   --gain 3 --alsa-audio-device $AUDIO_DEVICE \
-
-
-cvlc -I rc --rc-host 127.0.0.1:1111 --codec ffmpeg -f --video-title-timeout=100 \
-  --width 800 --height 480 \
   $STREAMURL >/dev/null 2>/dev/null &
 
 rm  /home/pi/tmp/stream_status.txt >/dev/null 2>/dev/null

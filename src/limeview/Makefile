@@ -12,6 +12,7 @@ limeview: limeview.c
 		lime.c \
 		fft.c \
 		../common/graphics.c \
+		../common/hardware.c \
 		../common/timing.c \
 		../common/ffunc.c \
 		../common/ffunc.h \
