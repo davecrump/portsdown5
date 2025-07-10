@@ -30,6 +30,7 @@
 #define PATH_PCONFIG "/home/pi/portsdown/configs/portsdown_config.txt"
 #define PATH_SCONFIG "/home/pi/portsdown/configs/system_config.txt"
 #define PATH_LMCONFIG "/home/pi/portsdown/configs/longmynd_config.txt"
+#define PATH_STREAM_PRESETS "/home/pi/portsdown/configs/stream_presets.txt"
 
 typedef struct {int r, g, b;} color_t;    // Colour (used for buttons)
 
@@ -176,11 +177,18 @@ char LMRXaudio[15];         // rpi or usb or hdmi
 char LMRXvolts[7];          // off, v or h
 char RXmod[7];              // DVB-S or DVB-T
 bool VLCResetRequest = false; // Set on touchsscreen request for VLC to be reset  
-int  CurrentVLCVolume = 256;  // Read from config file                   
+int  CurrentVLCVolume = 256;  // Read from config file
+char player[63];            // vlc or ffplay                   
 
 // LongMynd RX Received Parameters for display
 bool timeOverlay = false;    // Display time overlay on received metadata and snaps
 time_t t;                    // current time
+
+// Stream Player
+bool amendStreamPreset = false;        // Set to amend a stream preset
+int activeStream;                      // Stream currently ready to be played
+char streamURL[21][63];                // stream URL read from config file
+char streamLabel[21][63];              // stream Biutton Label read from config file
 
 // Threads
 pthread_t thtouchscreen;               //  listens to the touchscreen
@@ -214,6 +222,10 @@ pthread_t thbutton;                    //  Listens during receive
 // 22 Display and Control
 // 23 Receive Config
 // 24 Receive Presets
+// 25 Stream Player
+// 32 Decision of 2
+// 33 Decision of 3
+
 // 41 Alpha Keyboard
 
 
@@ -221,7 +233,7 @@ pthread_t thbutton;                    //  Listens during receive
 
 // *************** hardware.c: ***************
 
-// int CheckMouse();
+// int FindMouseEvent();
 // void GetIPAddr(char IPAddress[18]);
 // void GetIPAddr2(char IPAddress[18]);
 // void Get_wlan0_IPAddr(char IPAddress[18]);
@@ -240,6 +252,7 @@ void SetConfigParam(char *PathConfigFile, char *Param, char *Value);
 void CheckConfigFile();
 void ReadSavedParams();
 void ReadLMRXPresets();
+void ReadStreamPresets();
 int file_exist (char *filename);
 
 // Handle touch and mouse
@@ -259,6 +272,8 @@ void wait_touch();
 // Actually do useful things
 void TransmitStop();
 void TransmitStart();
+void playStreamFFPlay();
+void playStreamVLC();
 
 // Create the Menus
 int IsMenuButtonPushed();
@@ -326,9 +341,17 @@ void Define_Menu23();
 void Highlight_Menu23();
 void Define_Menu24();
 void Highlight_Menu24();
+void Define_Menu25();
+void Highlight_Menu25();
+void Define_Menu32();
+void Highlight_Menu32();
+void Define_Menu33();
+void Highlight_Menu33();
 void Define_Menu41();
 void Define_Menus();
-void Keyboard(char RequestText[63], char InitText[63], int MaxLength, char KeyboardReturn[63]);
+void Keyboard(char *RequestText, char *InitText, int MaxLength, char *KeyboardReturn, bool UpperCase);
+int Decision2(char *TitleText, char *QText, char *Button1Text, char *Button2Text, bool CancelButton);
+int Decision3(char *TitleText, char *QText, char *Button1Text, char *Button2Text, char *Button3Text, bool CancelButton);
 
 // Action Menu Buttons
 void selectTestEquip(int Button);
@@ -351,6 +374,7 @@ void toggleLMRXmode();
 void ChangeLMRXIP();
 void ChangeLMRXPort();
 void ChangeLMRXOffset();
+void ChangeLMRXPlayer();
 void ChangeLMTST();
 void ChangeLMSW();
 void ChangeLMChan();
@@ -359,6 +383,10 @@ void ChangeLMPresetSR(int NoButton);
 void toggleLMRXinput();
 void CycleLNBVolts();
 void CycleLMRXaudio();
+void AdjustVLCVolume(int adjustment);
+void ChangeStreamPreset(int NoButton);
+void ToggleAmendStreamPreset();
+void CheckforUpdate();
 
 // Useful stuff
 
@@ -370,6 +398,7 @@ void UpdateWeb();
 void waitForScreenAction();
 static void cleanexit(int exit_code);
 static void terminate(int dummy);
+
  
 // ************** End of Function Prototypes ******************************* //
 
@@ -621,6 +650,10 @@ void ReadSavedParams()
   HDMIResolution = atoi(response);
 
   strcpy(response, "0");  // highlight null responses
+  GetConfigParam(PATH_SCONFIG, "player", response);
+  strcpy(player, response);
+
+  strcpy(response, "0");  // highlight null responses
   GetConfigParam(PATH_SCONFIG, "touch", response);
   if (strcmp(response, "normal") == 0)
   {
@@ -658,6 +691,9 @@ void ReadSavedParams()
 
   // Read the LongMynd RX presets
   ReadLMRXPresets();
+
+  // Read the Stream presets
+  ReadStreamPresets();
 }
 
 
@@ -792,6 +828,35 @@ void ReadLMRXPresets()
   else
   {
     timeOverlay = true;
+  }
+}
+
+
+/***************************************************************************//**
+ * @brief Reads the Presets from stream presests from stream_presets.txt 
+ *        and formats them for Display and switching
+ *
+ * @param None.  Works on global variables
+ *
+ * @return void
+*******************************************************************************/
+
+void ReadStreamPresets()
+{
+  int i;
+  char response[63];
+  char param[31];
+
+  strcpy(response, "1");  // Default
+  GetConfigParam(PATH_STREAM_PRESETS, "selectedstream", response);
+  activeStream = atoi(response);
+
+  for (i = 1; i <= 20; i++)
+  {
+    snprintf(param, 31, "stream%d", i);
+    GetConfigParam(PATH_STREAM_PRESETS, param, streamURL[i]);
+    snprintf(param, 31, "label%d", i);
+    GetConfigParam(PATH_STREAM_PRESETS, param, streamLabel[i]);
   }
 }
 
@@ -1080,24 +1145,16 @@ void *WaitMouseEvent(void * arg)
   int y = 0;
   int scroll = 0;
   int fd;
+  char mouse_event_name[63];
 
   bool left_button_action = false;
 
-  if (touchscreen_present == false)  // so mouse on event0
+  snprintf(mouse_event_name, 63, "/dev/input/event%d", FindMouseEvent());
+
+  if ((fd = open(mouse_event_name, O_RDONLY)) < 0)
   {
-    if ((fd = open("/dev/input/event0", O_RDONLY)) < 0)
-    {
-      perror("evdev open");
-      exit(1);
-    }
-  }
-  else  // touchscreen present so mouse is on event1
-  {
-    if ((fd = open("/dev/input/event1", O_RDONLY)) < 0)
-    {
-      perror("evdev open");
-      exit(1);
-    }
+    perror("evdev open");
+    exit(1);
   }
 
   struct input_event ev;
@@ -1163,7 +1220,7 @@ void *WaitMouseEvent(void * arg)
         }
         if (ev.value == 589826)
         { 
-          printf("value %d, type %d, code %d, right mouse click \n", ev.value, ev.type, ev.code);
+          //printf("value %d, type %d, code %d, right mouse click \n", ev.value, ev.type, ev.code);
         }
       }
     }
@@ -1178,7 +1235,7 @@ void *WaitMouseEvent(void * arg)
         scaledX = mouse_x;
         scaledY = mouse_y;
         MouseClickForAction = true;
-        printf("scaledX = %d, scaledY = %d\n", scaledX, scaledY);
+        //printf("scaledX = %d, scaledY = %d\n", scaledX, scaledY);
       }
       left_button_action = false;
     }
@@ -1304,17 +1361,17 @@ void *WaitButtonLMRX(void * arg)
     else if((scaledX >= 35 * wscreen / 40) && (scaledY >= 8 * hscreen / 12) && (strcmp(DisplayType, "hdmi") != 0))  // Top Right
     {
       printf("Volume Up.\n");
-      //AdjustVLCVolume(51);
+      AdjustVLCVolume(51);
     }
     else if((scaledX >= 35 * wscreen / 40) && (scaledY >= 4 * hscreen / 12) && (scaledY < 8 * hscreen / 12) && (strcmp(DisplayType, "hdmi") != 0))  // mid Right
     {
       printf("Volume Mute.\n");
-      //AdjustVLCVolume(-512);
+      AdjustVLCVolume(-512);
     }
     else if((scaledX >= 35 * wscreen / 40) && (scaledY < 4 * hscreen / 12) && (strcmp(DisplayType, "hdmi") != 0))  // Bottom Right
     {
       printf("Volume Down.\n");
-      //AdjustVLCVolume(-51);
+      AdjustVLCVolume(-51);
     }
     else
     {
@@ -1353,7 +1410,6 @@ void *WaitButtonLMRX(void * arg)
   }
   return NULL;
 }
-
 
 
 void wait_touch()
@@ -2695,6 +2751,42 @@ void LMRX(int NoButton)
 }
 
 
+void playStreamFFPlay()
+{
+  int rawX;
+  int rawY;
+
+  MsgBox4(" ", " ", "Starting stream player", " ");
+
+  system("/home/pi/portsdown/scripts/playstream/ffplay_stream_player.sh >/dev/null 2>/dev/null &");
+
+  // Wait for touch
+  while(getTouchSample(&rawX, &rawY) == 0)
+  {
+    usleep(10000);
+  }
+  system("sudo killall ffplay");
+}
+
+
+void playStreamVLC()
+{
+  int rawX;
+  int rawY;
+
+  MsgBox4(" ", " ", "Starting stream player", " ");
+
+  system("/home/pi/portsdown/scripts/playstream/vlc_stream_player.sh >/dev/null 2>/dev/null &");
+
+  // Wait for touch
+  while(getTouchSample(&rawX, &rawY) == 0)
+  {
+    usleep(10000);
+  }
+  system("/home/pi/portsdown/scripts/playstream/vlc_stream_player_stop.sh >/dev/null 2>/dev/null &");
+}
+
+
 // Takes the global scaledX and scaled Y and checks against each defined button on the current menu.
 // returns the button number, 0 - 29 or -1 for not pushed
 
@@ -3247,6 +3339,9 @@ void redrawMenu()
     case 24:
       Highlight_Menu24();
       break;
+    case 25:
+      Highlight_Menu25();
+      break;
   }
   
   // Draw each button in turn
@@ -3658,9 +3753,11 @@ void Define_Menu3()
 {
   strcpy(MenuTitle[3], "Portsdown 5 Config Menu (3)");
 
-  AddButtonStatus(3, 0, "System^Config", &Blue);
+  AddButtonStatus(3, 0, "Check for^Update", &Blue);
 
-  AddButtonStatus(3, 1, "Disp/Ctrl^Config", &Blue);
+  AddButtonStatus(3, 1, "System^Config", &Blue);
+
+  AddButtonStatus(3, 2, "Disp/Ctrl^Config", &Blue);
 
   AddButtonStatus(3, 4, "Return to^Main Menu", &Blue);
 }
@@ -4751,7 +4848,7 @@ void Define_Menu21()
   AddButtonStatus(21, 18, "Boot to^Key Lime Pi", &Green);
   AddButtonStatus(21, 18, "Boot to^Key Lime Pi", &Grey);
 
-  AddButtonStatus(21, 4, "Return to^Main Menu", &Blue);
+  AddButtonStatus(21, 4, "Return to^Main Menu", &DBlue);
 }
 
 
@@ -4818,10 +4915,10 @@ void Define_Menu22()
   AddButtonStatus(22, 16, "HDMI Def'n^720", &Blue);
   AddButtonStatus(22, 16, "HDMI Def'n^1080", &Blue);
 
-  AddButtonStatus(22, 17, "Normal^Touchscreen", &Blue);
-  AddButtonStatus(22, 17, "Invert^Touchscreen", &Blue);
+  AddButtonStatus(22, 17, "Touchscreen^Not Inverted", &Blue);
+  AddButtonStatus(22, 17, "Touchscreen^Inverted", &Blue);
 
-  AddButtonStatus(22, 4, "Return to^Main Menu", &Blue);
+  AddButtonStatus(22, 4, "Return to^Main Menu", &DBlue);
 }
 
 
@@ -4868,9 +4965,10 @@ void Define_Menu23()
 
   AddButtonStatus(23, 2, "Set Preset^Freqs & SRs", &Blue);
 
-  //AddButtonStatus(23, 3, "Overlay^Off", &Blue);
+  AddButtonStatus(23, 3, "Player^ffplay", &Blue);
+  AddButtonStatus(23, 3, "Player^VLC", &Blue);
 
-  AddButtonStatus(23, 4, "Return to^RX Menu", &Blue);
+  AddButtonStatus(23, 4, "Return to^RX Menu", &DBlue);
 
   // 2nd Row, Menu 23
 
@@ -4911,6 +5009,16 @@ void Define_Menu23()
 void Highlight_Menu23()
 {
   char LMBtext[63];
+
+  if (strcmp(player, "ffplay") == 0)
+  {
+    SetButtonStatus(23, 3, 0);
+  }
+  if (strcmp(player, "vlc") == 0)
+  {
+    SetButtonStatus(23, 3, 1);
+  }
+
 
   if (strcmp(LMRXmode, "sat") == 0)
   {
@@ -5222,6 +5330,106 @@ void Highlight_Menu24()
 }
 
 
+void Define_Menu25()
+{
+  int i;
+
+  strcpy(MenuTitle[25], "Stream Player Menu (25)");
+
+  // Bottom Row, Menu 25  
+
+  AddButtonStatus(25, 0, "Play with^VLC", &Blue);
+
+  AddButtonStatus(25, 1, "Play with^FFPlay", &Blue);
+
+  AddButtonStatus(25, 3, "Amend^Preset", &Blue);
+  AddButtonStatus(25, 3, "Amend^Preset", &Red);
+
+  AddButtonStatus(25, 4, "Exit to^Main Menu", &DBlue);
+
+  // Rows 2, 3 and 4, Menu 25
+
+  for (i = 1; i <= 20; i++)
+  {
+    AddButtonStatus(25, i + 4, " ", &Blue);
+    AddButtonStatus(25, i + 4, " ", &Green);
+  }
+}
+
+
+void Highlight_Menu25()
+{
+  int i;
+
+  if (amendStreamPreset == true)
+  {
+    SetButtonStatus(25, 3, 1);
+  }
+  else
+  {
+    SetButtonStatus(25, 3, 0);
+  }
+
+  for (i = 1; i <= 20; i++)
+  {
+    AmendButtonStatus(25, 4 + i, 0, streamLabel[i], &Blue);
+    AmendButtonStatus(25, 4 + i, 1, streamLabel[i], &Green);
+
+    if (i == activeStream)
+    {
+      SetButtonStatus(25, 4 + i, 1);
+    }
+    else
+    {
+      SetButtonStatus(25, 4 + i, 0);
+    }
+  }
+}
+
+
+void Define_Menu32()                          // Decision 2 Menu
+{
+  AddButtonStatus(32, 4, " ", &Black);
+
+  // 2nd Row, Menu 32.  
+
+  AddButtonStatus(32, 11, " ", &Blue);
+  AddButtonStatus(32, 11, " ", &Green);
+
+  AddButtonStatus(32, 13, " ", &Blue);
+  AddButtonStatus(32, 13, " ", &Green);
+}
+
+
+void Highlight_Menu32()
+{
+//
+}
+
+
+void Define_Menu33()                          // Decision 2 Menu
+{
+  AddButtonStatus(33, 4, " ", &Black);
+
+  // 2nd Row, Menu 33.  
+
+  AddButtonStatus(33, 11, " ", &Blue);
+  AddButtonStatus(33, 11, " ", &Green);
+
+  AddButtonStatus(33, 12, " ", &Blue);
+  AddButtonStatus(33, 12, " ", &Green);
+
+  AddButtonStatus(33, 13, " ", &Blue);
+  AddButtonStatus(33, 13, " ", &Green);
+}
+
+
+void Highlight_Menu33()
+{
+//
+}
+
+
 void Define_Menu41()
 {
 
@@ -5462,6 +5670,9 @@ void Define_Menus()
   Define_Menu22();
   Define_Menu23();
   Define_Menu24();
+  Define_Menu25();
+  Define_Menu32();
+  Define_Menu33();
 
   Define_Menu41();
 }
@@ -5474,11 +5685,12 @@ void Define_Menus()
  * @param InitText (str) Initial text for editing
  * @param MaxLength (str) Max length of returned string
  * @param KeyboardReturn (str) The returned string
+ * @param UpperCase (bool) Set to false for a lower case keyboard
  *
  * @return void
 *******************************************************************************/
 
-void Keyboard(char RequestText[63], char InitText[63], int MaxLength, char KeyboardReturn[63])
+void Keyboard(char *RequestText, char *InitText, int MaxLength, char *KeyboardReturn, bool UpperCase)
 {
   char EditText[63];
   strcpy (EditText, InitText);
@@ -5487,7 +5699,7 @@ void Keyboard(char RequestText[63], char InitText[63], int MaxLength, char Keybo
   int i;
   int CursorPos;
   char thischar[2];
-  int KeyboardShift = 1;
+  int KeyboardShift;
   int ShiftStatus = 0;
   char KeyPressed[2];
   char PreCuttext[63];
@@ -5521,6 +5733,16 @@ void Keyboard(char RequestText[63], char InitText[63], int MaxLength, char Keybo
 
   // Look up pitch for W (87), the widest caharcter
   int charPitch = font_ptr->characters[87].render_width;
+
+  // Check calling case
+  if (UpperCase == true)
+  {
+    KeyboardShift = 1;
+  }
+  else
+  {
+    KeyboardShift = 0;
+  }
 
   for (;;)
   {
@@ -5626,7 +5848,69 @@ void Keyboard(char RequestText[63], char InitText[63], int MaxLength, char Keybo
     if (getTouchSample(&rawX, &rawY) == 0) continue;
     refreshed = false;
 
-    token = IsMenuButtonPushed(rawX, rawY);
+    // Check if touch was in edit text area to move cursor
+    if ((scaledY > 290) && (scaledY < 420))
+    {
+      if (strlen(EditText) < 29)                // Text to edit fits on one line
+      {
+        // Erase the old cursor
+        rectangle(12 + charPitch * CursorPos, 320, 2, 40, 0, 0, 0);
+
+        // Calculate the new cursor position
+        CursorPos = (scaledX - 0) / charPitch;
+        if (CursorPos > strlen(EditText))
+        {
+          CursorPos = strlen(EditText);
+        }
+
+        // Write the new cursor
+        rectangle(12 + charPitch * CursorPos, 320, 2, 40, 255, 255, 255);
+      }
+      else                                     // Text to edit is in 2 lines
+      {
+        // Erase the old cursor
+        if (CursorPos < 28)
+        {
+          rectangle(12 + charPitch * CursorPos, 350, 2, 40, 0, 0, 0);
+        }
+        else
+        {
+          rectangle(12 + charPitch * (CursorPos - 28), 310, 2, 40, 0, 0, 0);
+        }
+
+        // Draw the new cursor
+        if (scaledY > 355)                    // Top line
+        {
+          // Calculate the new cursor position
+          CursorPos = (scaledX - 0) / charPitch;
+          if (CursorPos > 27)
+          {
+            CursorPos = 27;
+          }
+
+          // Write the new cursor
+          rectangle(12 + charPitch * CursorPos, 350, 2, 40, 255, 255, 255);
+        }
+        else                                  // 2nd line
+        {
+          // Calculate the new cursor position
+          CursorPos = (scaledX - 0) / charPitch;
+          if (CursorPos > strlen(EditText) - 28)
+          {
+            CursorPos = strlen(EditText) - 28;
+          }
+
+          // Write the new cursor
+          rectangle(12 + charPitch * CursorPos, 310, 2, 40, 255, 255, 255);
+
+          CursorPos = CursorPos + 28;
+        }
+      }
+      publishRectangle(0, 310, 800, 80);
+      refreshed = true;
+    }
+
+    token = IsMenuButtonPushed();
     printf("Keyboard Token %d\n", token);
 
     // Highlight special keys when touched
@@ -5880,6 +6164,169 @@ void Keyboard(char RequestText[63], char InitText[63], int MaxLength, char Keybo
   }
 }
 
+
+/***************************************************************************//**
+ * @brief Asks a yes/no type question
+ *
+ * @param TitleText (str) Title for the page
+ * @param QText (str) Question Text
+ * @param Button1Text (str) Text for button 1
+ * @param Button2Text (str) Text for button 2
+ * @param CancelButton (bool) show cancel button if true 
+ *
+ * @return (int) 1 for button 1, 2 for button 2, 0 for Cancel
+*******************************************************************************/
+int Decision2(char *TitleText, char *QText, char *Button1Text, char *Button2Text, bool CancelButton)
+{
+  const font_t *font_ptr = &font_dejavu_sans_22;
+  int i;
+  int response = - 1;
+  int rawX;
+  int rawY;
+
+  strcpy(MenuTitle[32], TitleText);
+  AmendButtonStatus(32, 11, 0, Button1Text, &Blue);
+  AmendButtonStatus(32, 11, 1, Button1Text, &Green);
+  SetButtonStatus(32, 11, 0);
+  AmendButtonStatus(32, 13, 0, Button2Text, &Blue);
+  AmendButtonStatus(32, 13, 1, Button2Text, &Green);
+  SetButtonStatus(32, 13, 0);
+
+  if (CancelButton == true)
+  {
+    AmendButtonStatus(32, 4, 0, "Cancel", &DBlue);
+  }
+  else
+  {
+    AmendButtonStatus(32, 4, 0, " ", &Black);
+  }
+
+  CurrentMenu = 32;
+  redrawMenu();
+  
+  TextMid(400, 350, QText, font_ptr, 0, 0, 0, 255, 255, 255);
+  publish();
+
+  while(response < 0)
+  {
+    if (getTouchSample(&rawX, &rawY) == 0) continue;
+
+    i = IsMenuButtonPushed();
+
+    switch(i)
+    {
+      case 4:                                   // cancel
+        if (CancelButton == true)
+        {
+          response = 0;
+        }
+        break;
+      case 11:
+        response = 1;
+        SetButtonStatus(32, 11, 1);
+        redrawButton(32, 11);
+        usleep(250000);
+        break;
+      case 13:
+        response = 2;
+        SetButtonStatus(32, 13, 1);
+        redrawButton(32, 13);
+        usleep(250000);
+        break;
+    }
+  }
+
+  CurrentMenu = CallingMenu;
+
+  return response;
+}
+
+
+/***************************************************************************//**
+ * @brief Asks a question with 3 answers
+ *
+ * @param TitleText (str) Title for the page
+ * @param QText (str) Question Text
+ * @param Button1Text (str) Text for button 1
+ * @param Button2Text (str) Text for button 2
+ * @param Button3Text (str) Text for button 3
+ * @param CancelButton (bool) show cancel button if true 
+ *
+ * @return (int) 1 for button 1, 2 for button 2, 0 for Cancel
+*******************************************************************************/
+int Decision3(char *TitleText, char *QText, char *Button1Text, char *Button2Text, char *Button3Text, bool CancelButton)
+{
+  const font_t *font_ptr = &font_dejavu_sans_22;
+  int i;
+  int response = - 1;
+  int rawX;
+  int rawY;
+
+  strcpy(MenuTitle[33], TitleText);
+  AmendButtonStatus(33, 11, 0, Button1Text, &Blue);
+  AmendButtonStatus(33, 11, 1, Button1Text, &Green);
+  SetButtonStatus(33, 11, 0);
+  AmendButtonStatus(33, 12, 0, Button2Text, &Blue);
+  AmendButtonStatus(33, 12, 1, Button2Text, &Green);
+  SetButtonStatus(33, 12, 0);
+  AmendButtonStatus(33, 13, 0, Button3Text, &Blue);
+  AmendButtonStatus(33, 13, 1, Button3Text, &Green);
+  SetButtonStatus(33, 13, 0);
+
+  if (CancelButton == true)
+  {
+    AmendButtonStatus(33, 4, 0, "Cancel", &DBlue);
+  }
+  else
+  {
+    AmendButtonStatus(33, 4, 0, " ", &Black);
+  }
+
+  CurrentMenu = 33;
+  redrawMenu();
+  
+  TextMid(400, 350, QText, font_ptr, 0, 0, 0, 255, 255, 255);
+  publish();
+
+  while(response < 0)
+  {
+    if (getTouchSample(&rawX, &rawY) == 0) continue;
+
+    i = IsMenuButtonPushed();
+
+    switch(i)
+    {
+      case 4:                                   // cancel
+        if (CancelButton == true)
+        {
+          response = 0;
+        }
+        break;
+      case 11:
+        response = 1;
+        SetButtonStatus(33, 11, 1);
+        redrawButton(33, 11);
+        usleep(250000);
+        break;
+      case 12:
+        response = 2;
+        SetButtonStatus(33, 12, 1);
+        redrawButton(33, 12);
+        usleep(250000);
+        break;
+      case 13:
+        response = 3;
+        SetButtonStatus(33, 13, 1);
+        redrawButton(33, 13);
+        usleep(250000);
+        break;
+    }
+  }
+
+  CurrentMenu = CallingMenu;
+
+  return response;
+}
 
 
 void selectTestEquip(int Button)   // Test Equipment
@@ -6407,45 +6854,60 @@ void togglewebcontrol()
   }
 }
 
+
 void togglehdmiresolution()
 {
-  if (HDMIResolution == 720)
-  {
-    SetConfigParam(PATH_SCONFIG, "hdmiresolution", "1080");
-    HDMIResolution = 1080;
-  }
-  else
-  {
-    SetConfigParam(PATH_SCONFIG, "hdmiresolution", "720");
-    HDMIResolution = 720;
-  }
+  int q;
+  // Check user intentions
+  q = Decision2("Change HDMI Resolution", "This will cause an immediate reboot",
+                 "Immediate^Reboot", "Cancel", false);
 
-  redrawMenu();                // Show
-  system("/home/pi/portsdown/scripts/display_check_on_boot.sh");
-  usleep(500000);
-  // reboot message required here
-  system("sudo reboot now");
+  if (q == 1)
+  {
+    if (HDMIResolution == 720)
+    {
+      SetConfigParam(PATH_SCONFIG, "hdmiresolution", "1080");
+      HDMIResolution = 1080;
+    }
+    else
+    {
+      SetConfigParam(PATH_SCONFIG, "hdmiresolution", "720");
+      HDMIResolution = 720;
+    }
+
+    redrawMenu();                // Show
+    system("/home/pi/portsdown/scripts/display_check_on_boot.sh");
+    usleep(500000);
+    system("sudo reboot now");
+  }
 }
 
 
 void togglescreenorientation()
 {
-  if (TouchInverted == false)
-  {
-    SetConfigParam(PATH_SCONFIG, "touch", "inverted");
-    TouchInverted = true;
-  }
-  else
-  {
-    SetConfigParam(PATH_SCONFIG, "touch", "normal");
-    TouchInverted = false;
-  }
+  int q;
+  // Check user intentions
+  q = Decision2("Change Screen Orientation", "This will cause an immediate reboot",
+                 "Immediate^Reboot", "Cancel", false);
 
-  redrawMenu();                // Show 
-  system("/home/pi/portsdown/scripts/display_check_on_boot.sh");
-  usleep(500000);
-  // reboot message required here
-  system("sudo reboot now");
+  if (q == 1)
+  {
+    if (TouchInverted == false)
+    {
+      SetConfigParam(PATH_SCONFIG, "touch", "inverted");
+      TouchInverted = true;
+    }
+    else
+    {
+      SetConfigParam(PATH_SCONFIG, "touch", "normal");
+      TouchInverted = false;
+    }
+
+    redrawMenu();                // Show 
+    system("/home/pi/portsdown/scripts/display_check_on_boot.sh");
+    usleep(500000);
+    system("sudo reboot now");
+  }
 }
 
 
@@ -6543,7 +7005,7 @@ void ChangeLMRXIP()
   {
     strcpy(RequestText, "Enter the new UDP IP Destination for the RX TS");
     strcpyn(InitText, LMRXudpip, 17);
-    Keyboard(RequestText, InitText, 17, KeyboardReturn);
+    Keyboard(RequestText, InitText, 17, KeyboardReturn, true);
   
     strcpy(LMRXIPCopy, KeyboardReturn);
     if(is_valid_ip(LMRXIPCopy) == true)
@@ -6570,7 +7032,7 @@ void ChangeLMRXPort()
   {
     strcpy(RequestText, "Enter the new UDP Port Number for the RX TS");
     strcpyn(InitText, LMRXudpport, 10);
-    Keyboard(RequestText, InitText, 10, KeyboardReturn);
+    Keyboard(RequestText, InitText, 10, KeyboardReturn, true);
   
     if(strlen(KeyboardReturn) > 0)
     {
@@ -6596,7 +7058,7 @@ void ChangeLMRXOffset()
   {
     strcpy(RequestText, "Enter the new QO-100 LNB Offset in kHz");
     snprintf(InitText, 10, "%d", LMRXqoffset);
-    Keyboard(RequestText, InitText, 10, KeyboardReturn);
+    Keyboard(RequestText, InitText, 10, KeyboardReturn, true);
   
     if((atoi(KeyboardReturn) > 1000000) && (atoi(KeyboardReturn) < 76000000))
     {
@@ -6608,6 +7070,20 @@ void ChangeLMRXOffset()
   // Save offset to Config File
   LMRXqoffset = atoi(KeyboardReturn);
   SetConfigParam(PATH_LMCONFIG, "qoffset", KeyboardReturn);
+}
+
+
+void ChangeLMRXPlayer()
+{
+  if (strcmp(player, "vlc") == 0)
+  {
+    strcpy(player, "ffplay");
+  }
+  else
+  {
+    strcpy(player, "vlc");
+  }
+  SetConfigParam(PATH_SCONFIG, "player", player);
 }
 
 
@@ -6631,7 +7107,7 @@ void ChangeLMTST()
 
   while (IsValid == false)
   {
-    Keyboard(RequestText, InitText, 10, KeyboardReturn);
+    Keyboard(RequestText, InitText, 10, KeyboardReturn, true);
   
     if (((atoi(KeyboardReturn) >= 500) && (atoi(KeyboardReturn) <= 60000)) || (atoi(KeyboardReturn) == -1))
     {
@@ -6674,7 +7150,7 @@ void ChangeLMSW()
 
   while (IsValid == false)
   {
-    Keyboard(RequestText, InitText, 10, KeyboardReturn);
+    Keyboard(RequestText, InitText, 10, KeyboardReturn, true);
   
     if((atoi(KeyboardReturn) >= 10) && (atoi(KeyboardReturn) <= 500))
     {
@@ -6719,7 +7195,7 @@ void ChangeLMChan()
 
   while (IsValid == false)
   {
-    Keyboard(RequestText, InitText, 10, KeyboardReturn);
+    Keyboard(RequestText, InitText, 10, KeyboardReturn, true);
 
     if(strcmp(KeyboardReturn, "") == 0)  // Set null to 0
     {
@@ -6836,7 +7312,7 @@ void ChangeLMPresetFreq(int NoButton)
   // Ask for new value
   while ((CheckValue - Offset_to_Apply < 50000) || (CheckValue - Offset_to_Apply > 2600000))
   {
-    Keyboard(RequestText, InitText, 10, KeyboardReturn);
+    Keyboard(RequestText, InitText, 10, KeyboardReturn, true);
     CheckValue = (int)((1000 * atof(KeyboardReturn)) + 0.1);
     printf("CheckValue = %d Offset = %d\n", CheckValue, Offset_to_Apply);
   }
@@ -6904,7 +7380,7 @@ void ChangeLMPresetSR(int NoButton)
     strcpy(RequestText, "Enter new Symbol Rate");
 
     snprintf(InitText, 14, "%d", LMRXsr[SRIndex]);
-    Keyboard(RequestText, InitText, 4, KeyboardReturn);
+    Keyboard(RequestText, InitText, 4, KeyboardReturn, true);
   
     // Check valid value
     SRCheck = atoi(KeyboardReturn);
@@ -6993,6 +7469,366 @@ void CycleLMRXaudio()
   }
   SetConfigParam(PATH_LMCONFIG, "audio", LMRXaudio);
 }
+
+
+void AdjustVLCVolume(int adjustment)
+{
+  int VLCVolumePerCent;
+  static int premuteVLCVolume;
+  static bool muted;
+  char VLCVolumeText[63];
+  char VolumeMessageText[63];
+  char VLCVolumeCommand[255];
+
+  if (adjustment == -512) // toggle mute
+  {
+    if (muted  == true)
+    {
+      CurrentVLCVolume = premuteVLCVolume;
+      muted = false;
+    }
+    else
+    {
+      premuteVLCVolume = CurrentVLCVolume;
+      CurrentVLCVolume = 0;
+      muted = true;
+    }
+  }
+  else                    // normal up or down
+  {
+    CurrentVLCVolume = CurrentVLCVolume + adjustment;
+    if (CurrentVLCVolume < 0)
+    {
+      CurrentVLCVolume = 0;
+    }
+    if (CurrentVLCVolume > 512)
+    {
+      CurrentVLCVolume = 512;
+    }
+  }
+
+  snprintf(VLCVolumeText, 62, "%d", CurrentVLCVolume);
+  SetConfigParam(PATH_PCONFIG, "vlcvolume", VLCVolumeText);
+
+  snprintf(VLCVolumeCommand, 254, "/home/pi/portsdown/scripts/receive/setvlcvolume.sh %d", CurrentVLCVolume);
+  system(VLCVolumeCommand); 
+
+  VLCVolumePerCent = (100 * CurrentVLCVolume) / 512;
+  snprintf(VolumeMessageText, 62, "VOLUME %d%%", VLCVolumePerCent);
+  // printf("%s\n", VolumeMessageText);
+  
+  FILE *fw=fopen("/home/pi/tmp/vlc_temp_overlay.txt","w+");
+  if(fw!=0)
+  {
+    fprintf(fw, "%s\n", VolumeMessageText);
+  }
+  fclose(fw);
+
+  // Copy temp file to file to be read by VLC to prevent file collisions
+  system("cp /home/pi/tmp/vlc_temp_overlay.txt /home/pi/tmp/vlc_overlay.txt");
+  // Clear the volume caption after 1 second
+  system("(sleep 1; echo " " > /home/pi/tmp/vlc_overlay.txt) &");
+}
+
+
+
+
+
+void ChangeStreamPreset(int NoButton)
+{
+  char KeyboardReturn[31];
+  char c;
+  char param[31];
+  bool valid = false;
+  char streamname[31];
+  char streamnumber[31];
+  int i;
+
+  if(amendStreamPreset == true)
+  {
+    streamname[0] = '\0';
+
+    // Separate the stream name from the full stream URL
+    for (i = 29; i < strlen(streamURL[NoButton - 4]); i++)
+    {
+      if (i < 58)  // max stream name length 27
+      {
+        c = streamURL[NoButton - 4][i];
+        //printf("character: %c\n", c);
+      
+        streamname[i - 29] = c;
+        streamname[i - 28] = '\0';
+      }
+    }
+
+    // Ask for the new stream name
+    while (valid == false)
+    {
+      Keyboard("Enter the stream name (lower case)", streamname, 27, KeyboardReturn, false);
+      if (strlen(KeyboardReturn) > 3)
+      {
+        valid = true;
+      }
+    }
+
+    // Append it to the full url and save
+    strcpy(streamURL[NoButton - 4], "rtmp://rtmp.batc.org.uk/live/");
+    strcat(streamURL[NoButton - 4], KeyboardReturn);
+
+    snprintf(param, 31, "stream%d", NoButton - 4);
+    SetConfigParam(PATH_STREAM_PRESETS, param, streamURL[NoButton - 4]);
+    printf ("new stream name = %s\n", streamURL[NoButton - 4]);
+
+    valid = false;
+
+    // Ask for the new stream button label
+    while (valid == false)
+    {
+      Keyboard("Enter the Button Label", streamLabel[NoButton - 4], 27, KeyboardReturn, true);
+      if (strlen(KeyboardReturn) > 3)
+      {
+        valid = true;
+      }
+    }
+    strcpy(streamLabel[NoButton - 4], KeyboardReturn);
+
+    // Save the Label
+    snprintf(param, 31, "label%d", NoButton - 4);
+    SetConfigParam(PATH_STREAM_PRESETS, param, streamLabel[NoButton - 4]);
+    printf ("new Label = %s\n", streamLabel[NoButton - 4]);
+
+    // Select the amended stream
+    amendStreamPreset = false;
+    activeStream = NoButton - 4;
+
+  }
+  else                                // Change the active stream
+  {
+    activeStream = NoButton - 4;
+  }
+
+  snprintf(streamnumber, 15, "%d", activeStream);
+  SetConfigParam(PATH_STREAM_PRESETS, "selectedstream", streamnumber);
+}
+
+
+void ToggleAmendStreamPreset()
+{
+  if (amendStreamPreset == false)
+  {
+    amendStreamPreset = true;
+    activeStream = 0;
+  }
+  else
+  {
+    amendStreamPreset = false;
+  }
+}
+
+
+void CheckforUpdate()
+{
+  int choice;
+  char CurrentVersion[63] = "unknown";
+  char UpdateVersion [63] = "unknown";
+  char DevVersion [63] = "unknown";
+  int current = 0;
+  int update = 0;
+  int dev = 0;
+  char Banner [255];
+  char Button1 [63] = "Update Now";
+  char Button2 [63] = "Development^Update";
+  char * line = NULL;
+  size_t len = 0;
+  bool complete = false;
+  bool show_dev_menu = false;
+
+  // Look up current version
+  FILE *fp=fopen("/home/pi/portsdown/version_history.txt", "r");
+  if(fp != 0)
+  {
+    while ((getline(&line, &len, fp) != -1) && (complete == false))
+    {
+      if(strncmp (line, "20", 2) == 0)
+      {
+        strcpy(CurrentVersion, line);
+        CurrentVersion[9] = '\0';
+        complete = true;
+      }
+    }
+    fclose(fp);
+  }
+  current = atoi(CurrentVersion);
+  // printf ("Current Version -%s-\n", CurrentVersion);
+
+  // Look up production update version
+  system("wget -q https://github.com/britishamateurtelevisionclub/portsdown5/raw/refs/heads/main/version_history.txt -O /home/pi/tmp/update_version.txt");
+  FILE *fu=fopen("/home/pi/tmp/update_version.txt", "r");
+  complete = false;
+  if(fu != 0)
+  {
+    while ((getline(&line, &len, fu) != -1) && (complete == false))
+    {
+      if(strncmp (line, "20", 2) == 0)
+      {
+        strcpy(UpdateVersion, line);
+        UpdateVersion[9] = '\0';
+        complete = true;
+      }
+    }
+    fclose(fu);
+  }
+  update = atoi(UpdateVersion);
+  // printf ("Update Version -%s-\n", UpdateVersion);
+  
+  // Look up development update version
+  system("wget -q https://github.com/davecrump/portsdown5/raw/refs/heads/main/version_history.txt -O /home/pi/tmp/dev_version.txt");
+  FILE *fd=fopen("/home/pi/tmp/dev_version.txt", "r");
+  complete = false;
+  if(fd != 0)
+  {
+    while ((getline(&line, &len, fd) != -1) && (complete == false))
+    {
+      if(strncmp (line, "20", 2) == 0)
+      {
+        strcpy(DevVersion, line);
+        DevVersion[9] = '\0';
+        complete = true;
+      }
+    }
+    fclose(fd);
+  }
+  dev = atoi(DevVersion);
+  // printf ("Dev Version -%s-\n", DevVersion);
+
+  if (current == update)                      // Up to date
+  {
+    strcpy(Button1, "Force^Update");
+    sprintf(Banner, "Latest version: %s is already in use", CurrentVersion);
+  }
+  else if ((update == 0) || (dev == 0))       // No internet
+  {
+    strcpy(Button1, " ");
+    strcpy(Button2, " ");
+    sprintf(Banner, "Unable to contact GitHub.  Check Internet");
+  }
+  else if (current > update)                  // Probably Dev Version in use
+  {
+    strcpy(Button1, "Development^Update");
+    strcpy(Button2, "Development^Update");
+    sprintf(Banner, "Current version: %s, ahead of production version", CurrentVersion);
+  }
+  else                                        // Normal update available
+  {
+    sprintf(Banner, "Current version: %s, Update version: %s", CurrentVersion, UpdateVersion);
+  }
+
+  choice = Decision3 ("Check for Software Update Menu", Banner, Button1, Button2, "Don't Update", false);
+  switch (choice)
+  {
+    case 1:
+      if (current == update)                      // Up to date, but force update
+      {
+        system("wget -q https://github.com/BritishAmateurTelevisionClub/portsdown5/raw/main/install_p5.sh -O /home/pi/install_p5.sh");
+        system("chmod +x /home/pi/install_p5.sh");
+        system("/home/pi/install_p5.sh --update &");
+        // printf("/home/pi/install_p5.sh --update &\n");
+      }
+      else if ((update == 0) || (dev == 0))       // No internet
+      {
+        CurrentMenu = 3;
+        return;
+      }
+      else if (current > update)                  // Probably Dev Version in use, so show dev menu
+      {
+        show_dev_menu = true;
+      }
+      else                                        // Do a Normal update 
+      {
+        system("wget -q https://github.com/BritishAmateurTelevisionClub/portsdown5/raw/main/install_p5.sh -O /home/pi/install_p5.sh");
+        system("chmod +x /home/pi/install_p5.sh");
+        system("/home/pi/install_p5.sh --update &");
+        // printf("/home/pi/install_p5.sh --update &\n");
+      }
+      break;
+    case 2:
+      if (current == update)                      // Up to date
+      {
+        show_dev_menu = true;
+      }
+      else if ((update == 0) || (dev == 0))       // No internet
+      {
+        CurrentMenu = 3;
+        return;
+      }
+      else if (current > update)                  // Probably Dev Version in use, so show dev menu
+      {
+        show_dev_menu = true;
+      }
+      else                                        // show dev Menu
+      {
+        show_dev_menu = true;
+      }
+      break;
+    case 3:
+      CurrentMenu = 3;
+      return;
+      break;
+  }
+
+  // If flow gets to here, show_dev_menu should be true
+  if (show_dev_menu == false)
+  {
+    printf("unexpected show_dev_menu == false\n");
+    CurrentMenu = 3;
+    return;
+  }
+
+  // Show dev update menu
+  if (current == dev)                      // Up to date
+  {
+    strcpy(Button1, "Force Dev^Update");
+    sprintf(Banner, "Latest Dev version: %s is already in use", DevVersion);
+  }
+  else if (current > dev)                  // Unusual error
+  {
+    strcpy(Button1, "Force Dev^Update");
+    sprintf(Banner, "Current version: %s, ahead of Dev version", CurrentVersion);
+  }
+  else                                        // Dev update available
+  {
+    sprintf(Banner, "Current version: %s, Dev version: %s", CurrentVersion, DevVersion);
+  }
+
+  choice = Decision2 ("Development Software Update Menu", Banner, Button1, "Don't Update", false);
+  switch (choice)
+  {
+    case 1:
+      system("wget -q https://github.com/davecrump/portsdown5/raw/main/install_p5.sh -O /home/pi/install_p5.sh");
+      system("chmod +x /home/pi/install_p5.sh");
+      if (current == dev)                      // Up to date with dev, so force dev update
+      {
+        system("/home/pi/install_p5.sh --update --development &");
+        // printf("/home/pi/install_p5.sh --update --development &\n");
+      }
+      else if (current > dev)                  // Unusual error
+      {
+        system("/home/pi/install_p5.sh --update --development &");
+        // printf("/home/pi/install_p5.sh --update --development &\n");
+      }
+      else                                        // Dev update available
+      {
+        system("/home/pi/install_p5.sh --update --development &");
+         // printf("/home/pi/install_p5.sh --update --development &\n");
+      }
+      break;
+    case 2:
+      CurrentMenu = 3;
+      return;
+      break;
+  }
+}
+
 
 void InfoScreen()
 {
@@ -7218,6 +8054,16 @@ void waitForScreenAction()
           CurrentMenu = 7;
           redrawMenu();
           break;
+        case 3:                                                      // Test stub for decision
+          int q = Decision3("Menu Title", "To be or not to be? That is the question", "Yes", "Don't^know", "No", true);
+          printf("Answer = %d\n", q);
+          redrawMenu();
+          break;
+        case 4:                                                      // Stream Player
+          printf("MENU 25 \n");
+          CurrentMenu = 25;
+          redrawMenu();
+          break;
         case 5:
         case 6:
         case 7:
@@ -7354,12 +8200,16 @@ void waitForScreenAction()
         CallingMenu = 3;
         switch (i)
         {
-        case 0:                        // System Config Menu
+        case 0:                        // Check for update
+          CheckforUpdate();
+          redrawMenu();
+          break;
+        case 1:                        // System Config Menu
           printf("MENU 6 \n");
           CurrentMenu = 6;
           redrawMenu();
           break;
-        case 1:                        // Display/Control Config Menu
+        case 2:                        // Display/Control Config Menu
           printf("MENU 22 \n");
           CurrentMenu = 22;
           redrawMenu();
@@ -7390,7 +8240,15 @@ void waitForScreenAction()
           CurrentMenu = 1;
           redrawMenu();
           break;
-        case 3:                        // Back to Main Menu
+        case 3:                        // Test Keyboard
+          char RequestText[63] = "Test keyboard cursor";
+          char InitText[63] = "12345678901234567890";
+          char KeyboardReturn[63];
+
+          Keyboard(RequestText, InitText, 63, KeyboardReturn, false);
+          printf("\n%s\n\n", KeyboardReturn);
+          CurrentMenu = 4;
+          redrawMenu();
           break;
         case 4:                        // Back to Main Menu
           printf("MENU 1 \n");
@@ -7894,9 +8752,11 @@ void waitForScreenAction()
           break;
         case 16:                       // Toggle HDMI 720/1080 (reboot)
           togglehdmiresolution();
+          redrawMenu();
           break;
         case 17:                       // Toggle screen inverted (reboot)
           togglescreenorientation();
+          redrawMenu();
           break;
         case 4:                        // Back to Main Menu
           printf("MENU 1 \n");
@@ -7923,6 +8783,10 @@ void waitForScreenAction()
         case 2:                                         // Adjust Preset Freq and SRs
           printf("MENU 24 \n");
           CurrentMenu = 24;
+          redrawMenu();
+          break;
+        case 3:                                         // Player:  VLC or ffplay 
+          ChangeLMRXPlayer();
           redrawMenu();
           break;
         case 4:                                         // Back to Receive Menu
@@ -8013,6 +8877,58 @@ void waitForScreenAction()
           break;
         case 25:                        // Toggle QO-100/Terrestrial
           toggleLMRXmode();
+          redrawMenu();
+          break;
+        }
+        continue;
+      }
+      if (CurrentMenu == 25)           // Stream Player Menu
+      {
+        printf("Menu %d, Button %d\n", CallingMenu, i);
+        CallingMenu = 25;
+        switch (i)
+        {
+        case 0:                                          // Play stream with VLC
+          amendStreamPreset = false;
+          playStreamVLC();
+          redrawMenu();
+          break;
+        case 1:                                          // Play stream with FFPlay
+          amendStreamPreset = false;
+          playStreamFFPlay();
+          redrawMenu();
+          break;
+        case 3:                                          // Amend preset
+          ToggleAmendStreamPreset();
+          redrawMenu();
+          break;
+        case 4:                                          // Back to Main Menu
+          printf("MENU 1 \n");
+          CurrentMenu = 1;
+          amendStreamPreset = false;
+          redrawMenu();
+          break;
+        case 5:                                          // Streams
+        case 6:                                          //  
+        case 7:                                          //  
+        case 8:                                          //  
+        case 9:                                          //  
+        case 10:                                         //  
+        case 11:                                         //  
+        case 12:                                         // 
+        case 13:                                         // 
+        case 14:                                         // 
+        case 15:                                         // 
+        case 16:                                         //  
+        case 17:                                         //  
+        case 18:                                         //  
+        case 19:                                         //  
+        case 20:                                         //  
+        case 21:                                         //  
+        case 22:                                         // 
+        case 23:                                         // 
+        case 24:                                         // 
+          ChangeStreamPreset(i);
           redrawMenu();
           break;
         }
@@ -8131,8 +9047,7 @@ int main(int argc, char **argv)
     // Create Touchscreen thread
     pthread_create (&thtouchscreen, NULL, &WaitTouchscreenEvent, NULL);
 
-
-    if (CheckMouse() == 0)
+    if (FindMouseEvent() >= 0)
     {
       mouse_connected = true;
       mouse_active = true;
@@ -8142,12 +9057,10 @@ int main(int argc, char **argv)
       printf("Starting Mouse Thread\n");
       pthread_create (&thmouse, NULL, &WaitMouseEvent, NULL);
     }
-
-
   }
   else // No touchscreen detected, check for mouse
   {
-    if (CheckMouse() == 0)
+    if (FindMouseEvent() >= 0)
     {
       mouse_connected = true;
       mouse_active = true;

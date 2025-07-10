@@ -42,11 +42,25 @@ CHAN=$(get_config_var chan $RCONFIGFILE)
 CHAN_T=$(get_config_var chan1 $RCONFIGFILE)
 VLCVOLUME=$(get_config_var vlcvolume $PCONFIGFILE)
 VLCTRANSFORM=$(get_config_var vlctransform $SCONFIGFILE)
+PLAYER=$(get_config_var player $SCONFIGFILE)
 
-# Correct for LNB LO Frequency if required
+# Select player
+if [ "$PLAYER" == "ffplay" ]; then
+  FFPLAY="yes"
+else
+  FFPLAY="no"
+fi
+
 if [ "$RX_MODE" == "sat" ]; then
+  # Use ffplay for the beacon
+  if [ "$FREQ_KHZ" == "10491500" ]; then
+    FFPLAY="yes"
+  fi
+
+  # Correct for LNB LO Frequency
   let FREQ_KHZ=$FREQ_KHZ-$Q_OFFSET
 else
+  # Use Terrestrial settings
   FREQ_KHZ=$FREQ_KHZ_T
   SYMBOLRATEK=$SYMBOLRATEK_T
   INPUT_SEL=$INPUT_SEL_T
@@ -144,6 +158,27 @@ UDPPORT=1234
 /home/pi/longmynd/longmynd -i $UDPIP $UDPPORT -s longmynd_status_fifo \
   $VOLTS_CMD $TIMEOUT_CMD -A 11 $SCAN_CMD $INPUT_CMD $FREQ_KHZ $SYMBOLRATEK >/dev/null 2>/dev/null &
 
+# ffplay
+if [ "$FFPLAY" == "yes" ]; then
+  # Sort display rotation
+  if [ "$VLCTRANSFORM" == "0" ]; then
+    VF=""
+    VFROTATE=""
+  elif [ "$VLCTRANSFORM" == "90" ]; then
+    VF="-vf"
+    VFROTATE="transpose=1"
+  elif [ "$VLCTRANSFORM" == "180" ]; then
+    VF="-vf"
+    VFROTATE="transpose=1,transpose=1"
+  elif [ "$VLCTRANSFORM" == "270" ]; then
+    VF="-vf"
+    VFROTATE="transpose=2"
+  fi
+
+  SDL_AUDIODRIVER="alsa" AUDIODEV="$AUDIO_DEVICE" ffplay $VF $VFROTATE udp://127.0.0.1:1234 >/dev/null 2>/dev/null &
+  exit
+fi
+
 # Sort display rotation for VLC
 if [ "$VLCTRANSFORM" == "0" ]; then
   VLCROTATE=" "
@@ -156,7 +191,7 @@ elif [ "$VLCTRANSFORM" == "270" ]; then
 fi
 
 # Start VLC
-cvlc -I rc --rc-host 127.0.0.1:1111 $PROG --codec ffmpeg -f --no-video-title-show \
+cvlc -I rc --rc-host 127.0.0.1:1111 $PROG  -f --no-video-title-show \
   --gain 3 --alsa-audio-device $AUDIO_DEVICE \
   $VLCROTATE \
   udp://@127.0.0.1:1234 >/dev/null 2>/dev/null &

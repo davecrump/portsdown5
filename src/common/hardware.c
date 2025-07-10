@@ -1,7 +1,70 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdbool.h>
 #include "hardware.h"
+
+
+/***************************************************************************//**
+ * @brief Reads /proc/bus/input/devices to find the mouse event number
+ *
+ * @param nil
+ *
+ * @return mouse event number, -1 if not found
+*******************************************************************************/
+
+int FindMouseEvent()
+{
+  FILE *fp;
+  bool mouse_device = false;
+  int mouse_event = -1;
+  char line[1023];
+
+  // Read in the devices file
+  fp = popen("cat /proc/bus/input/devices", "r");
+  if (fp == NULL)
+  {
+    printf("Failed to run command\n" );
+    return -1;
+  }
+
+  // Go through the file and check the device names looking for a mouse
+
+  while ((fgets(line, sizeof(line), fp) != NULL) && (mouse_event < 0))
+  {
+    // First, look for the device name line
+    if (strstr(line, "N: Name=") != NULL) 
+    {
+      // This is a name line, so check if it is a mouse
+
+      if ((strstr(line, "Mouse") != NULL) || (strstr(line, "mouse") != NULL) || (strstr(line, "USB Receiver") != NULL))
+      {
+        // This is a mouse name line, so now go through the subsequent lines looking for the Handler line
+
+        mouse_device = true;
+        while ((fgets(line, sizeof(line), fp) != NULL) && (mouse_device == true))
+        {
+          if (strstr(line, "H: Handlers=mouse") != NULL) 
+          {
+              mouse_event = line[24] - '0';
+              mouse_device = false;
+          }
+        }
+      }
+    }
+  }
+
+  if ((mouse_event < 0) || (mouse_event > 9))
+  {
+    mouse_event = -1;
+  }
+
+  pclose(fp);
+  //printf("Mouse event number is %d\n", mouse_event);
+  return mouse_event;
+}
+
+
 
 /***************************************************************************//**
  * @brief Detects if a mouse is currently connected
