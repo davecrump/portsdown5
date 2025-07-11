@@ -7662,7 +7662,7 @@ void CheckforUpdate()
   // printf ("Current Version -%s-\n", CurrentVersion);
 
   // Look up production update version
-  system("wget -q https://github.com/britishamateurtelevisionclub/portsdown5/raw/refs/heads/main/version_history.txt -O /home/pi/tmp/update_version.txt");
+  system("wget -q https://github.com/BritishAmateurTelevisionClub/portsdown5/raw/refs/heads/main/version_history.txt -O /home/pi/tmp/update_version.txt");
   FILE *fu=fopen("/home/pi/tmp/update_version.txt", "r");
   complete = false;
   if(fu != 0)
