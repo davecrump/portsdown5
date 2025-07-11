@@ -2,6 +2,24 @@
 
 # Portsdown 5 Install/Update script by davecrump
 
+Function to Read from Config File
+
+get_config_var() {
+lua - "$1" "$2" <<EOF
+local key=assert(arg[1])
+local fn=assert(arg[2])
+local file=assert(io.open(fn))
+for line in file:lines() do
+local val = line:match("^#?%s*"..key.."=(.*)$")
+if (val ~= nil) then
+print(val)
+break
+end
+end
+EOF
+}
+
+
 # Define function to write messages to build log
 BuildLogMsg() {
   if [[ "$1" != "0" ]]; then
@@ -22,14 +40,20 @@ DisplayUpdateMsg() {
     -gravity South -pointsize 50 -annotate 0 "DO NOT TURN POWER OFF" \
     /home/pi/tmp/update.jpg
 
+  # Rotate for screen orientation
+  convert /home/pi/tmp/update.jpg -rotate "$FBORIENTATION" /home/pi/tmp/update.jpg
+
   # Display the update message on the desktop
   sudo fbi -T 1 -noverbose /home/pi/tmp/update.jpg >/dev/null 2>/dev/null
   (sleep 1; sudo killall -9 fbi >/dev/null 2>/dev/null) &  ## kill fbi once it has done its work
-  /home/pi/rpidatv/scripts/single_screen_grab_for_web.sh &
+  /home/pi/portsdown/scripts/single_screen_grab_for_web.sh &
 }
 
+################################## START HERE #####################################
 
 BUILD_STATUS="Success"
+SCONFIGFILE="/home/pi/portsdown/configs/system_config.txt"
+FBORIENTATION="0"
 
 # Create first entry for the build error log
 echo $(date -u) "New Build started" | sudo tee -a /home/pi/p5_initial_build_log.txt  > /dev/null
@@ -119,10 +143,15 @@ if [ "$UPDATE" == "true" ]; then
   echo "----- Updating an existing Portsdown 5 build ----------"
   echo "-------------------------------------------------------"
   echo $(date -u) "Updating - NOT new install" | sudo tee -a /home/pi/p5_initial_build_log.txt  > /dev/null
+
   # Stop the existing Portsdown process
   /home/pi/portsdown/utils/stop.sh &
+
+  # Check orienttation and display update message
+  FBORIENTATION=$(get_config_var fborientation $SCONFIGFILE)
   DisplayUpdateMsg "Starting Software Update"
 fi
+
 if [ "$GIT_SRC" == "davecrump" ]; then
   echo "--------------------------------------------------------"
   echo "----- Installing development version of Portsdown 5-----"
