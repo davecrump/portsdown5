@@ -1,6 +1,24 @@
 #!/bin/bash
 
-# Portsdown 5 Install by davecrump on 20240508
+# Portsdown 5 Install/Update script by davecrump
+
+Function to Read from Config File
+
+get_config_var() {
+lua - "$1" "$2" <<EOF
+local key=assert(arg[1])
+local fn=assert(arg[2])
+local file=assert(io.open(fn))
+for line in file:lines() do
+local val = line:match("^#?%s*"..key.."=(.*)$")
+if (val ~= nil) then
+print(val)
+break
+end
+end
+EOF
+}
+
 
 # Define function to write messages to build log
 BuildLogMsg() {
@@ -10,7 +28,32 @@ BuildLogMsg() {
   fi
 }
 
+# Define function to write messages to screen during update
+DisplayUpdateMsg() {
+  # Delete any old update message image
+  rm /home/pi/tmp/update.jpg >/dev/null 2>/dev/null
+
+  # Create the update image in the tempfs folder
+  convert -font "FreeSans" -size 800x480 xc:white \
+    -gravity North -pointsize 40 -annotate 0 "Updating Portsdown Software" \
+    -gravity Center -pointsize 50 -annotate 0 "$1""\n\nPlease wait" \
+    -gravity South -pointsize 50 -annotate 0 "DO NOT TURN POWER OFF" \
+    /home/pi/tmp/update.jpg
+
+  # Rotate for screen orientation
+  convert /home/pi/tmp/update.jpg -rotate "$FBORIENTATION" /home/pi/tmp/update.jpg
+
+  # Display the update message on the desktop
+  sudo fbi -T 1 -noverbose /home/pi/tmp/update.jpg >/dev/null 2>/dev/null
+  (sleep 1; sudo killall -9 fbi >/dev/null 2>/dev/null) &  ## kill fbi once it has done its work
+  /home/pi/portsdown/scripts/single_screen_grab_for_web.sh &
+}
+
+################################## START HERE #####################################
+
 BUILD_STATUS="Success"
+SCONFIGFILE="/home/pi/portsdown/configs/system_config.txt"
+FBORIENTATION="0"
 
 # Create first entry for the build error log
 echo $(date -u) "New Build started" | sudo tee -a /home/pi/p5_initial_build_log.txt  > /dev/null
@@ -100,9 +143,15 @@ if [ "$UPDATE" == "true" ]; then
   echo "----- Updating an existing Portsdown 5 build ----------"
   echo "-------------------------------------------------------"
   echo $(date -u) "Updating - NOT new install" | sudo tee -a /home/pi/p5_initial_build_log.txt  > /dev/null
+
   # Stop the existing Portsdown process
   /home/pi/portsdown/utils/stop.sh &
+
+  # Check orienttation and display update message
+  FBORIENTATION=$(get_config_var fborientation $SCONFIGFILE)
+  DisplayUpdateMsg "Starting Software Update"
 fi
+
 if [ "$GIT_SRC" == "davecrump" ]; then
   echo "--------------------------------------------------------"
   echo "----- Installing development version of Portsdown 5-----"
@@ -318,6 +367,7 @@ if [ "$UPDATE" == "true" ]; then
   # Delete previous Portsdown files
   rm -rf /home/pi/portsdown
 
+  DisplayUpdateMsg "Downloading new Software"
 fi
 
 # Download the previously selected version of Portsdown 5
@@ -347,7 +397,7 @@ if [ "$UPDATE" == "true" ]; then
 
   # Remove the old directory
   rm -rf /home/pi/configs/
-
+  DisplayUpdateMsg "Compiling new Software"
 fi
 
 # Compile the main Portsdown 5 application
@@ -607,6 +657,7 @@ if [ "$UPDATE" == "false" ]; then
 
 else   # Update
 
+  DisplayUpdateMsg "Update Complete.  Rebooting"
   echo $(date -u) " Update Complete" | sudo tee -a /home/pi/p5_initial_build_log.txt  > /dev/null
 
   # Record the Version Number
@@ -622,6 +673,7 @@ else   # Update
   echo "-----           Rebooting now          -----"
   echo "--------------------------------------------"
 
+  sleep 1
   sudo reboot now
 
 fi

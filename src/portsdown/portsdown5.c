@@ -7643,6 +7643,8 @@ void CheckforUpdate()
   bool complete = false;
   bool show_dev_menu = false;
 
+  MsgBox4("Checking for updates", " ", " ", " ");
+
   // Look up current version
   FILE *fp=fopen("/home/pi/portsdown/version_history.txt", "r");
   if(fp != 0)
@@ -7662,7 +7664,7 @@ void CheckforUpdate()
   // printf ("Current Version -%s-\n", CurrentVersion);
 
   // Look up production update version
-  system("wget -q https://github.com/britishamateurtelevisionclub/portsdown5/raw/refs/heads/main/version_history.txt -O /home/pi/tmp/update_version.txt");
+  system("wget -q https://github.com/BritishAmateurTelevisionClub/portsdown5/raw/refs/heads/main/version_history.txt -O /home/pi/tmp/update_version.txt");
   FILE *fu=fopen("/home/pi/tmp/update_version.txt", "r");
   complete = false;
   if(fu != 0)
@@ -7723,7 +7725,7 @@ void CheckforUpdate()
     sprintf(Banner, "Current version: %s, Update version: %s", CurrentVersion, UpdateVersion);
   }
 
-  choice = Decision3 ("Check for Software Update Menu", Banner, Button1, Button2, "Don't Update", false);
+  choice = Decision3 ("Software Update Menu", Banner, Button1, Button2, "Don't Update", false);
   switch (choice)
   {
     case 1:
