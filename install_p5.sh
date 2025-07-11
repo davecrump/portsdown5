@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Portsdown 5 Install by davecrump on 20240508
+# Portsdown 5 Install/Update script by davecrump
 
 # Define function to write messages to build log
 BuildLogMsg() {
@@ -9,6 +9,25 @@ BuildLogMsg() {
     BUILD_STATUS="Fail"
   fi
 }
+
+# Define function to write messages to screen during update
+DisplayUpdateMsg() {
+  # Delete any old update message image
+  rm /home/pi/tmp/update.jpg >/dev/null 2>/dev/null
+
+  # Create the update image in the tempfs folder
+  convert -font "FreeSans" -size 800x480 xc:white \
+    -gravity North -pointsize 40 -annotate 0 "Updating Portsdown Software" \
+    -gravity Center -pointsize 50 -annotate 0 "$1""\n\nPlease wait" \
+    -gravity South -pointsize 50 -annotate 0 "DO NOT TURN POWER OFF" \
+    /home/pi/tmp/update.jpg
+
+  # Display the update message on the desktop
+  sudo fbi -T 1 -noverbose /home/pi/tmp/update.jpg >/dev/null 2>/dev/null
+  (sleep 1; sudo killall -9 fbi >/dev/null 2>/dev/null) &  ## kill fbi once it has done its work
+  /home/pi/rpidatv/scripts/single_screen_grab_for_web.sh &
+}
+
 
 BUILD_STATUS="Success"
 
@@ -102,6 +121,7 @@ if [ "$UPDATE" == "true" ]; then
   echo $(date -u) "Updating - NOT new install" | sudo tee -a /home/pi/p5_initial_build_log.txt  > /dev/null
   # Stop the existing Portsdown process
   /home/pi/portsdown/utils/stop.sh &
+  DisplayUpdateMsg "Starting Software Update"
 fi
 if [ "$GIT_SRC" == "davecrump" ]; then
   echo "--------------------------------------------------------"
@@ -318,6 +338,7 @@ if [ "$UPDATE" == "true" ]; then
   # Delete previous Portsdown files
   rm -rf /home/pi/portsdown
 
+  DisplayUpdateMsg "Downloading new Software"
 fi
 
 # Download the previously selected version of Portsdown 5
@@ -347,7 +368,7 @@ if [ "$UPDATE" == "true" ]; then
 
   # Remove the old directory
   rm -rf /home/pi/configs/
-
+  DisplayUpdateMsg "Compiling new Software"
 fi
 
 # Compile the main Portsdown 5 application
@@ -607,6 +628,7 @@ if [ "$UPDATE" == "false" ]; then
 
 else   # Update
 
+  DisplayUpdateMsg "Update Complete.  Rebooting"
   echo $(date -u) " Update Complete" | sudo tee -a /home/pi/p5_initial_build_log.txt  > /dev/null
 
   # Record the Version Number
@@ -622,6 +644,7 @@ else   # Update
   echo "-----           Rebooting now          -----"
   echo "--------------------------------------------"
 
+  sleep 1
   sudo reboot now
 
 fi
