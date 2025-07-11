@@ -44,7 +44,7 @@ if [ $? != 0 ]; then
 fi
 
 # Parse the arguments
-GIT_SRC="britishamateurtelevisionclub";  # default
+GIT_SRC="BritishAmateurTelevisionClub";  # default
 LMNDE="false"                            # don't load LimeSuiteNG and LimeNET Micro 2.0 DE specifics unless requested
 WAIT="false"                             # Go straight into reboot unless requested
 UPDATE="false"                           # set to true for an update
@@ -53,7 +53,7 @@ POSITIONAL_ARGS=()
 while [[ $# -gt 0 ]]; do
   case $1 in
     -d|--development)
-      if [[ "$GIT_SRC" == "britishamateurtelevisionclub" ]]; then
+      if [[ "$GIT_SRC" == "BritishAmateurTelevisionClub" ]]; then
         GIT_SRC="davecrump"
       fi
       shift # past argument
@@ -108,7 +108,7 @@ if [ "$GIT_SRC" == "davecrump" ]; then
   echo "----- Installing development version of Portsdown 5-----"
   echo "--------------------------------------------------------"
   echo $(date -u) "Installing Dev Version" | sudo tee -a /home/pi/p5_initial_build_log.txt  > /dev/null
-elif [ "GIT_SRC" == "britishamateurtelevisionclub" ]; then
+elif [ "$GIT_SRC" == "BritishAmateurTelevisionClub" ]; then
   echo "-------------------------------------------------------------"
   echo "----- Installing BATC Production version of Portsdown 5 -----"
   echo "-------------------------------------------------------------"
