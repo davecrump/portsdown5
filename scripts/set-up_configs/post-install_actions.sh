@@ -93,6 +93,22 @@ if (grep 'Installing LimeNET Micro DE' /home/pi/p5_initial_build_log.txt) then
 
 fi
 
+# Install SDRPlay driver
+
+cd /home/pi
+if [ ! -f  SDRplay_RSP_API-Linux-3.15.2.run ]; then
+  wget https://www.sdrplay.com/software/SDRplay_RSP_API-Linux-3.15.2.run
+fi
+chmod +x SDRplay_RSP_API-Linux-3.15.2.run
+
+/home/pi/portsdown/scripts/set-up_configs/sdrplay_api_install.exp
+  SUCCESS=$?; BuildLogMsg $SUCCESS "sdrplay api install"
+
+cd /home/pi
+rm SDRplay_RSP_API-Linux-3.15.2.run
+sudo systemctl disable sdrplay  # service is started only when required
+
+
 # Record the Version Number
 head -c 9 /home/pi/portsdown/version_history.txt > /home/pi/portsdown/configs/installed_version.txt
 echo -e "\n" >> /home/pi/portsdown/configs/installed_version.txt

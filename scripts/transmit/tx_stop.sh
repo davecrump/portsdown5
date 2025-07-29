@@ -10,6 +10,8 @@ sudo killall tx.sh
 sudo killall tx_rf.sh
 sudo killall tx_video.sh
 
-/home/pi/portsdown/bin/limesdr_stopchannel
+sleep 1
 
+/home/pi/portsdown/bin/limesdr_stopchannel
+sudo killall -9 netcat
 exit

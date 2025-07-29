@@ -40,19 +40,12 @@ label19=GB3EY
 stream20=rtmp://rtmp.batc.org.uk/live/gb3gg
 label20=GB3GG
 
-streamurl1=rtmp://rtmp.batc.org.uk/live
-streamkey1=gb3hvinput-xxxxxx
-streamurl2=rtmp://rtmp.batc.org.uk/live
-streamkey2=gb3eyinput-xxxxxx
-streamurl3=rtmp://rtmp.batc.org.uk/live
+streamkey1=callsign-keykey
+streamkey2=callsign-keykey
 streamkey3=callsign-keykey
-streamurl4=rtmp://rtmp.batc.org.uk/live
 streamkey4=callsign-keykey
-streamurl5=rtmp://rtmp.batc.org.uk/live
 streamkey5=callsign-keykey
-streamurl6=rtmp://rtmp.batc.org.uk/live
 streamkey6=callsign-keykey
-streamurl7=rtmp://rtmp.batc.org.uk/live
 streamkey7=callsign-keykey
-streamurl8=rtmp://rtmp.batc.org.uk/live
 streamkey8=callsign-keykey
+

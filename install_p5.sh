@@ -2,8 +2,7 @@
 
 # Portsdown 5 Install/Update script by davecrump
 
-Function to Read from Config File
-
+# Define Function to Read from Config File
 get_config_var() {
 lua - "$1" "$2" <<EOF
 local key=assert(arg[1])
@@ -18,7 +17,6 @@ end
 end
 EOF
 }
-
 
 # Define function to write messages to build log
 BuildLogMsg() {
@@ -273,6 +271,24 @@ if [ "$UPDATE" == "false" ]; then
     SUCCESS=$?; BuildLogMsg $SUCCESS "flex"
   sudo apt-get -y install libaio-dev                              # For libiio
     SUCCESS=$?; BuildLogMsg $SUCCESS "libaio-dev"
+  sudo apt-get -y install pip                                     # For Langstone 3
+    SUCCESS=$?; BuildLogMsg $SUCCESS "pip"
+  sudo apt-get -y install gnuradio                                # For Langstone 3
+    SUCCESS=$?; BuildLogMsg $SUCCESS "gnuradio"
+  sudo apt-get -y install hackrf                                  # For Langstone 3
+    SUCCESS=$?; BuildLogMsg $SUCCESS "hackrf"
+  sudo apt-get -y install sshpass                                 # For Langstone 3
+    SUCCESS=$?; BuildLogMsg $SUCCESS "sshpass"
+  sudo apt-get -y install libairspy-dev                           # For Airspy Bandviewer
+    SUCCESS=$?; BuildLogMsg $SUCCESS "libairspy-dev"
+  sudo apt-get -y install expect                                  # For unattended installs
+    SUCCESS=$?; BuildLogMsg $SUCCESS "expect"
+  sudo apt-get -y install uhubctl                                 # For USB resets
+    SUCCESS=$?; BuildLogMsg $SUCCESS "uhubctl"
+  sudo apt-get -y install arp-scan                                # For List Network Devices
+    SUCCESS=$?; BuildLogMsg $SUCCESS "arp-scan"
+  sudo apt-get -y install mplayer                                 # For video monitor
+    SUCCESS=$?; BuildLogMsg $SUCCESS "mplayer"
 fi
 
 # Placeholder for New packages during update
@@ -346,11 +362,17 @@ if [ "$UPDATE" == "false" ]; then
   cd WiringPi
   ./build debian
     SUCCESS=$?; BuildLogMsg $SUCCESS "Wiring Pi Build"
-  mv debian-template/wiringpi_3.16_arm64.deb .
+
+  ## Read latest version number
+  vMaj=`cut -d. -f1 VERSION`
+  vMin=`cut -d. -f2 VERSION`
+
+  mv debian-template/wiringpi_"$vMaj"."$vMin"_arm64.deb .
     SUCCESS=$?; BuildLogMsg $SUCCESS "Moved wiringpi_3.16_arm64.deb"
-  sudo apt install ./wiringpi_3.16_arm64.deb
+  sudo apt install ./wiringpi_"$vMaj"."$vMin"_arm64.deb
     SUCCESS=$?; BuildLogMsg $SUCCESS "Installed Wiring Pi"
   cd /home/pi
+
 fi
 
 if [ "$UPDATE" == "true" ]; then
@@ -467,6 +489,65 @@ if [ "$UPDATE" == "false" ]; then
     SUCCESS=$?; BuildLogMsg $SUCCESS "make libiio"
   sudo make install
   cd /home/pi
+
+  echo
+  echo "------------------------------"
+  echo "----- Installing RTL-SDR -----"
+  echo "------------------------------"
+
+  cd /home/pi/portsdown/src
+  git clone git://git.osmocom.org/rtl-sdr.git
+    SUCCESS=$?; BuildLogMsg $SUCCESS "git clone rtl-sdr"
+  cd rtl-sdr
+  mkdir build
+  cd build
+  cmake ../ -DINSTALL_UDEV_RULES=ON
+    SUCCESS=$?; BuildLogMsg $SUCCESS "cmake rtl-sdr"
+  make
+    SUCCESS=$?; BuildLogMsg $SUCCESS "make rtl-sdr"
+  sudo make install
+  sudo cp ../rtl-sdr.rules /etc/udev/rules.d/
+  sudo ldconfig
+
+  # Create a new /etc/modprobe.d/blacklist-rtl.conf file
+  sudo cat > blacklist-rtl.conf << EOF
+blacklist dvb_usb_rtl28xxu
+blacklist rtl2832
+blacklist rtl2830
+EOF
+  sudo mv blacklist-rtl.conf /etc/modprobe.d/blacklist-rtl.conf
+
+  echo
+  echo "------------------------------------------"
+  echo "----- Installing DATV Express Server -----"
+  echo "------------------------------------------"
+
+  cd /home/pi
+  wget https://github.com/G4GUO/express_server/archive/master.zip
+    SUCCESS=$?; BuildLogMsg $SUCCESS "express_server download"
+  unzip master.zip
+  mv express_server-master /home/pi/portsdown/src/express_server
+  rm master.zip
+  cd /home/pi/portsdown/src/express_server
+  make
+    SUCCESS=$?; BuildLogMsg $SUCCESS "make express_server"
+  sudo make install
+
+  echo
+  echo "----------------------------------------"
+  echo "----- Preparing to install SDRPlay -----"
+  echo "----------------------------------------"
+
+  # Download api
+  cd /home/pi
+  wget https://www.sdrplay.com/software/SDRplay_RSP_API-Linux-3.15.2.run
+  chmod +x SDRplay_RSP_API-Linux-3.15.2.run
+
+  # Create file to trigger install on next reboot
+  touch /home/pi/portsdown/.post-install_actions
+  cd /home/pi
+
+
 fi
 
 # Compile legacy LimeSDR Toolbox
