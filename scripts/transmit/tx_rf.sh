@@ -11,7 +11,7 @@ cd /home/pi
 sudo killall -9 ffmpeg >/dev/null 2>/dev/null
 sudo killall portsdown >/dev/null 2>/dev/null
 
-# Kill netcat that night have been started for Express Server
+# Kill netcat
 sudo killall netcat >/dev/null 2>/dev/null
 sudo killall -9 netcat >/dev/null 2>/dev/null
 
@@ -39,6 +39,11 @@ FEC=$(get_config_var fec $PCONFIGFILE)
 LIMEGAIN=$(get_config_var limegain $PCONFIGFILE)
 
 AUDIO_CHANNELS=0
+
+if [ "$MODEOUTPUT" == "STREAMER" ]; then
+  exit
+fi
+
 
 ######################### Calculate the output frequency in Hz ###############
 
@@ -179,7 +184,7 @@ mkfifo videots
 
 if [ "$MODEOUTPUT" == "LIMEMINI" ]; then
 
-  $PATHBIN/"limesdr_dvb"  -i videots -s $SYMBOLRATEPS -f $FECNUM"/"$FECDEN -r 1 -m DVBS2 -c QPSK -t $FREQOUTPUTHZ -g $LIME_GAINF -q 1 -D 27 -e 2  &
+  $PATHBIN/"limesdr_dvb"  -i videots -s $SYMBOLRATEPS -f $FECNUM"/"$FECDEN -r 1 -m DVBS2 -c QPSK -t $FREQOUTPUTHZ -g $LIME_GAINF -q 1 -D 27 -e 2  >/dev/null 2>/dev/null &
   #$PATHBIN/"limesdr_dvb" -i videots -s $SYMBOLRATEPS -f $FECNUM"/"$FECDEN -r 1 -m DVBS2 -c QPSK -t $FREQOUTPUTHZ -g $LIME_GAINF -q 1 -D 27 -e 2 >/dev/null 2>/dev/null &
   #$PATHBIN/"limesdr_dvb" -i videots -s $SYMBOLRATEPS -f carrier -r 1 -m DVBS2 -c QPSK -t $FREQOUTPUTHZ -g $LIME_GAINF -q 1 -D 27 -e 2 &
   #$PATHBIN/"limesdr_dvb" -s $SYMBOLRATEPS -f carrier -r 1 -m DVBS2 -c QPSK -t $FREQOUTPUTHZ -g $LIME_GAINF -q 1 -D 27 -e 2 &
