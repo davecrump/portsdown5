@@ -112,8 +112,9 @@ sudo systemctl disable sdrplay  # service is started only when required
 # Record the Version Number
 head -c 9 /home/pi/portsdown/version_history.txt > /home/pi/portsdown/configs/installed_version.txt
 echo -e "\n" >> /home/pi/portsdown/configs/installed_version.txt
-echo "Version number" | sudo tee -a /home/pi/p5_initial_build_log.txt  > /dev/null
+printf "Version number: " | sudo tee -a /home/pi/p5_initial_build_log.txt  > /dev/null
 head -c 9 /home/pi/portsdown/version_history.txt | sudo tee -a /home/pi/p5_initial_build_log.txt  > /dev/null
+echo | sudo tee -a /home/pi/p5_initial_build_log.txt  > /dev/null
 
 if [ "$BUILD_STATUS" == "Fail" ] ; then
   echo $(date -u) "Build Stage 2 Fail" | sudo tee -a /home/pi/p5_initial_build_log.txt  > /dev/null

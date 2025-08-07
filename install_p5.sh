@@ -188,8 +188,8 @@ echo "----- Updating Package Manager -----"
 echo "------------------------------------"
 sudo dpkg --configure -a
   SUCCESS=$?; BuildLogMsg $SUCCESS "dpkg configure"
-sudo apt-get update --allow-releaseinfo-change
-  SUCCESS=$?; BuildLogMsg $SUCCESS "apt-get update"
+sudo apt update --allow-releaseinfo-change
+  SUCCESS=$?; BuildLogMsg $SUCCESS "apt update"
 
 # Uninstall the apt-listchanges package to allow silent install of ca certificates (201704030)
 # http://unix.stackexchange.com/questions/124468/how-do-i-resolve-an-apparent-hanging-update-process
@@ -208,10 +208,14 @@ echo
 echo "-----------------------------------"
 echo "----- Performing dist-upgrade -----"
 echo "-----------------------------------"
-sudo apt-get -y dist-upgrade
-  SUCCESS=$?; BuildLogMsg $SUCCESS "dist-upgrade"
+yes | sudo apt -y full-upgrade
+# sudo apt -y full-upgrade
+  SUCCESS=$?; BuildLogMsg $SUCCESS "full-upgrade"
 
 if [ "$UPDATE" == "false" ]; then
+
+  # Update the RPi firmware if required
+  # yes "yy"| sudo rpi-update
 
   # Install the packages that we need
   echo
@@ -232,15 +236,15 @@ if [ "$UPDATE" == "false" ]; then
   sudo apt-get -y install libfftw3-dev                            # For bandviewers
     SUCCESS=$?; BuildLogMsg $SUCCESS "libfftw3-dev install"
   sudo apt-get -y install nginx-light                             # For web access
-    SUCCESS=$?; BuildLogMsg $SUCCESS "libfcgi-dev install"
-  sudo apt-get -y install libfcgi-dev                             # For web control
     SUCCESS=$?; BuildLogMsg $SUCCESS "nginx-light install"
+  sudo apt-get -y install libfcgi-dev                             # For web control
+    SUCCESS=$?; BuildLogMsg $SUCCESS "libfcgi-dev install"
   sudo apt-get -y install libjpeg-dev                             #
     SUCCESS=$?; BuildLogMsg $SUCCESS "libjpeg-dev install"
   sudo apt-get -y install imagemagick                             # for captions
     SUCCESS=$?; BuildLogMsg $SUCCESS "imagemagick install"
-  sudo apt-get -y install libraspberrypi-dev                      # for bcm_host
-    SUCCESS=$?; BuildLogMsg $SUCCESS "libraspberrypi-dev install"
+  # sudo apt-get -y install libraspberrypi-dev                      # for bcm_host - removed as conflicts with vlc
+    # SUCCESS=$?; BuildLogMsg $SUCCESS "libraspberrypi-dev install"
   sudo apt-get -y install libpng-dev                              # for screen capture
     SUCCESS=$?; BuildLogMsg $SUCCESS "libpng-dev install"
   sudo apt-get -y install vlc                                     # for rx and replay
@@ -289,6 +293,30 @@ if [ "$UPDATE" == "false" ]; then
     SUCCESS=$?; BuildLogMsg $SUCCESS "arp-scan"
   sudo apt-get -y install mplayer                                 # For video monitor
     SUCCESS=$?; BuildLogMsg $SUCCESS "mplayer"
+  sudo apt-get -y install ir-keytable                             # For Ryde
+    SUCCESS=$?; BuildLogMsg $SUCCESS "ir-keytable"
+  sudo apt-get -y install python3-pygame                          # For Ryde
+    SUCCESS=$?; BuildLogMsg $SUCCESS "python3-pygame"
+  sudo apt-get -y install python3-vlc                             # For Ryde
+    SUCCESS=$?; BuildLogMsg $SUCCESS "python3-vlc"
+  sudo apt-get -y install python3-evdev                           # For Ryde
+    SUCCESS=$?; BuildLogMsg $SUCCESS "python3-evdev"
+  sudo apt-get -y install python3-urwid                           # For Ryde Utils
+    SUCCESS=$?; BuildLogMsg $SUCCESS "python3-urwid"
+  sudo apt-get -y install python3-librtmp                         # For Ryde Stream RX
+    SUCCESS=$?; BuildLogMsg $SUCCESS "python3-librtmp"
+  sudo apt-get -y install ncat                                    # For Rptr Controller
+    SUCCESS=$?; BuildLogMsg $SUCCESS "ncat"
+  sudo apt-get -y install lirc                                    # For Rptr Controller
+    SUCCESS=$?; BuildLogMsg $SUCCESS "lirc"
+  sudo apt-get -y install multimon-ng                             # For Rptr Controller
+    SUCCESS=$?; BuildLogMsg $SUCCESS "multimon-ng"
+  sudo apt-get -y install sox                                     # For Rptr Controller
+    SUCCESS=$?; BuildLogMsg $SUCCESS "sox"
+  sudo apt-get install -y i2c-tools                               # For Rptr Controller
+    SUCCESS=$?; BuildLogMsg $SUCCESS "i2c-tools"
+  sudo apt-get install -y telnet                                   # For Rptr Controller
+    SUCCESS=$?; BuildLogMsg $SUCCESS "telnet"
 fi
 
 # Placeholder for New packages during update
@@ -725,8 +753,9 @@ if [ "$UPDATE" == "false" ]; then
       echo "-----                                  -----"
       echo "-----       Waiting for Reboot         -----"
       echo "--------------------------------------------"
+      echo "Press enter to reboot for stage 2 of the installation"
+      read -p "or ctrl-c to exit to the command prompt"
       echo
-      read -p "Press enter to reboot for stage 2 of the installation"
     fi
 
     echo "-----                                  -----"
@@ -741,11 +770,12 @@ else   # Update
   DisplayUpdateMsg "Update Complete.  Rebooting"
   echo $(date -u) " Update Complete" | sudo tee -a /home/pi/p5_initial_build_log.txt  > /dev/null
 
-  # Record the Version Number
+  # Record the Version Number in the file and build log
   head -c 9 /home/pi/portsdown/version_history.txt > /home/pi/portsdown/configs/installed_version.txt
   echo -e "\n" >> /home/pi/portsdown/configs/installed_version.txt
-  echo "Version number" | sudo tee -a /home/pi/p5_initial_build_log.txt  > /dev/null
+  printf "Version number: " | sudo tee -a /home/pi/p5_initial_build_log.txt  > /dev/null
   head -c 9 /home/pi/portsdown/version_history.txt | sudo tee -a /home/pi/p5_initial_build_log.txt  > /dev/null
+  echo | sudo tee -a /home/pi/p5_initial_build_log.txt  > /dev/null
 
   echo
   echo "--------------------------------------------"

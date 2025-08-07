@@ -1,4 +1,4 @@
-selectedstream=14
+selectedstream=10
 stream1=rtmp://rtmp.batc.org.uk/live/db0kk
 label1=DB0KK
 stream2=rtmp://rtmp.batc.org.uk/live/db0oz
