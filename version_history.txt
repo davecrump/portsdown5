@@ -1,3 +1,6 @@
+202508070
+Full install.  Correct vlc conflict
+
 202507290
 Introduce full build and stream/tx updates
 
