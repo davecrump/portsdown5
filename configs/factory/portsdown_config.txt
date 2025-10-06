@@ -27,7 +27,6 @@ serviceid=1
 call=BATC
 locator=IO90LU
 tsvideofile=/home/pi/portsdown/videos/tsfile.ts
-paternfile=/home/pi/portsdown/videos
 pathmedia=/home/pi/portsdown/videos
 udpoutaddr=192.168.2.110
 adfref=25000000
@@ -51,6 +50,6 @@ guard=32
 qam=qpsk
 picam=normal
 vlcvolume=255
-langstone=none
+langstone=v2pluto
 upsample=1
 

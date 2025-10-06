@@ -50,9 +50,10 @@ if [ "$AUDIO_OUT" == "rpi" ]; then
 else # USB Dongle
   AUDIO_DEVICE="hw:CARD=Device,DEV=0"
 fi
+AUDIO_OUT=hdmi       #########################
 if [ "$AUDIO_OUT" == "hdmi" ]; then
   # Overide for HDMI
-  AUDIO_DEVICE="hw:CARD=b1,DEV=0"
+  AUDIO_DEVICE="sysdefault:CARD=vc4hdmi0"
 fi
 
 # Error check volume
@@ -80,7 +81,7 @@ fi
 # Start VLC
 
 cvlc -I rc --rc-host 127.0.0.1:1111 -f --video-title-timeout=100 \
-  --gain 3 --alsa-audio-device $AUDIO_DEVICE \
+  -A alsa --gain 3 --alsa-audio-device $AUDIO_DEVICE \
   $STREAMURL >/dev/null 2>/dev/null &
 
 rm  /home/pi/tmp/stream_status.txt >/dev/null 2>/dev/null

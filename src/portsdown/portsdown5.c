@@ -3942,6 +3942,9 @@ void Define_Menu7()
   AddButtonStatus(7, 13, "AD Power^Detector", &Blue);
   AddButtonStatus(7, 13, "AD Power^Detector", &Grey);
 
+  AddButtonStatus(7, 14, "PicoViewer^ ", &Blue);
+  AddButtonStatus(7, 14, "PicoViewer^ ", &Grey);
+
   AddButtonStatus(7, 0, "Switch to^KeyLimePi SA", &Blue);
   AddButtonStatus(7, 0, "Switch to^KeyLimePi SA", &Grey);
 
@@ -3962,8 +3965,6 @@ void Highlight_Menu7()
     SetButtonStatus(7, i, 0);
   }
 
-  SetButtonStatus(7, 0, 0);
-
   if (KeyLimePiEnabled == false)
   {
     SetButtonStatus(7, 0, 1);
@@ -3974,7 +3975,7 @@ void Highlight_Menu7()
   }
   else
   {
-    SetButtonStatus(7, 0, 1);
+    SetButtonStatus(7, 0, 0);
     SetButtonStatus(7, 15, 1);
     SetButtonStatus(7, 16, 1);
     SetButtonStatus(7, 17, 1);
@@ -6666,6 +6667,9 @@ void selectTestEquip(int Button)   // Test Equipment
     case 13:                             // AD Power Meter
       cleanexit(137);
       break;
+    case 14:                             // PicoViewer
+      cleanexit(181);
+      break;
     case 15:                             // LimeSDR BandViewer
       cleanexit(136);
       break;
@@ -8777,6 +8781,7 @@ void waitForScreenAction()
         case 11:
         case 12:
         case 13:
+        case 14:
         case 15:
         case 16:
         case 17:

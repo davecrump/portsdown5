@@ -25,6 +25,7 @@ sa_bv: sa_bv.c
 		../common/hardware.c \
         ../common/temperature.c \
         ../common/siggen.c \
+        ../common/utils.c \
         ../common/LMNspi/LMNspi.c \
 		sa_bv.c $(LIBFLAGS2)
 

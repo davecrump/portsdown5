@@ -18,6 +18,7 @@ sa_sdr: sa_sdr.c
 		../common/hardware.c \
         ../common/temperature.c \
         ../common/siggen.c \
+        ../common/utils.c \
 		../common/font/font.c \
 		../common/font/dejavu_sans_18.c \
 		../common/font/dejavu_sans_20.c \

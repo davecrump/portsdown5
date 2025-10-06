@@ -32,6 +32,7 @@
 #include "../common/LMNspi/LMNspi.h"
 #include "../common/temperature.h"
 #include "../common/siggen.h"
+#include "../common/utils.h"
 
 pthread_t thbutton;
 pthread_t thwebclick;                  //  Listens for clicks from web interface
@@ -80,6 +81,7 @@ color_t Black = {.r = 0  , .g = 0  , .b = 0  };
 #define PATH_CONFIG   "/home/pi/portsdown/configs/sa_sdr_config.txt"
 #define PATH_ICONFIG  "/home/pi/portsdown/configs/sa_if_config.txt"
 #define PATH_SGCONFIG "/home/pi/portsdown/configs/siggenconfig.txt"
+#define PATH_SGSTATE  "/home/pi/tmp/siggen_state.txt"
 
 #define MAX_BUTTON 675
 int IndexButtonInArray=0;
@@ -142,6 +144,7 @@ uint8_t band = 1;                        // Band 1 to 8
 uint8_t samode = 1;                      // Mode selected on front panel
 bool automode = true;                    // set to false to force a mode (persistent)
 int32_t atten = 0;                       // Input attenuator, 0 through -80 dB
+int32_t IFatten = 0;                     // IF attenuator, 0 through -30 dB
 bool samodeauto = true;                  // enables front panel control of which running app
 bool LimeStarted = false;                // delays checking mode until Lime is started so that it can shut down cleanly
 float smoothing_factor;
@@ -232,7 +235,6 @@ void CheckConfigFile();
 void ReadSavedParams();
 void *WaitTouchscreenEvent(void * arg);
 void *WaitMouseEvent(void * arg);
-//void handle_mouse();
 void *WebClickListener(void * arg);
 void parseClickQuerystring(char *query_string, int *x_ptr, int *y_ptr);
 FFUNC touchscreenClick(ffunc_session_t * session);
@@ -591,6 +593,33 @@ void ReadSavedParams()
   {
     samodeauto = false;
   }
+
+  // SigGen parameters
+
+  strcpy(response, "437000000");
+  GetConfigParam(PATH_SGCONFIG, "freq", response);
+  DisplayFreq = strtoll(response, 0, 0);
+  if (DisplayFreq > 2450000000)
+  {
+    DisplayFreq = 2450000000;
+  }
+  if (DisplayFreq < 70000000)
+  {
+    DisplayFreq = 70000000;
+  }
+
+  strcpy(response, "0");
+  GetConfigParam(PATH_SGCONFIG, "level", response);
+  level = atoi(response);
+  if (level < 0)
+  {
+    level = 0;
+  }
+  if (level > 42)
+  {
+    level  = 42;
+  }
+  SG_OutputLevel = CalcOPLevel(DisplayFreq, level, ModOn);
 }
 
 
@@ -618,23 +647,47 @@ void *WaitMouseEvent(void * arg)
   int y = 0;
   int scroll = 0;
   int fd;
-  //t inv_y;
-
   bool left_button_action = false;
+  FILE *fp;
+  char response[255];
+  char mouse_device[255] = "";
 
-  // Note x = y = 0 at bottom left
+  // Look up the mouse event entry
+  fp = popen("echo \"0\" | sudo evemu-describe 2>&1 | grep '/dev/input/event' | grep -e 'Mouse' -e 'mouse'", "r");
+  if (fp == NULL)
+  {
+    printf("Failed to run command\n" );
+    exit(1);
+  }
 
-  if ((fd = open("/dev/input/event0", O_RDONLY)) < 0)
+  // crop the entry to the event address
+  while (fgets(response, 65, fp) != NULL)
+  {
+    if (response[17] == ':')  // event 0 - 9
+    {
+      strcpyn(mouse_device, response, 17);
+    }
+    else if (response[18] == ':')  // event 10 - 99
+    {
+      strcpyn(mouse_device, response, 18);
+    }
+  }
+
+  // Close the file command
+  pclose(fp);
+
+  // Open the mouse device
+  if ((fd = open(mouse_device, O_RDONLY)) < 0)
   {
     perror("evdev open");
     exit(1);
   }
+
   struct input_event ev;
 
-  while(1)
+  while(app_exit == false)
   {
     read(fd, &ev, sizeof(struct input_event));
-
     if (ev.type == 2)  // EV_REL
     {
       if (ev.code == 0) // x
@@ -649,11 +702,9 @@ void *WaitMouseEvent(void * arg)
           x = 799;
         }
         //printf("value %d, type %d, code %d, x_pos %d, y_pos %d\n",ev.value,ev.type,ev.code, x, y);
-        //printf("x_pos %d, y_pos %d\n", x, y);
-        mouse_active = true;
-        moveCursor(x, y);
         mouse_x = x;
         mouse_y = y;
+        moveCursor(x, y);
       }
       else if (ev.code == 1) // y
       {
@@ -667,16 +718,13 @@ void *WaitMouseEvent(void * arg)
           y = 479;
         }
         //printf("value %d, type %d, code %d, x_pos %d, y_pos %d\n",ev.value,ev.type,ev.code, x, y);
-        //printf("x_pos %d, y_pos %d\n", x, y);
-        mouse_active = true;
-        while (image_complete == false)  // Wait for menu to be drawn
-        {
-          usleep(1000);
-        }
-        mouse_active = true;
-        moveCursor(x, y);
+//        while (image_complete == false)  // Wait for menu to be drawn
+//        {
+//          usleep(1000);
+//        }
         mouse_x = x;
         mouse_y = y;
+        moveCursor(x, y);
       }
       else if (ev.code == 8) // scroll wheel
       {
@@ -713,7 +761,10 @@ void *WaitMouseEvent(void * arg)
       {
         mouse_x = x;
         mouse_y = y;
+        scaledX = mouse_x;
+        scaledY = mouse_y;
         MouseClickForAction = true;
+        printf("scaledX = %d, scaledY = %d\n", scaledX, scaledY);
       }
       left_button_action = false;
     }
@@ -721,22 +772,10 @@ void *WaitMouseEvent(void * arg)
     { 
       //printf("value %d, type %d, code %d\n", ev.value, ev.type, ev.code);
     }
-    //printf("Mouse X = %d, mouse Y = %d\n", x, y);
   }
+  close(fd);
+  return NULL;
 }
-
-
-//void handle_mouse()
-//{
-  // First check if mouse is connected
-//  if (CheckMouse() != 0)    // Mouse not connected
-//  {
-//    return;
-//  }
-//  mouse_connected = true;
-//  printf("Starting Mouse Thread\n");
-//  pthread_create (&thmouse, NULL, &WaitMouseEvent, NULL);
-//}
 
 
 void *WebClickListener(void * arg)
@@ -3081,6 +3120,7 @@ void control_SigGen(int button)
   char InitText[63];
   bool IsValid = false;
   char ValueToSave[63];
+  char Value[63];
 
   switch (button)
   {
@@ -3095,7 +3135,7 @@ void control_SigGen(int button)
           usleep(10);                                   // wait till the end of the scan
         }
 
-        MsgBox4("DATV Express Source not detected", "Check that the Express output is selected", " ", "Touch screen to continue");
+        MsgBox4("DATV Express Source not detected", "Check that the Sig Gen RF output is selected", " ", "Touch screen to continue");
         wait_touch();
         // Tidy up, paint around the screen and then unfreeze
         clearScreen(0, 0, 0);
@@ -3111,7 +3151,13 @@ void control_SigGen(int button)
       // Check if DATV Express Server running.  If not, start it (which loads the firmware)
       if (CheckExpressRunning() != 0)        // DATV Express Server not running
       {
-        // Change menu to say firmware laoding
+        // Amend state
+        ModOn = false;
+        siggen_on = false;
+        SetConfigParam(PATH_SGSTATE, "state", "off");
+        SetConfigParam(PATH_SGSTATE, "mod", "off");
+
+        // Change menu to say firmware loading
         firmware_loading = true;
         firmware_loaded = false;
         Start_Highlights_Menu14();
@@ -3142,11 +3188,29 @@ void control_SigGen(int button)
           firmware_loaded = true;
         }
       }
-      else  // Server already running, so low firmware as loaded
+      else  // Server already running, so show firmware as loaded
       {
         firmware_loading = false;
         firmware_loaded = true;
+
+        // Now check stored state of SigGen
+        strcpy(Value, "off");
+        GetConfigParam(PATH_SGSTATE, "state", Value);
+
+        if (strcmp(Value, "on") == 0)
+        {
+          siggen_on = true;
+        }
+
+        strcpy(Value, "off");
+        GetConfigParam(PATH_SGSTATE, "mod", Value);
+
+        if (strcmp(Value, "on") == 0)
+        {
+          ModOn = true;
+        }
       }
+      SG_OutputLevel = CalcOPLevel(DisplayFreq, level, ModOn);
       Start_Highlights_Menu14();
       UpdateWindow();
 
@@ -3164,20 +3228,22 @@ void control_SigGen(int button)
           ExpressOnWithMod(DisplayFreq, level);
         }
         siggen_on = true;
+        SetConfigParam(PATH_SGSTATE, "state", "on");
       }
       else
       {
         ExpressOff();
         siggen_on = false;
+        SetConfigParam(PATH_SGSTATE, "state", "off");
       }
       break;
 
     case 2:                                                                               // Frequency
       // Define request string
-      strcpy(RequestText, "Enter frequency in Hz");
+      strcpy(RequestText, "Enter frequency in MHz");
 
       // Define initial value 
-      snprintf(InitText, 12, "%ld", DisplayFreq);
+      snprintf(InitText, 15, "%g", ((float)(DisplayFreq)) / 1000000);
 
       freeze = true;
       while(! frozen)
@@ -3188,13 +3254,13 @@ void control_SigGen(int button)
       while (IsValid == false)
       {
         Keyboard(RequestText, InitText, 10);
-        if (strlen(KeyboardReturn) < 8)
+        if (strlen(KeyboardReturn) < 2)
         {
           IsValid = false;
         }
         else
         {
-          DisplayFreq = strtoll(KeyboardReturn, 0, 0);
+          DisplayFreq = (uint64_t)(1000000 * atof(KeyboardReturn));
           if ((DisplayFreq >= 70000000) && (DisplayFreq <= 2450000000))
           {
             IsValid = true;
@@ -3229,6 +3295,7 @@ void control_SigGen(int button)
         {
           ExpressModOn();
         }
+        SetConfigParam(PATH_SGSTATE, "mod", "on");
       }
       else
       {
@@ -3238,6 +3305,7 @@ void control_SigGen(int button)
         {
           ExpressModOff();
         }
+        SetConfigParam(PATH_SGSTATE, "mod", "off");
       }
 
       // calculate new real level
@@ -3589,12 +3657,12 @@ void *WaitButtonEvent(void * arg)
         case 12:
           if (freeze)
           {
-            SetButtonStatus(ButtonNumber(CurrentMenu, 8), 0);
+            SetButtonStatus(ButtonNumber(CurrentMenu, 12), 0);
             freeze = false;
           }
           else
           {
-            SetButtonStatus(ButtonNumber(CurrentMenu, 8), 1);
+            SetButtonStatus(ButtonNumber(CurrentMenu, 12), 1);
             freeze = true;
           }
           UpdateWindow();
@@ -6002,6 +6070,9 @@ void *PanelMonitor_thread(void *arg)
     // Extract the Attenuator Setting
     atten = -10 * (int32_t)((M1A & 0x70) >> 4);  // Input 0x00 to 0x70, output 0 to -70 on steps of 10
 
+    // Extract the IF Attenuator Setting
+    IFatten = -30 + (10 * (int32_t)((M2A & 0x40) >> 6)) + (20 * (int32_t)((M2B & 0x40) >> 6));  // M2A and M2B Bit 6 inverted logic
+
     // Extract the mode
     samode = M2A & 0x0F;
 
@@ -6019,6 +6090,7 @@ void *PanelMonitor_thread(void *arg)
         case 7:
         case 8:
         case 9:
+          printf("\nExiting because mode switch is not slected to SA SDR\n\n");
           cleanexit(170);
           usleep(10000);
           break;
@@ -6063,9 +6135,9 @@ void *PanelMonitor_thread(void *arg)
       snprintf(AttenText, 70, "Attenuator %d dB", atten);
       Text(50, 270, AttenText, font_ptr, 0, 0, 0, 255, 255, 255);
 
-      // Selected Output
+      // IF Attenuator and Selected Output
       rectangle(50, 235, 700, 29, 0, 0, 0);
-      snprintf(OPDispText, 70, "Selected Output: %s", OPText);
+      snprintf(OPDispText, 70, "IF Attenuator %d db, Selected Output: %s", IFatten, OPText);
       Text(50, 240, OPDispText, font_ptr, 0, 0, 0, 255, 255, 255);
 
       // Temperatures
@@ -6121,7 +6193,6 @@ static void terminate(int sig)
 
 int main(void)
 {
-  int NoDeviceEvent=0;
   wscreen = 800;
   hscreen = 480;
   int screenXmax, screenXmin;
@@ -6161,33 +6232,43 @@ int main(void)
     LMNspi();
   }
 
+  // Sort out display and control.  If touchscreen detected, use that (and set config) with optional web control.
+  // Allow for mouse if touchscreen detected
+  // If no touchscreen, check for mouse.  If mouse detected, use that and set hdmi720 if hdmi mode not selected
+  // Allow optional web control.  If no mouse, set hdmi720 and enable web control.
+
   // Check the display type in the config file
-  strcpy(response, "Element14_7");
+  strcpy(response, "not_set");
   GetConfigParam(PATH_SCONFIG, "display", response);
   strcpy(DisplayType, response);
 
-  // Check for presence of touchscreen
-  for(NoDeviceEvent = 0; NoDeviceEvent < 7; NoDeviceEvent++)
+  if ((strcmp(DisplayType, "Element14_7") == 0) || (strcmp(DisplayType, "touch2") == 0))
   {
-    if (openTouchScreen(NoDeviceEvent) == 1)
-    {
-      if(getTouchScreenDetails(&screenXmin, &screenXmax, &screenYmin, &screenYmax) == 1) break;
-    }
-  }
-  if(NoDeviceEvent != 7)  // Touchscreen detected
-  {
-    printf("Touchscreen detected\n");
+    printf("Touchscreen detected after boot\n");
     touchscreen_present = true;
 
-    // Set correct entry in config file if required.  No need to reboot
-    if ((strcmp(DisplayType, "Element14_7") != 0) && (strcmp(DisplayType, "dfrobot5") != 0))
+    // Open the touchscreen
+    for (i = 0; i < 7; i++)
     {
-      strcpy(DisplayType, "Element14_7");
-      SetConfigParam(PATH_SCONFIG, "display", "Element14_7");
+      if (openTouchScreen(i) == 1)
+      {
+        if(getTouchScreenDetails(&screenXmin, &screenXmax, &screenYmin, &screenYmax) == 1) break;
+      }
     }
 
     // Create Touchscreen thread
     pthread_create (&thtouchscreen, NULL, &WaitTouchscreenEvent, NULL);
+
+    if (CheckMouse() == 0)
+    {
+      mouse_connected = true;
+      mouse_active = true;
+      printf("Mouse Connected\n");
+
+      // And start the mouse listener thread
+      printf("Starting Mouse Thread\n");
+      pthread_create (&thmouse, NULL, &WaitMouseEvent, NULL);
+    }
   }
   else // No touchscreen detected, check for mouse
   {
@@ -6197,17 +6278,6 @@ int main(void)
       mouse_active = true;
       printf("Mouse Connected\n");
 
-      // If display not previously set to hdmi, correct it
-      if ((strcmp(DisplayType, "hdmi") != 0) && (strcmp(DisplayType, "hdmi480") != 0)
-        && (strcmp(DisplayType, "hdmi720") != 0) && (strcmp(DisplayType, "hdmi1080") != 0))
-      {
-        strcpy(DisplayType, "hdmi720");
-        SetConfigParam(PATH_SCONFIG, "display", "hdmi720");
-        // need a linux command here to edit the cmdline.txt file and a reboot
-        //system ("/home/pi/rpidatv/scripts/set_display_config.sh");
-        //system ("sudo reboot now");
-      }
-
       // And start the mouse listener thread
       printf("Starting Mouse Thread\n");
       pthread_create (&thmouse, NULL, &WaitMouseEvent, NULL);
@@ -6216,18 +6286,16 @@ int main(void)
     {
       printf("Mouse not Connected\n");
 
-      SetConfigParam(PATH_SCONFIG, "webcontrol", "enabled");
-      webcontrol = true;
-
-      // If display not previously set to hdmi, correct it
-      if ((strcmp(DisplayType, "hdmi") != 0) && (strcmp(DisplayType, "hdmi480") != 0)
-        && (strcmp(DisplayType, "hdmi720") != 0) && (strcmp(DisplayType, "hdmi1080") != 0))
+      strcpy(response, "0");  // highlight null responses
+      GetConfigParam(PATH_SCONFIG, "webcontrol", response);
+      if (strcmp(response, "enabled") != 0)
       {
-        strcpy(DisplayType, "hdmi720");
-        SetConfigParam(PATH_SCONFIG, "display", "hdmi720");
-        // need a linux command here to edit the cmdline.txt file and a reboot
-        //system ("/home/pi/rpidatv/scripts/set_display_config.sh");
-        //system ("sudo reboot now");
+        SetConfigParam(PATH_SCONFIG, "webcontrol", "enabled");
+        webcontrol = true;
+
+        // Start the web click listener
+        pthread_create (&thwebclick, NULL, &WebClickListener, NULL);
+        printf("Created webclick listener thread\n");
       }
     }
   }
@@ -6250,7 +6318,7 @@ int main(void)
   printf ("Y Scale Factor = %f\n", scaleYvalue);
   printf ("hscreen = %d\n", hscreen);
 
-  StopExpressServer();  // Make sure that the SigGen is not running
+  //StopExpressServer();  // Make sure that the SigGen is not running
 
   Define_Menu1();
   Define_Menu2();

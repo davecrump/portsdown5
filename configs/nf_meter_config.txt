@@ -1,5 +1,5 @@
 title=KeyLimePi Noise Figure Indicator
-centrefreq=437000
+centrefreq=437200
 span=2048
 limegain=95
 pfreq1=146500
