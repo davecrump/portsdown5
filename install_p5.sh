@@ -317,6 +317,8 @@ if [ "$UPDATE" == "false" ]; then
     SUCCESS=$?; BuildLogMsg $SUCCESS "i2c-tools"
   sudo apt-get install -y telnet                                   # For Rptr Controller
     SUCCESS=$?; BuildLogMsg $SUCCESS "telnet"
+  sudo apt-get install -y cppcheck                                 # For TS Merger
+    SUCCESS=$?; BuildLogMsg $SUCCESS "cppcheck"
 fi
 
 # Placeholder for New packages during update
@@ -643,6 +645,18 @@ make -j 4 -O
   SUCCESS=$?; BuildLogMsg $SUCCESS "Lime BandViewer compile"
 
 mv /home/pi/portsdown/src/limeview/limeview /home/pi/portsdown/bin/limeview
+
+# Compile the PicoViewer
+echo
+echo "--------------------------------"
+echo "----- Compiling PicoViewer -----"
+echo "--------------------------------"
+
+cd /home/pi/portsdown/src/picoview
+make -j 4 -O
+  SUCCESS=$?; BuildLogMsg $SUCCESS "Picoiewer compile"
+
+mv /home/pi/portsdown/src/limeview/picoview /home/pi/portsdown/bin/picoview
 
 # Copy the fftw wisdom file to home so that there is no start-up delay
 # This file works for both BandViewer and NF Meter

@@ -137,13 +137,14 @@ ChooseBandViewerSDR()
 # 170  Spectrum Analyser Scheduler
 # 171  Spectrum Analyser DATV RX on IF
 # 172  Spectrum Analyser Direct DATV RX
-# 173  Spectrum Analyser Bolo power Meter
-# 174  Spectrum Analyser power detector
+# 173  Spectrum Analyser AD8318 power detector sweeper
+# 174  Spectrum Analyser Bolo power Meter
 # 175  Spectrum Analyser LimeSDR
 # 176  Spectrum Analyser LimeSDR fft on IF
 # 177  Spectrum Analyser Swept
 # 178  Spectrum Analyser TG Swept
 # 179  Spectrum Analyser TG Zero
+# 181  Pico Viewer
 # 192  Reboot from GUI
 # 193  Rotate 7 inch and reboot
 # 197  Start Ryde RX
@@ -255,8 +256,7 @@ echo
     ;;
     139)
       sleep 1
-      #/home/pi/portsdown/bin/sweeper
-      /home/pi/portsdown/bin/portsdown5
+      /home/pi/portsdown/bin/sweeper
       GUI_RETURN_CODE="$?"
     ;;
     140)
@@ -436,19 +436,19 @@ echo
       GUI_RETURN_CODE="$?"
     ;;
     171)
-      /home/pi/portsdown/bin/portsdown
+      /home/pi/portsdown/bin/portsdown5 -b rx
       GUI_RETURN_CODE="$?"
     ;;
     172)
-      /home/pi/portsdown/bin/portsdown
+      /home/pi/portsdown/bin/portsdown5 -b rx
       GUI_RETURN_CODE="$?"
     ;;
     173)
-      /home/pi/portsdown/bin/portsdown
+      /home/pi/portsdown/bin/sweeper
       GUI_RETURN_CODE="$?"
     ;;
     174)
-      /home/pi/portsdown/bin/portsdown
+      /home/pi/portsdown/bin/power_meter
       GUI_RETURN_CODE="$?"
     ;;
     175)
@@ -469,6 +469,10 @@ echo
     ;;
     179)
       /home/pi/portsdown/bin/sa_bv             # future parameter here
+      GUI_RETURN_CODE="$?"
+    ;;
+    181)
+      /home/pi/portsdown/bin/picoview
       GUI_RETURN_CODE="$?"
     ;;
     192)

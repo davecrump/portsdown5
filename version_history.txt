@@ -1,3 +1,6 @@
+202510060
+Pre-trixie install
+
 202508071
 Full install.  Correct vlc conflict
 

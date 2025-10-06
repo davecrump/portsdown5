@@ -10,36 +10,32 @@
 #include <linux/types.h>
 #include <linux/spi/spidev.h>
 #include <math.h>
-#include <wiringPi.h>
 #include <signal.h>
 #include <dirent.h>
 #include <pthread.h>
 #include <ctype.h>
 #include <stdbool.h>
 #include <fftw3.h>
-#include <wiringPi.h> // Include new WiringPi library
-#include <ads1115.h>
-#include <mcp23017.h>
+#include <termios.h>
+#include <errno.h>
 
-#include "lime.h"
+#include "serial.h"
 #include "fft.h"
 #include "../common/font/font.h"
 #include "../common/touch.h"
 #include "../common/graphics.h"
 #include "../common/timing.h"
-#include "../common/utils.h"
+#include "../common/hardware.h"
 #include "../common/buffer/buffer_circular.h"
 #include "../common/ffunc.h"
-#include "../common/hardware.h"
-
-#define PI 3.14159265358979323846
+#include "../common/LMNspi/LMNspi.h"
 
 pthread_t thbutton;
-pthread_t thMeter_Movement;
-pthread_mutex_t text_lock;
-pthread_t thwebclick;     //  Listens for mouse clicks from web interface
-pthread_t thtouchscreen;  //  listens to the touchscreen   
+pthread_t thwebclick;                  //  Listens for clicks from web interface
+pthread_t thtouchscreen;               //  listens to the touchscreen   
 pthread_t thmouse;                     //  Listens to the mouse
+static pthread_t serial_thread_obj;
+static pthread_t fft_thread_obj;
 
 int fd = 0;
 int wscreen, hscreen;
@@ -76,9 +72,9 @@ color_t DGrey = {.r = 32 , .g = 32 , .b = 32 };
 color_t Red   = {.r = 255, .g = 0  , .b = 0  };
 color_t Black = {.r = 0  , .g = 0  , .b = 0  };
 
+#define PATH_PCONFIG "/home/pi/portsdown/configs/portsdown_config.txt"
 #define PATH_SCONFIG "/home/pi/portsdown/configs/system_config.txt"
-#define PATH_CONFIG "/home/pi/portsdown/configs/nf_meter_config.txt"
-#define PATH_ICONFIG "/home/pi/portsdown/configs/sa_if_config.txt"
+#define PATH_CONFIG "/home/pi/portsdown/configs/picoview_config.txt"
 
 #define MAX_BUTTON 675
 int IndexButtonInArray=0;
@@ -88,43 +84,15 @@ int CurrentMenu = 1;
 int CallingMenu = 1;
 char KeyboardReturn[64];
 
-static bool app_exit = false;
-
-extern double frequency_actual_rx;
-extern double bandwidth;
-extern int y[260];
-extern float rawpwr[260];
-
-static pthread_t screen_thread_obj;
-static pthread_t lime_thread_obj;
-static pthread_t fft_thread_obj;
-
 bool NewFreq = false;
 bool NewGain = false;
 bool NewSpan = false;
 bool NewCal  = false;
 float gain;
 
-char StartApp[63];                     // Startup app on boot
-char DisplayType[31];                  // Element14_7, touch2, hdmi, web
-int VLCTransform = 0;                  // 0, 90, 180 or 270
-int FBOrientation = 0;                 // 0, 90, 180 or 270
-int HDMIResolution = 720;              // HDMI Resolution 720/1080
-bool TouchInverted = false;            // true if screen mounted upside down
-bool KeyLimePiEnabled = true;          // false for release
-
-bool Calibrated = false;
-
 int scaledX, scaledY;
 
-bool touch_inverted = false;
-bool mouse_active = false;             // set true after first movement of mouse
-
-bool MouseClickForAction = false;      // set true on left click of mouse
-int mouse_x;                           // click x 0 - 799 from left
-int mouse_y;                           // click y 0 - 479 from bottom
-bool image_complete = true;            // prevents mouse image buffer from being copied until image is complete
-bool mouse_connected = false;          // Set true if mouse detected at startup
+int FBOrientation = 0;                 // 0, 90, 180 or 270
 
 int wbuttonsize = 100;
 int hbuttonsize = 50;
@@ -133,49 +101,54 @@ int FinishedButton = 0;
 int i;
 bool freeze = false;
 bool frozen = false;
+bool activescan = false;
 bool PeakPlot = false;
 bool PortsdownExitRequested = false;
 
+int PeakValue[513] = {0};
+bool RequestPeakValueZero = false;
+
 int startfreq = 0;
 int stopfreq = 0;
-int rbw = 0;
+int32_t freqoffset = 0;   // 0 kHz for none, positive for low side, negative for high side
+
 char PlotTitle[63] = "-";
 bool ContScan = false;
 
-int centrefreq = 437000;
-int span = 5120;
-int limegain = 90;
-int nf_bandwidth = 5000;
-int pfreq1 = 146500;
-int pfreq2 = 437000;
-int pfreq3 = 748000;
-int pfreq4 = 1255000;
-int pfreq5 = 2409000;
+uint32_t centrefreq = 437000;
+uint32_t span = 512; 
+uint32_t pfreq1 = 146500;
+uint32_t pfreq2 = 437000;
+uint32_t pfreq3 = 748000;
+uint32_t pfreq4 = 1255000;
+uint32_t pfreq5 = 2409000;
 
-float MAIN_SPECTRUM_TIME_SMOOTH;
+float smoothing_factor;
 
-int ScansforLevel = 10;
-float ENR = 15.0;
-float RF_ENR = 15.0; // Used for transverters
-float Tsoff = 290.0;
-float Tson;
-bool CalibrateRequested = false;
-int meter_deflection = 0;
-bool ModeChanged = true;
-int MeterScale = 1;
-float ActiveZero = 30.0;
-float ActiveFSD = 0.0;
-uint8_t NoiseSourceGPIO = 7;   // Noise source pin 26 wPi 11 BCM 7
+int markerx = 250;
+int markery = 15;
+bool markeron = false;
+int markermode = 7;       // 2 peak, 3, null, 4 man, 7 off
+int historycount = 0;
+int markerxhistory[10];
+int markeryhistory[10];
+int manualmarkerx = 250;
+bool MarkerRefresh = false;
+bool waterfall;
+bool spectrum;
+bool scope = false;
+bool invert_scope = false;
 
-float NFsmoothingFactor = 0.95;
+bool Range20dB = false;
+int BaseLine20dB = -80;
+int8_t BaselineShift = 0;
 
-// Define LO Frequency at Ends of Range
-int LowFreqVolts = -31363;
-float LowFreqLO = 2003.69;
-int HiFreqVolts = 31700;
-float HiFreqLO = 4576.31;
-bool samodeauto = true;                  // enables front panel control of which running app
-bool LimeStarted = false;                // delays checking mode until Lime is started so that it can shut down cleanly
+int WaterfallBase;
+int WaterfallRange;
+uint16_t wfalltimespan = 0;
+char TraceType[10] = "single"; // single, average or peak
+
+bool webcontrol = false;   // Enables webcontrol
 
 int tracecount = 0;  // Used for speed testing
 int exit_code;
@@ -187,9 +160,13 @@ int yshift    = 5;        // Vertical shift (pixels) for Y
 int xscalenum = 25;       // Numerator for X scaling fraction
 int xscaleden = 20;       // Denominator for X scaling fraction
 
-bool webcontrol = false;   // Enables webcontrol on a Portsdown 4
-bool LargeNumbers = false;  // Enables large numbers instead of parameters
-bool LargeNumbersDisplayed = false;  // Used to clear screen area when large numbers are toggled off
+bool app_exit = false;
+
+double frequency_actual_rx;
+double bandwidth;
+extern int y[515];
+int y3[515];
+
 bool webclicklistenerrunning = false; // Used to only start thread if required
 char WebClickForAction[7] = "no";  // no/yes
 char ProgramName[255];             // used to pass prog name char string to listener
@@ -202,57 +179,76 @@ int TouchY;
 int TouchPressure;
 int TouchTrigger = 0;
 bool touchneedsinitialisation = true;
+bool touch_inverted = false;
 bool FalseTouch = false;     // used to simulate a screen touch if a monitored event finishes
 
+bool mouse_active = false;             // set true after first movement of mouse
+bool MouseClickForAction = false;      // set true on left click of mouse
+int mouse_x;                           // click x 0 - 799 from left
+int mouse_y;                           // click y 0 - 479 from bottom
+bool image_complete = true;            // prevents mouse image buffer from being copied until image is complete
+bool mouse_connected = false;          // Set true if mouse detected at startup
+
 char DisplayType[31];
+bool rotate_display = true;
 bool touchscreen_present = false;
+
+int adresult[2047];
+int ADCclkDiv_value;
+bool dataready = false;
+
+// ******************* External functions for reference *********************
+
+// *************** hardware.c: ***************
+
+// int FindMouseEvent();
+// int CheckMouse();
 
 ///////////////////////////////////////////// FUNCTION PROTOTYPES ///////////////////////////////
 
-void GetConfigParam(char *, char *, char *);
-void SetConfigParam(char *, char *, char *);
+void GetConfigParam(char *PathConfigFile, char *Param, char *Value);
+void SetConfigParam(char *PathConfigFile, char *Param, char *Value);
 void CheckConfigFile();
 void ReadSavedParams();
 void *WaitTouchscreenEvent(void * arg);
 void *WaitMouseEvent(void * arg);
+//void handle_mouse();
 void *WebClickListener(void * arg);
 void parseClickQuerystring(char *query_string, int *x_ptr, int *y_ptr);
 FFUNC touchscreenClick(ffunc_session_t * session);
 void take_snap();
 void snap_from_menu();
 void do_snapcheck();
-int IsImageToBeChanged(int, int);
+int IsImageToBeChanged(int x,int y);
+int CheckPicoConnect();
 void UpdateWeb();
 void Keyboard(char RequestText[63], char InitText[63], int MaxLength);
-int openTouchScreen(int);
-int getTouchScreenDetails(int*, int* ,int* ,int*);
-void TransformTouchMap(int, int);
-int IsButtonPushed(int, int, int);
-int IsMenuButtonPushed(int, int);
-void ChangeSmallMeterScale(int);
-void ToggleLargeNumbers();
+int openTouchScreen(int NoDevice);
+int getTouchScreenDetails(int *screenXmin, int *screenXmax,int *screenYmin,int *screenYmax);
+void TransformTouchMap(int x, int y);
+int IsButtonPushed(int NbButton,int x,int y);
+int IsMenuButtonPushed(int x,int y);
 int InitialiseButtons();
-int AddButton(int, int, int, int);
-int ButtonNumber(int, int);
-int CreateButton(int, int);
-int AddButtonStatus(int, char *, color_t *);
-void AmendButtonStatus(int, int, char *, color_t *);
-void DrawButton(int);
-void SetButtonStatus(int ,int);
+int AddButton(int x,int y,int w,int h);
+int ButtonNumber(int MenuIndex, int Button);
+int CreateButton(int MenuIndex, int ButtonPosition);
+int AddButtonStatus(int ButtonIndex,char *Text,color_t *Color);
+void AmendButtonStatus(int ButtonIndex, int ButtonStatusIndex, char *Text, color_t *Color);
+void DrawButton(int ButtonIndex);
+void SetButtonStatus(int ButtonIndex,int Status);
 int getTouchSampleThread(int *rawX, int *rawY, int *rawPressure);
 int getTouchSample(int *rawX, int *rawY, int *rawPressure);
 void UpdateWindow();
 void wait_touch();
-void SetSpanWidth(int);
-void SetLimeGain(int);
-void AdjustLimeGain(int);
-void SetENR();
-void SetRF_ENR();
-void SetSourceGPIO();
-void SetFreqPreset(int);
-void ShiftFrequency(int);
+void CalculateMarkers();
+void SetSpanWidth(int button);
+void SetMode(int button);
+void SetFreqPreset(int button);
+void SetWfall(int button);
+void ShiftFrequency(int button);
 void CalcSpan();
-void ChangeLabel(int);
+uint32_t ConstrainFreq(uint32_t CheckFreq);
+void ChangeLabel(int button);
 void RedrawDisplay();
 void *WaitButtonEvent(void * arg);
 void Define_Menu1();
@@ -260,31 +256,35 @@ void Start_Highlights_Menu1();
 void Define_Menu2();
 void Start_Highlights_Menu2();
 void Define_Menu3();
+void Start_Highlights_Menu3();
 void Define_Menu4();
+void Start_Highlights_Menu4();
 void Define_Menu5();
+void Start_Highlights_Menu5();
 void Define_Menu6();
 void Start_Highlights_Menu6();
 void Define_Menu7();
 void Start_Highlights_Menu7();
 void Define_Menu8();
+void Start_Highlights_Menu8();
 void Define_Menu9();
+void Start_Highlights_Menu9();
 void Define_Menu10();
 void Start_Highlights_Menu10();
+void Define_Menu11();
+void Define_Menu12();
+void Start_Highlights_Menu12();
 void Define_Menu41();
-void DrawEmptyScreen();  
-void DrawYaxisLabels();  
+void DrawEmptyScreen();
+void DrawTickMarks();
+void DrawYaxisLabels();
 void DrawSettings();
-void DrawTrace(int, int, int, int);
-void DrawMeterArc();
-void DrawMeterTicks(int, int);
-void Draw5MeterLabels(float, float);
-void *MeterMovement(void * arg);
-void CalibrateSystem();
-static void cleanexit(int);
-static void terminate(int sig);
+void DrawTrace(int xoffset, int prev2, int prev1, int current);
+static void cleanexit(int calling_exit_code);
 
 
-///////////////////////////////////////////// SCREEN AND TOUCH UTILITIES ////////////////////////
+///////////////////////////////////////////// SETUP FUNCTIONS ////////////////////////
+
 
 /***************************************************************************//**
  * @brief Looks up the value of a Param in PathConfigFile and sets value
@@ -324,11 +324,10 @@ void GetConfigParam(char *PathConfigFile, char *Param, char *Value)
   }
   else
   {
-    printf("Config file %s not found \n", PathConfigFile);
+    printf("Config file not found \n");
   }
   fclose(fp);
 }
-
 
 /***************************************************************************//**
  * @brief sets the value of Param in PathConfigFile from a program variable
@@ -340,6 +339,7 @@ void GetConfigParam(char *PathConfigFile, char *Param, char *Value)
  *
  * @return void
 *******************************************************************************/
+
 
 void SetConfigParam(char *PathConfigFile, char *Param, char *Value)
 {
@@ -383,6 +383,15 @@ void SetConfigParam(char *PathConfigFile, char *Param, char *Value)
 }
 
 
+/***************************************************************************//**
+ * @brief Checks the Config file and adds new entries if required
+ *
+ * @param None
+ *
+ * @return void
+ * 
+*******************************************************************************/
+
 void CheckConfigFile()
 {
   // Template for future use
@@ -403,6 +412,15 @@ void CheckConfigFile()
 }
 
 
+/***************************************************************************//**
+ * @brief Reads the Config file into global variables
+ *
+ * @param None
+ *
+ * @return void
+ * 
+*******************************************************************************/
+
 void ReadSavedParams()
 {
   char response[63]="0";
@@ -411,78 +429,90 @@ void ReadSavedParams()
   GetConfigParam(PATH_CONFIG, "title", PlotTitle);
 
   GetConfigParam(PATH_CONFIG, "centrefreq", response);
-  centrefreq = atoi(response);
+  centrefreq = ConstrainFreq(atoi(response));
 
   GetConfigParam(PATH_CONFIG, "span", response);
   span = atoi(response);
 
-  CalcSpan();
+  strcpy(response, "spectrum");
+  GetConfigParam(PATH_CONFIG, "mode", response);
+  if (strcmp(response, "spectrum") == 0)
+  {
+    spectrum = true;
+    waterfall = false;
+  }
+  if (strcmp(response, "20db") == 0)
+  {
+    spectrum = true;
+    Range20dB = true;
+    waterfall = false;
+  }
+  if (strcmp(response, "waterfall") == 0)
+  {
+    spectrum = false;
+    waterfall = true;
+  }
+  if (strcmp(response, "mix") == 0)
+  {
+    spectrum = true;
+    waterfall = true;
+  }
 
-  GetConfigParam(PATH_CONFIG, "limegain", response);
-  limegain = atoi(response);
-  gain = ((float)limegain) / 100.0;
+  strcpy(response, "-60");
+  GetConfigParam(PATH_CONFIG, "wfallbase", response);
+  WaterfallBase = atoi(response);
 
-  strcpy(response, "146500");
-  GetConfigParam(PATH_CONFIG, "pfreq1", response);
-  pfreq1 = atoi(response);
+  strcpy(response, "60");
+  GetConfigParam(PATH_CONFIG, "wfallrange", response);
+  WaterfallRange = atoi(response);
 
-  GetConfigParam(PATH_CONFIG, "pfreq2", response);
-  pfreq2 = atoi(response);
+  strcpy(response, "0");
+  GetConfigParam(PATH_CONFIG, "wfalltimespan", response);
+  wfalltimespan = atoi(response);
 
-  GetConfigParam(PATH_CONFIG, "pfreq3", response);
-  pfreq3 = atoi(response);
+  strcpy(response, "single");
+  GetConfigParam(PATH_CONFIG, "tracetype", response);
+  strcpy(TraceType, response);
 
-  GetConfigParam(PATH_CONFIG, "pfreq4", response);
-  pfreq4 = atoi(response);
+  printf("TraceType read in as %s\n", TraceType);
 
-  GetConfigParam(PATH_CONFIG, "pfreq5", response);
-  pfreq5 = atoi(response);
+  strcpy(response, "0");
+  GetConfigParam(PATH_CONFIG, "freqoffset", response);
+  freqoffset = atoi(response);
 
-  GetConfigParam(PATH_CONFIG, "enr", response);
-  ENR = atof(response);
-  RF_ENR = ENR;
+  strcpy(response, "0");
+  GetConfigParam(PATH_CONFIG, "baselineshift", response);
+  BaselineShift = atoi(response);
 
-  strcpy(response, "26");
-  GetConfigParam(PATH_CONFIG, "noiseswitchpin", response);
-  NoiseSourceGPIO = PinToBroadcom(atoi(response));
+  strcpy(response, "-80");
+  GetConfigParam(PATH_CONFIG, "baseline20db", response);
+  BaseLine20dB = atoi(response);
 
-  strcpy(response, "0.9");
-  GetConfigParam(PATH_CONFIG, "nfsmoothingfactor", response);
-  NFsmoothingFactor = atof(response);
+  strcpy(response, "spectrum");
+  GetConfigParam(PATH_CONFIG, "display", response);
+  if (strcmp(response, "scope") == 0)
+  {
+    scope = true;
+  }
+  else
+  {
+    scope = false;
+  }
 
-
-  // System Config File
-
-  strcpy(response, "0");  // highlight null responses
-  GetConfigParam(PATH_SCONFIG, "startup", response);
-  strcpy(StartApp, response);
-
-  strcpy(response, "0");  // highlight null responses
-  GetConfigParam(PATH_SCONFIG, "display", response);
-  strcpy (DisplayType, response);
-
-  strcpy(response, "0");  // highlight null responses
-  GetConfigParam(PATH_SCONFIG, "vlctransform", response);
-  VLCTransform = atoi(response);
+  strcpy(response, "no");
+  GetConfigParam(PATH_CONFIG, "invert", response);
+  if (strcmp(response, "yes") == 0)
+  {
+    invert_scope = true;
+  }
+  else
+  {
+    invert_scope = false;
+  }
 
   strcpy(response, "0");  // highlight null responses
   GetConfigParam(PATH_SCONFIG, "fborientation", response);
   FBOrientation = atoi(response);
-
-  strcpy(response, "0");  // highlight null responses
-  GetConfigParam(PATH_SCONFIG, "hdmiresolution", response);
-  HDMIResolution = atoi(response);
-
-  strcpy(response, "0");  // highlight null responses
-  GetConfigParam(PATH_SCONFIG, "touch", response);
-  if (strcmp(response, "normal") == 0)
-  {
-    TouchInverted = false;
-  }
-  else
-  {
-    TouchInverted = true;
-  }
 
   GetConfigParam(PATH_SCONFIG, "webcontrol", response);
   if (strcmp(response, "enabled") == 0)
@@ -501,32 +531,6 @@ void ReadSavedParams()
   if (strcmp(response, "inverted") == 0)
   {
     touch_inverted = true;
-  }
-
-  strcpy(response, "-31363");
-  GetConfigParam(PATH_ICONFIG, "lowfreqvolts", response);
-  LowFreqVolts = atoi(response);
-
-  strcpy(response, "2003.69");
-  GetConfigParam(PATH_ICONFIG, "lowfreqlo", response);
-  LowFreqLO = atof(response);
-
-  strcpy(response, "31700");
-  GetConfigParam(PATH_ICONFIG, "hifreqvolts", response);
-  HiFreqVolts = atoi(response);
-
-  strcpy(response, "4576.31");
-  GetConfigParam(PATH_ICONFIG, "hifreqlo", response);
-  HiFreqLO = atof(response);
-
-  GetConfigParam(PATH_ICONFIG, "samodesel", response);
-  if (strcmp(response, "auto") == 0)
-  {
-    samodeauto = true;
-  }
-  else
-  {
-    samodeauto = false;
   }
 }
 
@@ -555,47 +559,24 @@ void *WaitMouseEvent(void * arg)
   int y = 0;
   int scroll = 0;
   int fd;
+  char mouse_event_name[63];
+
   bool left_button_action = false;
-  FILE *fp;
-  char response[255];
-  char mouse_device[255] = "";
+  snprintf(mouse_event_name, 63, "/dev/input/event%d", FindMouseEvent());
 
-  // Look up the mouse event entry
-  fp = popen("echo \"0\" | sudo evemu-describe 2>&1 | grep '/dev/input/event' | grep -e 'Mouse' -e 'mouse'", "r");
-  if (fp == NULL)
-  {
-    printf("Failed to run command\n" );
-    exit(1);
-  }
+  // Note x = y = 0 at bottom left
 
-  // crop the entry to the event address
-  while (fgets(response, 65, fp) != NULL)
-  {
-    if (response[17] == ':')  // event 0 - 9
-    {
-      strcpyn(mouse_device, response, 17);
-    }
-    else if (response[18] == ':')  // event 10 - 99
-    {
-      strcpyn(mouse_device, response, 18);
-    }
-  }
-
-  // Close the file command
-  pclose(fp);
-
-  // Open the mouse device
-  if ((fd = open(mouse_device, O_RDONLY)) < 0)
+  if ((fd = open(mouse_event_name, O_RDONLY)) < 0)
   {
     perror("evdev open");
     exit(1);
   }
-
   struct input_event ev;
 
-  while(app_exit == false)
+  while(1)
   {
     read(fd, &ev, sizeof(struct input_event));
+
     if (ev.type == 2)  // EV_REL
     {
       if (ev.code == 0) // x
@@ -610,9 +591,11 @@ void *WaitMouseEvent(void * arg)
           x = 799;
         }
         //printf("value %d, type %d, code %d, x_pos %d, y_pos %d\n",ev.value,ev.type,ev.code, x, y);
+        //printf("x_pos %d, y_pos %d\n", x, y);
+        mouse_active = true;
+        moveCursor(x, y);
         mouse_x = x;
         mouse_y = y;
-        moveCursor(x, y);
       }
       else if (ev.code == 1) // y
       {
@@ -626,13 +609,16 @@ void *WaitMouseEvent(void * arg)
           y = 479;
         }
         //printf("value %d, type %d, code %d, x_pos %d, y_pos %d\n",ev.value,ev.type,ev.code, x, y);
-//        while (image_complete == false)  // Wait for menu to be drawn
-//        {
-//          usleep(1000);
-//        }
+        //printf("x_pos %d, y_pos %d\n", x, y);
+        mouse_active = true;
+        while (image_complete == false)  // Wait for menu to be drawn
+        {
+          usleep(1000);
+        }
+        mouse_active = true;
+        moveCursor(x, y);
         mouse_x = x;
         mouse_y = y;
-        moveCursor(x, y);
       }
       else if (ev.code == 8) // scroll wheel
       {
@@ -669,10 +655,7 @@ void *WaitMouseEvent(void * arg)
       {
         mouse_x = x;
         mouse_y = y;
-        scaledX = mouse_x;
-        scaledY = mouse_y;
         MouseClickForAction = true;
-        printf("scaledX = %d, scaledY = %d\n", scaledX, scaledY);
       }
       left_button_action = false;
     }
@@ -680,9 +663,8 @@ void *WaitMouseEvent(void * arg)
     { 
       //printf("value %d, type %d, code %d\n", ev.value, ev.type, ev.code);
     }
+    //printf("Mouse X = %d, mouse Y = %d\n", x, y);
   }
-  close(fd);
-  return NULL;
 }
 
 
@@ -787,8 +769,10 @@ void take_snap()
   pclose(fp);
 
   SnapNumber=atoi(SnapIndex);  // this is the next snap number to be saved.  Needs incrementing before exit
-
+printf("pre-fb2png\n");
   fb2png(); // saves snap to /home/pi/tmp/snapshot.png
+printf("post-fb2png\n");
+
   system("convert /home/pi/tmp/snapshot.png /home/pi/tmp/screen.jpg");
 
   sprintf(SnapIndexText, "%d", SnapNumber);
@@ -927,13 +911,13 @@ int IsImageToBeChanged(int x,int y)
 {
   // Returns -1 for LHS touch, 0 for centre and 1 for RHS
 
-  TransformTouchMap(x, y);       // Sorts out orientation and approx scaling of the touch map
+  TransformTouchMap(x,y);       // Sorts out orientation and approx scaling of the touch map
 
-  if (scaledX <= wscreen / 4)
+  if (scaledX <= wscreen/8)
   {
     return -1;
   }
-  else if (scaledX >= 3 * wscreen / 4)
+  else if (scaledX >= 7 * wscreen/8)
   {
     return 1;
   }
@@ -945,23 +929,21 @@ int IsImageToBeChanged(int x,int y)
 
 
 /***************************************************************************//**
- * @brief Checks whether a LimeSDR is connected
+ * @brief Checks whether a Raspberry Pi Pico is connected
  *
  * @param 
  *
- * @return 0 if present, 1 if absent (or V1)
+ * @return 0 if present, 1 if absent
 *******************************************************************************/
 
-int CheckLimeConnect()
+int CheckPicoConnect()
 {
   FILE *fp;
   char response[255];
   int responseint = 1;
 
-return 0;
-
   /* Open the command for reading. */
-  fp = popen("LimeUtil --make | grep -q 'LimeSDR' ; echo $?", "r");
+  fp = popen("lsusb | grep -q 'Pi Pico' ; echo $?", "r");
   if (fp == NULL) {
     printf("Failed to run command\n" );
     exit(1);
@@ -1025,8 +1007,6 @@ void Keyboard(char RequestText[63], char InitText[63], int MaxLength)
   refreshed = false;
 
   // Set up text
-  //setForeColour(255, 255, 255);    // White text
-  //setBackColour(0, 0, 0);          // on Black
   clearScreen(0, 0, 0);
   const font_t *font_ptr = &font_dejavu_sans_28;
 
@@ -1051,11 +1031,7 @@ void Keyboard(char RequestText[63], char InitText[63], int MaxLength)
       UpdateWindow();
 
       // Display Instruction Text
-      //setForeColour(255, 255, 255);    // White text
-      //setBackColour(0, 0, 0);          // on Black
-      pthread_mutex_lock(&text_lock);
       Text(10, 420 , RequestText, font_ptr, 0, 0, 0, 255, 255, 255);
-      pthread_mutex_unlock(&text_lock);
 
       // Blank out the text line to erase the previous text and cursor
       rectangle(10, 320, 780, 40, 0, 0, 0);
@@ -1073,7 +1049,6 @@ void Keyboard(char RequestText[63], char InitText[63], int MaxLength)
         {
           TextMid(i * charPitch, 330, thischar, font_ptr, 0, 0, 0, 255, 255, 255);    // White text
         }
-
       }
 
       // Draw the cursor
@@ -1289,11 +1264,13 @@ void Keyboard(char RequestText[63], char InitText[63], int MaxLength)
         SetButtonStatus(ButtonNumber(41, token), ShiftStatus);
         DrawButton(ButtonNumber(41, token));
         publish();
+        //UpdateWindow();
         usleep(300000);
         ShiftStatus = 2 - (2 * KeyboardShift); // 0 = Upper, 2 = lower
         SetButtonStatus(ButtonNumber(41, token), ShiftStatus);
         DrawButton(ButtonNumber(41, token));
         publish();
+        //UpdateWindow();
 
         if (strlen(EditText) < 23) // Don't let it overflow
         {
@@ -1342,7 +1319,6 @@ int openTouchScreen(int NoDevice)
     return 0;
   }
 }
-
 
 int getTouchScreenDetails(int *screenXmin, int *screenXmax,int *screenYmin,int *screenYmax)
 {
@@ -1400,7 +1376,6 @@ int getTouchScreenDetails(int *screenXmin, int *screenXmax,int *screenYmin,int *
   return IsAtouchDevice;
 }
 
-
 void TransformTouchMap(int x, int y)
 {
   // This function takes the raw (0 - 4095 on each axis) touch data x and y
@@ -1432,8 +1407,7 @@ int IsButtonPushed(int NbButton,int x,int y)
   }
 }
 
-
-int IsMenuButtonPushed(int x, int y)
+int IsMenuButtonPushed(int x,int y)
 {
   int  i, NbButton, cmo, cmsize;
   NbButton = -1;
@@ -1447,20 +1421,6 @@ int IsMenuButtonPushed(int x, int y)
   // For each button in the current Menu, check if it has been pushed.
   // If it has been pushed, return the button number.  If nothing valid has been pushed return -1
   // If it has been pushed, do something with the last event time
-
-  // Check for small meter scale "buttons"
-  if ((scaledX <= 600) && (scaledX >= 350)
-   && (scaledY <= 470) && (scaledY >= 270))
-  {
-    ChangeSmallMeterScale(scaledX);
-  } 
-
-  // Check for Large Number select/deselct
-  if ((scaledX <= 300) && (scaledX >= 100)
-   && (scaledY <= 270) && (scaledY >= 70))
-  {
-    ToggleLargeNumbers();
-  } 
 
   for (i = 0; i <cmsize; i++)
   {
@@ -1480,64 +1440,6 @@ int IsMenuButtonPushed(int x, int y)
     }
   }
   return NbButton;
-}
-
-
-void ChangeSmallMeterScale(int scaledX)
-{
-    if (scaledX >= 475)
-    {
-      MeterScale = MeterScale + 1;
-    }
-    else
-    {
-      MeterScale = MeterScale - 1;
-    }
-    if (MeterScale < 1)
-    {
-      MeterScale = 1;
-    }
-    if (MeterScale > 5)
-    {
-      MeterScale = 5;
-    }
-    switch (MeterScale)
-    {
-    case 1:                   // 30 - 0
-      ActiveZero = 30.0;
-      ActiveFSD = 0.0;
-    break;
-    case 2:                   // 30 - 20
-      ActiveZero = 30.0;
-      ActiveFSD = 20.0;
-    break;
-    case 3:                   // 20 - 10
-      ActiveZero = 20.0;
-      ActiveFSD = 10.0;
-    break;
-    case 4:                   // 10 - 0
-      ActiveZero = 10.0;
-      ActiveFSD = 0.0;
-    break;
-    case 5:                   // 5 - 0
-      ActiveZero = 5.0;
-      ActiveFSD = 0.0;
-    break;
-    }
-    ModeChanged = true;
-} 
-
-
-void ToggleLargeNumbers()
-{
-  if (LargeNumbers == true)
-  {
-    LargeNumbers = false;
-  }
-  else
-  {
-    LargeNumbers = true;
-  }
 }
 
 
@@ -1608,7 +1510,7 @@ int CreateButton(int MenuIndex, int ButtonPosition)
 
   ButtonIndex = ButtonNumber(MenuIndex, ButtonPosition);
 
-  if ((MenuIndex != 41) && (MenuIndex != 1) && (MenuIndex != 6))   // All except Main, keyboard, Span
+  if ((MenuIndex != 41) && (MenuIndex != 1) && (MenuIndex != 2) && (MenuIndex != 6))   // All except Main, keyboard, Span, Markers
   {
     if (ButtonPosition == 0)  // Capture
     {
@@ -1626,7 +1528,7 @@ int CreateButton(int MenuIndex, int ButtonPosition)
       h = 50;
     }
   }
-  else if (MenuIndex == 1)   // Main Menu
+  else if ((MenuIndex == 1) || (MenuIndex == 2))   // Main and Marker Menu
   {
     if (ButtonPosition == 0)  // Capture
     {
@@ -1675,31 +1577,67 @@ int CreateButton(int MenuIndex, int ButtonPosition)
       h = 50;
     }
 
-    if ((ButtonPosition > 0) && (ButtonPosition < 6))  // 6 right hand buttons
+    if (ButtonPosition == 1)                            // Menu Title
     {
       x = normal_xpos;
       y = 480 - (ButtonPosition * 60);
       w = normal_width;
       h = 50;
     }
-    if (ButtonPosition == 6) // 10
+    if (ButtonPosition == 2)                             // 100 kHz
+    {
+      x = normal_xpos;  
+      y = 480 - (2 * 60);
+      w = 50;
+      h = 50;
+    }
+    if (ButtonPosition == 3)                             // 200 kHz
+    {
+      x = 710;   // = normal_xpos + 50 button width + 20 gap
+      y = 480 - (2 * 60);
+      w = 50;
+      h = 50;
+    }
+
+    if ((ButtonPosition == 4) || (ButtonPosition == 5))  // 500 kHz and 1 MHz
+    {
+      x = normal_xpos;
+      y = 480 - (ButtonPosition * 60) + 60;
+      w = normal_width;
+      h = 50;
+    }
+    if (ButtonPosition == 6) // 2
+    {
+      x = normal_xpos;  
+      y = 480 - (5 * 60);
+      w = 50;
+      h = 50;
+    }
+    if (ButtonPosition == 7) // 5
+    {
+      x = 710;  // = normal_xpos + 50 button width + 20 gap
+      y = 480 - (5 * 60);
+      w = 50;
+      h = 50;
+    }
+    if (ButtonPosition == 8) // 10
     {
       x = normal_xpos;  
       y = 480 - (6 * 60);
       w = 50;
       h = 50;
     }
-    if (ButtonPosition == 7) // 20
+    if (ButtonPosition == 9) // 20
     {
       x = 710;  // = normal_xpos + 50 button width + 20 gap
       y = 480 - (6 * 60);
       w = 50;
       h = 50;
     }
-    if ((ButtonPosition > 7) && (ButtonPosition < 10))  // Bottom 2 buttons
+    if ((ButtonPosition == 10) || (ButtonPosition == 11))  // Bottom 2 buttons
     {
       x = normal_xpos;
-      y = 480 - ((ButtonPosition - 1) * 60);
+      y = 480 - ((ButtonPosition - 3) * 60);
       w = normal_width;
       h = 50;
     }
@@ -1782,6 +1720,7 @@ int CreateButton(int MenuIndex, int ButtonPosition)
       x = ((ButtonPosition - 39) * 66) - 33;
     }
   }
+
   button_t *NewButton=&(ButtonArray[ButtonIndex]);
   NewButton->x=x;
   NewButton->y=y;
@@ -2086,17 +2025,51 @@ void UpdateWindow()    // Paint each defined button
   int first;
   int last;
 
-  // Draw a black rectangle where the buttons are to erase them
-  rectangle(620, 0, 160, 480, 0, 0, 0);
+  if (markeron == false)
+  {
+    // Draw a black rectangle where the buttons are to erase them
+    rectangle(620, 0, 160, 480, 0, 0, 0);
+  }
+  else   // But don't erase the marker text
+  {
+    rectangle(620, 0, 160, 420, 0, 0, 0);
+  }
+
+  // Don't draw buttons if the Markers are being refreshed.  Wait here
 
   // Draw each button in turn
   first = ButtonNumber(CurrentMenu, 0);
   last = ButtonNumber(CurrentMenu + 1 , 0) - 1;
-  for(i = first; i <= last; i++)
+  if ((markeron == false) || (CurrentMenu == 41))
   {
-    if (ButtonArray[i].IndexStatus > 0)  // If button needs to be drawn
+    for(i = first; i <= last; i++)
     {
-      DrawButton(i);                     // Draw the button
+      if (ButtonArray[i].IndexStatus > 0)  // If button needs to be drawn
+      {
+        DrawButton(i);                     // Draw the button
+      }
+    }
+  }
+  else
+  {
+    if (ButtonArray[first].IndexStatus > 0)  // If button needs to be drawn
+    {
+      while (MarkerRefresh == true)          // Wait for marker refresh to prevent conflict
+      {
+        usleep(10);
+      }
+      DrawButton(first);                     // Draw button 0, but not button 1
+    }
+    for(i = (first + 2); i <= last; i++)
+    {
+      if (ButtonArray[i].IndexStatus > 0)  // If button needs to be drawn
+      {
+        while (MarkerRefresh == true)      // Wait for marker refresh to prevent conflict
+        {
+          usleep(10);
+        }
+        DrawButton(i);                     // Draw the button
+      }
     }
   }
   publish();
@@ -2120,6 +2093,111 @@ void wait_touch()
   printf("wait_touch exit\n");
 }
 
+void CalculateMarkers()
+{
+  int maxy;
+  int xformaxy = 0;
+  int xsum = 0;
+  int ysum = 0;
+  int markersamples = 10;
+  char markerlevel[31];
+  char markerfreq[31];
+  float markerlev;
+  float markerf;
+
+  switch (markermode)
+  {
+    case 2:  // peak
+      maxy = 0;
+      for (i = 10; i < 499; i++)
+      {
+         if((y[i + 6] + 1) > maxy)
+         {
+           maxy = y[i + 6] + 1;
+           xformaxy = i;
+         }
+      }
+    break;
+
+    case 3:  // null
+      maxy = 400;
+      for (i = 50; i < 450; i++)
+      {
+         if((y[i + 6] + 1) < maxy)
+         {
+           maxy = y[i + 6] + 1;
+           xformaxy = i;
+         }
+      }
+    break;
+
+    case 4:  // manual
+      maxy = 0;
+      //maxy = y[manualmarkerx + 6] + 1;
+
+
+      for (i = (manualmarkerx - 5); i < (manualmarkerx + 6); i++)
+      {
+         if((y[i + 6] + 1) > maxy)
+         {
+           maxy = y[i + 6] + 1;
+           //xformaxy = i;
+         }
+      }
+
+      xformaxy = manualmarkerx;
+    break;
+  }
+
+  MarkerRefresh = true;  // Prevent other text screen-writes
+                         // Do it early so as not to catch the tail end of text
+
+  // Now smooth the marker 
+  markerxhistory[historycount] = xformaxy;
+  markeryhistory[historycount] = maxy;
+
+  for (i = 0; i < markersamples; i++)
+  {
+    xsum = xsum + markerxhistory[i];
+    ysum = ysum + markeryhistory[i];
+  }
+
+  historycount++;
+  if (historycount > (markersamples - 1))
+  {
+    historycount = 0;
+  }
+  markerx = 100 + (xsum / markersamples);
+  markery = 410 - (ysum / markersamples);
+
+  // And display it
+  if (Range20dB == false)
+  {
+    markerlev = ((float)(410 - markery) / 5.0) - 50.0 - BaselineShift;  // in dB for a 0 to -80 screen
+  }
+  else
+  {
+    markerlev = ((float)(410 - markery) / 20.0) + (float)(BaseLine20dB - BaselineShift) + 30.0;  // in dB for a BaseLine20dB to 20 above screen
+  }
+  rectangle(620, 420, 160, 60, 0, 0, 0);  // Blank the Menu title
+  snprintf(markerlevel, 14, "Mkr %0.1f dB", markerlev);
+  Text(640, 450, markerlevel, &font_dejavu_sans_18, 0, 0, 0, 255, 255, 255);
+
+startfreq = -280;
+stopfreq = 121820;
+
+  if((startfreq != -1 ) && (stopfreq != -1)) // "Do not display" values
+  {
+
+    markerf = (float)((((markerx - 100) * (stopfreq - startfreq)) / 500 + startfreq)) / 1000.0; 
+    snprintf(markerfreq, 14, "%0.2f kHz", markerf);
+    Text(640, 425, markerfreq, &font_dejavu_sans_18, 0, 0, 0, 255, 255, 255);
+  }
+  MarkerRefresh = false;  // Unlock screen writes
+
+  publish();
+}
+
 
 void SetSpanWidth(int button)
 {  
@@ -2135,21 +2213,27 @@ void SetSpanWidth(int button)
   switch (button)
   {
     case 2:
-      span = 512;
+      span = 102;
     break;
     case 3:
-      span = 1024;
+      span = 205;
     break;
     case 4:
-      span = 2048;
+      span = 512;
     break;
     case 5:
-      span = 5120;
+      span = 1024;
     break;
     case 6:
-      span = 10240;
+      span = 2048;
     break;
     case 7:
+      span = 5120;
+    break;
+    case 8:
+      span = 10240;
+    break;
+    case 9:
       span = 20480;
     break;
   }
@@ -2165,13 +2249,12 @@ void SetSpanWidth(int button)
 
   DrawSettings();       // New labels
   freeze = false;
-  Calibrated = false;
 }
 
 
-void SetLimeGain(int button)
+void SetMode(int button)
 {  
-  char ValueToSave[63];
+  char ValueToSave[63] = "spectrum";
 
   // Stop the scan at the end of the current one and wait for it to stop
   freeze = true;
@@ -2183,211 +2266,39 @@ void SetLimeGain(int button)
   switch (button)
   {
     case 2:
-      limegain = 100;
+      spectrum = true;
+      waterfall = false;
+      Range20dB = false;
+      strcpy(ValueToSave, "spectrum");
     break;
     case 3:
-      limegain = 90;
+      spectrum = true;
+      waterfall = false;
+      Range20dB = true;
+      strcpy(ValueToSave, "20db");
     break;
     case 4:
-      limegain = 70;
+      spectrum = false;
+      waterfall = true;
+      Range20dB = false;
+      strcpy(ValueToSave, "waterfall");
     break;
     case 5:
-      limegain = 50;
-    break;
-    case 6:
-      limegain = 30;
-    break;
-  }
-
-  // Store the new gain
-  snprintf(ValueToSave, 63, "%d", limegain);
-  SetConfigParam(PATH_CONFIG, "limegain", ValueToSave);
-  printf("limegain set to %d \n", limegain);
-
-  // Trigger the gain change
-  gain = ((float)limegain) / 100.0;
-  NewGain = true;
-  Calibrated = false;
-  freeze = false;
-}
-
-
-void AdjustLimeGain(int button)
-{  
-  char ValueToSave[63];
-
-  // Stop the scan at the end of the current one and wait for it to stop
-  freeze = true;
-  while(! frozen)
-  {
-    usleep(10);                                   // wait till the end of the scan
-  }
-
-  switch (button)
-  {
-    case 3:      // up
-      if (limegain >= 95)
-      {
-        limegain = 100;
-      }
-      else
-      {
-        limegain = limegain + 5;
-      }
-    break;
-    case 5:      // down
-      if (limegain <= 5)
-      {
-        limegain = 0;
-      }
-      else
-      {
-        limegain = limegain - 5;
-      }
+      spectrum = true;
+      waterfall = true;
+      Range20dB = false;
+      strcpy(ValueToSave, "mix");
     break;
   }
 
-  // Store the new gain
-  snprintf(ValueToSave, 63, "%d", limegain);
-  SetConfigParam(PATH_CONFIG, "limegain", ValueToSave);
-  printf("limegain set to %d \n", limegain);
+  // Store the new mode
+  SetConfigParam(PATH_CONFIG, "mode", ValueToSave);
+  printf("Mode set to %s \n", ValueToSave);
 
-  // Trigger the gain change
-  gain = ((float)limegain) / 100.0;
-  NewGain = true;
-  Calibrated = false;
-  freeze = false;
-}
-
-
-void SetENR()
-{  
-  char ValueToSave[63];
-  char RequestText[64];
-  char InitText[63];
-  float newENR;
-
-  // Stop the scan at the end of the current one and wait for it to stop
-  freeze = true;
-  while(! frozen)
-  {
-    usleep(10);                                   // wait till the end of the scan
-  }
-
-  // Define request string
-  strcpy(RequestText, "Enter the new ENR (range 1 to 30) in dB");
-
-  // Define initial value
-  snprintf(InitText, 10, "%.2f", ENR);
- 
-  // Ask for the new value
-  do
-  {
-    Keyboard(RequestText, InitText, 10);
-    newENR = atof(KeyboardReturn);
-  }
-  while ((newENR < 1.0) || (newENR > 30.0));
-
-  ENR = newENR;
-  snprintf(ValueToSave, 63, "%.2f", newENR);
-
-  // Store the new ENR and recalculate
-  SetConfigParam(PATH_CONFIG, "enr", ValueToSave);
-  printf("new ENR set to %.2f \n", ENR);
-  Tson = Tsoff * (1 + pow(10, (ENR / 10)));
-  RF_ENR = ENR;
-
-  Calibrated = false;
-
-  // Tidy up, paint around the screen and then unfreeze
-  clearScreen(0, 0, 0);
-  DrawEmptyScreen();  // Required to set A value, which is not set in DrawTrace
-  DrawYaxisLabels();  // dB calibration on LHS
-  DrawSettings();     // Start, Stop RBW, Ref level and Title
-  ModeChanged = true; // Redraw the meter scale
-  freeze = false;
-}
-
-
-void SetRF_ENR()
-{  
-  char RequestText[64];
-  char InitText[63];
-  float newENR;
-
-  // Stop the scan at the end of the current one and wait for it to stop
-  freeze = true;
-  while(! frozen)
-  {
-    usleep(10);                                   // wait till the end of the scan
-  }
-
-  // Define request string
-  strcpy(RequestText, "Enter the ENR at the Tvrtr input frequency");
-
-  // Define initial value
-  snprintf(InitText, 10, "%.2f", RF_ENR);
- 
-  // Ask for the new value
-  do
-  {
-    Keyboard(RequestText, InitText, 10);
-    newENR = atof(KeyboardReturn);
-  }
-  while ((newENR < 1.0) || (newENR > 30.0));
-
-  RF_ENR = newENR;
-
-  // Tidy up, paint around the screen and then unfreeze
-  clearScreen(0, 0, 0);
-  DrawEmptyScreen();  // Required to set A value, which is not set in DrawTrace
-  DrawYaxisLabels();  // dB calibration on LHS
-  DrawSettings();     // Start, Stop RBW, Ref level and Title
-  ModeChanged = true; // Redraw the meter scale
-  freeze = false;
-}
-
-
-void SetSourceGPIO()
-{
-  char RequestText[64];
-  char InitText[63];
-  int newNoiseSourceGPIO;
-
-  // Stop the scan at the end of the current one and wait for it to stop
-  freeze = true;
-  while(! frozen)
-  {
-    usleep(10);                                   // wait till the end of the scan
-  }
-
-  // Define request string
-  strcpy(RequestText, "Enter the physical pin no for the GPIO (default 26)");
-
-  printf("NSG = %d, pin = %d\n", NoiseSourceGPIO, BroadcomToPin(NoiseSourceGPIO));
-
-  // Define initial value
-  snprintf(InitText, 10, "%d", BroadcomToPin(NoiseSourceGPIO));
- 
-  // Ask for the new value
-  do
-  {
-    Keyboard(RequestText, InitText, 10);
-    newNoiseSourceGPIO = PinToBroadcom(atoi(KeyboardReturn));
-  }
-  while ((newNoiseSourceGPIO < 0) || (newNoiseSourceGPIO > 40));
-
-  NoiseSourceGPIO = newNoiseSourceGPIO;
-
-  SetConfigParam(PATH_CONFIG, "noiseswitchpin", KeyboardReturn);
-  printf("New Noise Source GPIO set to physical pin %s, Broadcom %d\n", KeyboardReturn, NoiseSourceGPIO);
-
-  // Tidy up, paint around the screen and then unfreeze
-  clearScreen(0, 0, 0);
-  DrawEmptyScreen();  // Required to set A value, which is not set in DrawTrace
-  DrawYaxisLabels();  // dB calibration on LHS
-  DrawSettings();     // Start, Stop RBW, Ref level and Title
-  ModeChanged = true; // Redraw the meter scale
+  // Trigger the mode change
+  CalcSpan();
+  RedrawDisplay();
+  DrawTickMarks();
   freeze = false;
 }
 
@@ -2443,7 +2354,6 @@ void SetFreqPreset(int button)
 
     DrawSettings();       // New labels
     freeze = false;
-    Calibrated = false;
   }
   else if (CallingMenu == 10)  // Amend the preset frequency
   {
@@ -2483,24 +2393,24 @@ void SetFreqPreset(int button)
 
     if(div_10.rem != 0)  // last character not zero, so make answer of form xxx.xxx
     {
-      snprintf(InitText, 15, "%d.%03d", div_1000.quot, div_1000.rem);
+      snprintf(InitText, 40, "%d.%03d", div_1000.quot, div_1000.rem);
     }
     else
     {
       div_100 = div(amendfreq, 100);
       if(div_100.rem != 0)  // last but one character not zero, so make answer of form xxx.xx
       {
-        snprintf(InitText, 30, "%d.%02d", div_1000.quot, div_1000.rem / 10);
+        snprintf(InitText, 40, "%d.%02d", div_1000.quot, div_1000.rem / 10);
       }
       else
       {
         if(div_1000.rem != 0)  // last but two character not zero, so make answer of form xxx.x
         {
-          snprintf(InitText, 15, "%d.%d", div_1000.quot, div_1000.rem / 100);
+          snprintf(InitText, 40, "%d.%d", div_1000.quot, div_1000.rem / 100);
         }
         else  // integer MHz, so just xxx (no dp)
         {
-          snprintf(InitText, 10, "%d", div_1000.quot);
+          snprintf(InitText, 40, "%d", div_1000.quot);
         }
       }
     }
@@ -2560,9 +2470,89 @@ void SetFreqPreset(int button)
     DrawYaxisLabels();  // dB calibration on LHS
     DrawSettings();     // Start, Stop RBW, Ref level and Title
     freeze = false;
-    Calibrated = false;
   }
-  ModeChanged = true;
+}
+
+
+void SetWfall(int button)
+{
+  char ValueToSave[63];
+  char RequestText[63];
+  char InitText[63];
+
+  // Stop the scan at the end of the current one and wait for it to stop
+  freeze = true;
+  while(! frozen)
+  {
+    usleep(10);                                   // wait till the end of the scan
+  }
+
+  switch (button)
+  {
+    case 2:                                            // Set Waterfall Base
+      // Define request string
+      strcpy(RequestText, "Enter new base for the waterfall in dB (-80 to 0)");
+
+      // Define initial value in dB
+      snprintf(InitText, 25, "%d", WaterfallBase);
+
+      // Ask for the new value
+      do
+      {
+        Keyboard(RequestText, InitText, 10);
+      }
+      while ((strlen(KeyboardReturn) == 0) || (atoi(KeyboardReturn) < -80) || (atoi(KeyboardReturn) > 0));
+
+      WaterfallBase = atoi(KeyboardReturn);
+      snprintf(ValueToSave, 63, "%d", WaterfallBase);
+      SetConfigParam(PATH_CONFIG, "wfallbase", ValueToSave);
+      printf("Waterfall Base set to %d dB\n", WaterfallBase);
+    break;
+    case 3:                                            // Set waterfall range
+      // Define request string
+      strcpy(RequestText, "Enter new range for the waterfall in dB (1 to 80)");
+
+      // Define initial value in dB
+      snprintf(InitText, 25, "%d", WaterfallRange);
+
+      // Ask for the new value
+      do
+      {
+        Keyboard(RequestText, InitText, 10);
+      }
+      while ((strlen(KeyboardReturn) == 0) || (atoi(KeyboardReturn) < 1) || (atoi(KeyboardReturn) > 80));
+
+      WaterfallRange = atoi(KeyboardReturn);
+      snprintf(ValueToSave, 63, "%d", WaterfallRange);
+      SetConfigParam(PATH_CONFIG, "wfallrange", ValueToSave);
+      printf("Waterfall Range set to %d dB\n", WaterfallRange);
+    break;
+    case 12:                                            // Set Waterfall Base
+      // Define request string
+      strcpy(RequestText, "Enter new waterfall span in seconds (0 for minimum)");
+
+      // Define initial value
+      snprintf(InitText, 25, "%d", wfalltimespan);
+
+      // Ask for the new value
+      do
+      {
+        Keyboard(RequestText, InitText, 10);
+      }
+      while ((strlen(KeyboardReturn) == 0) || (atoi(KeyboardReturn) < 0));
+
+      wfalltimespan = atoi(KeyboardReturn);
+      snprintf(ValueToSave, 63, "%d", wfalltimespan);
+      SetConfigParam(PATH_CONFIG, "wfalltimespan", ValueToSave);
+      printf("Waterfall timespan set to %d seconds\n", wfalltimespan);
+    break;
+  }
+  clearScreen(0, 0, 0);
+  DrawEmptyScreen();  // Required to set A value, which is not set in DrawTrace
+  DrawYaxisLabels();  // dB calibration on LHS
+  DrawTickMarks();    // tick marks on X axis
+  DrawSettings();     // Start, Stop RBW, Ref level and Title
+  freeze = false;
 }
 
 
@@ -2587,6 +2577,8 @@ void ShiftFrequency(int button)
     break;
   }
 
+  centrefreq = ConstrainFreq(centrefreq);
+
   // Store the new frequency
   snprintf(ValueToSave, 63, "%d", centrefreq);
   SetConfigParam(PATH_CONFIG, "centrefreq", ValueToSave);
@@ -2600,53 +2592,90 @@ void ShiftFrequency(int button)
 
   DrawSettings();       // New labels
   freeze = false;
-  Calibrated = false;
-  ModeChanged = true;
 }
-
 
 void CalcSpan()    // takes centre frequency and span and calulates startfreq and stopfreq
 {
   startfreq = centrefreq - (span * 125) / 256;
   stopfreq =  centrefreq + (span * 125) / 256;
   frequency_actual_rx = 1000.0 * (float)(centrefreq);
-  bandwidth = (float)(span * 1000);
-  nf_bandwidth = span * 250 / 256;   //nf bandwidth in kHz
 
-  // set a sensible time constant for the fft display
-  if (bandwidth >= 2048000)
+  if (span == 102)
   {
-    MAIN_SPECTRUM_TIME_SMOOTH =  0.98;
+    bandwidth = 102400.0;
+  }
+  else if (span == 205)
+  {
+    bandwidth = 204800.0;
   }
   else
   {
-    MAIN_SPECTRUM_TIME_SMOOTH =  0.90;
+    bandwidth = (float)(span * 1000);
   }
 
-  // Set levelling time for NF Measurement
-  switch (span)
+  // set a sensible time constant for the fft display
+  if (Range20dB == false)
   {
-    case 512:                                            // 500 kHz use 15
-      ScansforLevel = 15;
-      break;
-    case 1024:                                            // 1 MHz use 10
-      ScansforLevel = 10;
-      break;
-    case 2048:                                            // 2 MHz use 10
-      ScansforLevel = 10;
-      break;
-    case 5120:                                            // 5 MHz use 10
-      ScansforLevel = 10;
-      break;
-    case 10240:                                            // 10 MHz use 10
-      ScansforLevel = 10;
-      break;
-    case 20480:                                            // 20 MHz use 10
-      ScansforLevel = 10;
-      break;
-    default:
-      ScansforLevel = 10;
+    switch (span)
+    {
+      //case 102:                                             // 100 kHz
+      //  smoothing_factor =  0.88;
+      //  break;
+      default:
+        smoothing_factor =  0.7;
+    }
   }
+  else
+  {
+    switch (span)
+    {
+//      case 102:                                             // 100 kHz
+//        smoothing_factor =  0.99;
+//        break;
+//      case 205:                                             // 200 kHz
+//        smoothing_factor =  0.992;
+//        break;
+//      case 512:                                             // 500 kHz
+//        smoothing_factor =  0.994;
+//        break;
+//      case 1024:                                            // 1 MHz
+//        smoothing_factor =  0.9955;
+//        break;
+//      case 2048:                                            // 2 MHz
+//        smoothing_factor =  0.9965;
+//        break;
+//      case 5120:                                            // 5 MHz
+//        smoothing_factor =  0.997;
+//        break;
+//      case 10240:                                           // 10 MHz
+//        smoothing_factor =  0.9981;
+//        break;
+//      case 20480:                                           // 20 MHz
+//        smoothing_factor =  0.9985;
+//        break;
+      default:
+        smoothing_factor =  0.7;
+    }
+  }
+
+  if (waterfall == true)
+  {
+    smoothing_factor =  0;
+  }
+}
+
+
+uint32_t ConstrainFreq(uint32_t CheckFreq)  // Check Freq is within bounds
+{
+  if (CheckFreq < 30000) // 30 MHz
+  {
+    return 30000;
+  }
+  if (CheckFreq > 3500000)  // 3.5 GHz
+  {
+    return 3500000;
+  }
+  return CheckFreq;
 }
 
 
@@ -2678,24 +2707,24 @@ void ChangeLabel(int button)
 
       if(div_10.rem != 0)  // last character not zero, so make answer of form xxx.xxx
       {
-        snprintf(InitText, 30, "%d.%03d", div_1000.quot, div_1000.rem);
+        snprintf(InitText, 25, "%d.%03d", div_1000.quot, div_1000.rem);
       }
       else
       {
         div_100 = div(centrefreq, 100);
         if(div_100.rem != 0)  // last but one character not zero, so make answer of form xxx.xx
         {
-          snprintf(InitText, 30, "%d.%02d", div_1000.quot, div_1000.rem / 10);
+          snprintf(InitText, 25, "%d.%02d", div_1000.quot, div_1000.rem / 10);
         }
         else
         {
           if(div_1000.rem != 0)  // last but two character not zero, so make answer of form xxx.x
           {
-            snprintf(InitText, 30, "%d.%d", div_1000.quot, div_1000.rem / 100);
+            snprintf(InitText, 25, "%d.%d", div_1000.quot, div_1000.rem / 100);
           }
           else  // integer MHz, so just xxx (no dp)
           {
-            snprintf(InitText, 10, "%d", div_1000.quot);
+            snprintf(InitText, 25, "%d", div_1000.quot);
           }
         }
       }
@@ -2713,7 +2742,6 @@ void ChangeLabel(int button)
       SetConfigParam(PATH_CONFIG, "centrefreq", ValueToSave);
       printf("Centre Freq set to %d \n", centrefreq);
       NewFreq = true;
-      ModeChanged = true;
       break;
 
     case 6:                                                       // Plot Title
@@ -2740,6 +2768,88 @@ void ChangeLabel(int button)
       SetConfigParam(PATH_CONFIG, "title", PlotTitle);
       printf("Plot Title set to: %s\n", KeyboardReturn);
       break;
+
+    case 16:                                                       // Offset Freq
+      // Define request string
+      strcpy(RequestText, "Enter freq offset in MHz. 0 for none, -ve for high side");
+
+      // Define initial value and convert to MHz
+      div_10 = div(freqoffset, 10);
+      div_1000 = div(freqoffset, 1000);
+
+      if (freqoffset >= 0)   // zero or positive offset
+      {
+        if(div_10.rem != 0)  // last character not zero, so make answer of form xxx.xxx
+        {
+          snprintf(InitText, 25, "%d.%03d", div_1000.quot, div_1000.rem);
+        }
+        else
+        {
+          div_100 = div(freqoffset, 100);
+          if(div_100.rem != 0)  // last but one character not zero, so make answer of form xxx.xx
+          {
+            snprintf(InitText, 25, "%d.%02d", div_1000.quot, div_1000.rem / 10);
+          }
+          else
+          {
+            if(div_1000.rem != 0)  // last but two character not zero, so make answer of form xxx.x
+            {
+              snprintf(InitText, 25, "%d.%d", div_1000.quot, div_1000.rem / 100);
+            }
+            else  // integer MHz, so just xxx (no dp)
+            {
+              snprintf(InitText, 25, "%d", div_1000.quot);
+            }
+          }
+        }
+      }
+      else              // Negative offset
+      {
+        if(div_10.rem != 0)  // last character not zero, so make answer of form xxx.xxx
+        {
+          snprintf(InitText, 25, "%d.%03d", div_1000.quot, 0 - div_1000.rem);
+        }
+        else
+        {
+          div_100 = div(freqoffset, 100);
+          if(div_100.rem != 0)  // last but one character not zero, so make answer of form xxx.xx
+          {
+            snprintf(InitText, 25, "%d.%02d", div_1000.quot, 0 - (div_1000.rem / 10));
+          }
+          else
+          {
+            if(div_1000.rem != 0)  // last but two character not zero, so make answer of form xxx.x
+            {
+              snprintf(InitText, 25, "%d.%d", div_1000.quot, 0 - (div_1000.rem / 100));
+            }
+            else  // integer MHz, so just xxx (no dp)
+            {
+              snprintf(InitText, 25, "%d", div_1000.quot);
+            }
+          }
+        }
+      }
+
+      // Ask for the new value
+      do
+      {
+        Keyboard(RequestText, InitText, 10);
+      }
+      while (strlen(KeyboardReturn) == 0);
+
+      if (atof(KeyboardReturn) >= 0)
+      {
+        freqoffset = (int)((1000 * atof(KeyboardReturn)) + 0.1);
+      }
+      else   // negative frequncy offset
+      {
+        freqoffset = (int)((1000 * atof(KeyboardReturn)) - 0.1);
+      }
+
+      snprintf(ValueToSave, 63, "%d", freqoffset);
+      SetConfigParam(PATH_CONFIG, "freqoffset", ValueToSave);
+      printf("Freq Offset set to %d \n", freqoffset);
+      break;
   }
 
   // Tidy up, paint around the screen and then unfreeze
@@ -2748,10 +2858,8 @@ void ChangeLabel(int button)
   DrawEmptyScreen();  // Required to set A value, which is not set in DrawTrace
   DrawYaxisLabels();  // dB calibration on LHS
   DrawSettings();     // Start, Stop RBW, Ref level and Title
-  ModeChanged = true;
   freeze = false;
 }
-
 
 void RedrawDisplay()
 {
@@ -2760,11 +2868,14 @@ void RedrawDisplay()
 
 }
 
+
 //////////////////////////////////////// DEAL WITH TOUCH EVENTS //////////////////////////////////////
+
 
 void *WaitButtonEvent(void * arg)
 {
   int  rawPressure;
+  char ValueToSave[63];
 
   for (;;)
   {
@@ -2793,28 +2904,40 @@ void *WaitButtonEvent(void * arg)
           break;
         case 2:                                            // Select Settings
           printf("Settings Menu 3 Requested\n");
-          CurrentMenu=3;
+          CurrentMenu = 3;
+          Start_Highlights_Menu3();
           UpdateWindow();
           break;
-        case 3:                                            // Set-up
-          printf("Set-up Menu 2 Requested\n");
-          CurrentMenu = 2;
+        case 3:                                            // Markers
+          printf("Markers Menu 2 Requested\n");
+          CurrentMenu=2;
           Start_Highlights_Menu2();
           UpdateWindow();
           break;
         case 4:                                            // Mode
-          printf("Mode Menu 5 Requested\n");
-          CurrentMenu = 5;
+          if (Range20dB == false)
+          {
+            printf("Mode Menu 5 Requested\n");
+            CurrentMenu = 5;
+          }
+          else
+          {
+            printf("20dB Menu Requested\n");
+            CurrentMenu = 11;
+          }
           UpdateWindow();
           break;
         case 5:                                            // Left Arrow
         case 6:                                            // Right Arrow
           printf("Shift Frequency Requested\n");
           ShiftFrequency(i);
+          //UpdateWindow();
+          RequestPeakValueZero = true;
           break;
         case 7:                                            // System
           printf("System Menu 4 Requested\n");
           CurrentMenu=4;
+          Start_Highlights_Menu4();
           UpdateWindow();
           break;
         case 8:                                            // Exit to Portsdown
@@ -2823,11 +2946,10 @@ void *WaitButtonEvent(void * arg)
             freeze = true;
             usleep(100000);
             clearScreen(0, 0, 0);
-            publish();
             UpdateWeb();
             usleep(1000000);
-            //closeScreen();
-            cleanexit(207);
+            closeScreen();
+            cleanexit(129);
           }
           else
           {
@@ -2861,7 +2983,7 @@ void *WaitButtonEvent(void * arg)
       continue;  // Completed Menu 1 action, go and wait for touch
     }
 
-    if (CurrentMenu == 2)  // Set-up Menu
+    if (CurrentMenu == 2)  // Marker Menu
     {
       printf("Button Event %d, Entering Menu 2 Case Statement\n",i);
       CallingMenu = 2;
@@ -2870,48 +2992,105 @@ void *WaitButtonEvent(void * arg)
         case 0:                                            // Capture Snap
           snap_from_menu();
           break;
-        case 2:                                            // Set ENR
-          if (Calibrated == false)
+        case 2:                                            // Peak
+          if ((markeron == false) || (markermode != 2))
           {
-            SetENR();
+            // Freeze the scan to prevent text corruption
+            freeze = true;
+            while(! frozen)
+            {
+              usleep(10);                                   // wait till the end of the scan
+            }
+            markeron = true;
+            markermode = i;
+            SetButtonStatus(ButtonNumber(CurrentMenu, 2), 1);
+            SetButtonStatus(ButtonNumber(CurrentMenu, 4), 0);
           }
           else
           {
-            SetRF_ENR();
+            markeron = false;
+            markermode = 7;
+            SetButtonStatus(ButtonNumber(CurrentMenu, 2), 0);
+            SetButtonStatus(ButtonNumber(CurrentMenu, 4), 0);
           }
-          Start_Highlights_Menu2();
           UpdateWindow();
+          freeze = false;
           break;
-        case 3:                                            // Lime Gain Up
-        case 5:                                            // Lime Gain Down
-          if (Calibrated == false)
+        case 3:                                            // Peak Hold
+        if (PeakPlot == false)
           {
-            AdjustLimeGain(i);
-            Start_Highlights_Menu2();
-            UpdateWindow();
-          }
-          break;
-        case 4:                                            // No action, show Lime Gain
-          break;
-        case 6:                                            // Calibrate
-          if (Calibrated == false)
-          {
-            CalibrateSystem();
+            // Freeze the scan to prevent text corruption
+            freeze = true;
+            while(! frozen)
+            {
+              usleep(10);                                   // wait till the end of the scan
+            }
+            PeakPlot = true;
+            SetButtonStatus(ButtonNumber(CurrentMenu, 3), 1);
           }
           else
           {
-            Calibrated = false;
+            PeakPlot = false;
+            RequestPeakValueZero = true;
+            SetButtonStatus(ButtonNumber(CurrentMenu, 3), 0);
+          }
+          UpdateWindow();
+          freeze = false;
+          break;
+        case 4:                                            // Manual
+          if ((markeron == false) || (markermode != 4))
+          {
+            // Freeze the scan to prevent text corruption
+            freeze = true;
+            while(! frozen)
+            {
+              usleep(10);                                   // wait till the end of the scan
+            }
+            markeron = true;
+            markermode = i;
+            SetButtonStatus(ButtonNumber(CurrentMenu, 2), 0);
+            SetButtonStatus(ButtonNumber(CurrentMenu, 4), 1);
+          }
+          else
+          {
+            markeron = false;
+            markermode = 7;
+            SetButtonStatus(ButtonNumber(CurrentMenu, 2), 0);
+            SetButtonStatus(ButtonNumber(CurrentMenu, 4), 0);
           }
           Start_Highlights_Menu2();
           UpdateWindow();
+          freeze = false;
           break;
-        case 7:                                            // Return to Main Menu
+        case 5:                                            // Left Arrow
+          if ((manualmarkerx > 10) && (markeron == true) && (markermode = 4))
+          {
+            manualmarkerx = manualmarkerx - 10;
+          }
+          break;
+        case 6:                                            // Right Arrow
+          if ((manualmarkerx < 490) && (markeron == true) && (markermode = 4))
+          {
+            manualmarkerx = manualmarkerx + 10;
+          }
+          break;
+        case 7:                                            // No Markers
+          markeron = false;
+          markermode = i;
+          PeakPlot = false;
+          RequestPeakValueZero = true;
+          SetButtonStatus(ButtonNumber(CurrentMenu, 2), 0);
+          SetButtonStatus(ButtonNumber(CurrentMenu, 3), 0);
+          SetButtonStatus(ButtonNumber(CurrentMenu, 4), 0);
+          UpdateWindow();
+          break;
+        case 8:                                            // Return to Main Menu
           printf("Main Menu 1 Requested\n");
           CurrentMenu=1;
           Start_Highlights_Menu1();
           UpdateWindow();
           break;
-        case 8:
+        case 9:
           if (freeze)
           {
             SetButtonStatus(ButtonNumber(CurrentMenu, 9), 0);
@@ -2943,28 +3122,41 @@ void *WaitButtonEvent(void * arg)
           ChangeLabel(i);
           CurrentMenu = 3;
           UpdateWindow();          
+          RequestPeakValueZero = true;
           break;
         case 3:                                            // Frequency Presets
           printf("Frequency Preset Menu 7 Requested\n");
           CurrentMenu = 7;
           Start_Highlights_Menu7();
           UpdateWindow();
+          RequestPeakValueZero = true;
           break;
         case 4:                                            // Span Width
           printf("Span Width Menu 6 Requested\n");
           CurrentMenu = 6;
           Start_Highlights_Menu6();
           UpdateWindow();
+          RequestPeakValueZero = true;
           break;
-        case 5:                                            // Set-up Menu
-          printf("Set-up Menu 2 Requested\n");
-          CurrentMenu=2;
-          Start_Highlights_Menu2();
+        case 5:                                            // Scope inverted/normal
+          if (invert_scope == true)
+          {
+            invert_scope = false;
+            SetConfigParam(PATH_CONFIG, "invert", "no");
+          }
+          else
+          {
+            invert_scope = true;
+            SetConfigParam(PATH_CONFIG, "invert", "yes");
+          }
+          Start_Highlights_Menu3();
           UpdateWindow();
           break;
-        case 6:                                            // Title
-          ChangeLabel(i);
-          UpdateWindow();          
+        case 6:                                            // Waterfall Config
+          printf("Waterfall Config Menu 12 Requested\n");
+          CurrentMenu = 12;
+          UpdateWindow();
+          RequestPeakValueZero = true;
           break;
         case 7:                                            // Return to Main Menu
           printf("Main Menu 1 Requested\n");
@@ -3012,35 +3204,45 @@ void *WaitButtonEvent(void * arg)
           DrawEmptyScreen();        // Required to set A value, which is not set in DrawTrace
           DrawYaxisLabels();        // dB calibration on LHS
           DrawSettings();           // Start, Stop RBW, Ref level and Title
-          DrawMeterArc();
-          DrawMeterTicks(5, 1);
-          Draw5MeterLabels(ActiveZero, ActiveFSD);
           UpdateWindow();           // Draw the buttons
           freeze = false;           // Restart the scan
           break;
-        case 3:                                            // Restart NF Meter
+        case 3:                                            // Config Menu
+          printf("Config Menu 9 Requested\n");
+          CurrentMenu = 9;
+          Start_Highlights_Menu9();
+          UpdateWindow();
+          break;
+        case 4:                                            // Spectrum/scope
+          if (scope == true)
+          {
+            scope = false;
+            SetConfigParam(PATH_CONFIG, "display", "spectrum");
+          }
+          else
+          {
+            scope = true;
+            SetConfigParam(PATH_CONFIG, "display", "scope");
+          }
+
+          DrawEmptyScreen();        // Required to set A value, which is not set in DrawTrace
+          DrawYaxisLabels();        // dB calibration on LHS
+          DrawSettings();           // Start, Stop RBW, Ref level and Title
+          UpdateWindow();           // Draw the buttons
+          freeze = false;           // Restart the scan
+          Start_Highlights_Menu4();
+          UpdateWindow();
+          break;
+        case 5:                                            // Restart pico viewer
           freeze = true;
           usleep(100000);
-          //setBackColour(0, 0, 0);
           clearScreen(0, 0, 0);
           usleep(1000000);
           closeScreen();
-          cleanexit(138);
+          cleanexit(181);
           break;
-        case 4:                                            // Exit to Portsdown
-          freeze = true;
-          usleep(100000);
-          //setBackColour(0, 0, 0);
-          clearScreen(0, 0, 0);
-          usleep(1000000);
-          closeScreen();
-          cleanexit(207);
-          break;
-        case 5:                                            // Shutdown
+        case 6:                                            // Shutdown
           system("sudo shutdown now");
-          break;
-        case 6:                                            // ReCal Lime
-          NewCal = true;
           break;
         case 7:                                            // Return to Main Menu
           printf("Main Menu 1 Requested\n");
@@ -3076,19 +3278,42 @@ void *WaitButtonEvent(void * arg)
         case 0:                                            // Capture Snap
           snap_from_menu();
           break;
-        case 2:                                            // Setup with spectrum and dial
-
+        case 2:                                            // Classic SA Mode
+          SetMode(i);
+          Start_Highlights_Menu5();
+          //CalcSpan();
+          //RedrawDisplay();
           break;
-        case 3:                                            // Full Screen NF
-
+        case 3:                                            // Show 20 dB range
+          SetMode(i);
+          Range20dB = true;
+          CalcSpan();
+          RedrawDisplay();
+          printf("20dB Menu 11 Requested\n");
+          CurrentMenu = 11;
+          UpdateWindow();
           break;
-        case 4:                                            // Full Screen Gain
+        case 4:                                            // Waterfall
+        case 5:                                            // Mix
+          //Range20dB = false;
+          SetMode(i);
+          Start_Highlights_Menu5();
+          UpdateWindow();
           break;
-        case 5:                                            // 
-          break;
-        case 6:                                            // Config Menu
-          printf("Config Menu 9 Requested\n");
-          CurrentMenu = 9;
+        case 6:                                            // Show 20 dB lower
+          printf("20 dB lower requested\n");
+          if (BaselineShift == 20)
+          {
+            BaselineShift = 0;
+          }
+          else
+          {
+            BaselineShift = 20;
+          }
+          snprintf(ValueToSave, 8, "%d", BaselineShift);
+          SetConfigParam(PATH_CONFIG, "baselineshift", ValueToSave);
+          DrawYaxisLabels();
+          Start_Highlights_Menu5();
           UpdateWindow();
           break;
         case 7:                                            // Return to Main Menu
@@ -3125,22 +3350,24 @@ void *WaitButtonEvent(void * arg)
         case 0:                                            // Capture Snap
           snap_from_menu();
           break;
-        case 2:                                            // 0.5
-        case 3:                                            // 1
-        case 4:                                            // 2
-        case 5:                                            // 5
-        case 6:                                            // 10
-        case 7:                                            // 20
+        case 2:                                            // 100 kHz
+        case 3:                                            // 200 kHz
+        case 4:                                            // 500 kHz
+        case 5:                                            // 1
+        case 6:                                            // 2
+        case 7:                                            // 5
+        case 8:                                            // 10
+        case 9:                                            // 20
           SetSpanWidth(i);
           CurrentMenu = 6;
           Start_Highlights_Menu6();
           UpdateWindow();
           break;
-        case 8:                                            // Return to Settings Menu
+        case 10:                                            // Return to Settings Menu
           CurrentMenu=3;
           UpdateWindow();
           break;
-        case 9:
+        case 11:
           if (freeze)
           {
             SetButtonStatus(ButtonNumber(CurrentMenu, 9), 0);
@@ -3202,6 +3429,50 @@ void *WaitButtonEvent(void * arg)
       continue;  // Completed Menu 5 action, go and wait for touch
     }
 
+    if (CurrentMenu == 8)  // LimeGain Menu
+    {
+      printf("Button Event %d, Entering Menu 8 Case Statement\n",i);
+      CallingMenu = 8;
+      switch (i)
+      {
+        case 0:                                            // Capture Snap
+          snap_from_menu();
+          break;
+        case 2:                                            // 100%
+        case 3:                                            // 90%
+        case 4:                                            // 70%
+        case 5:                                            // 50%
+        case 6:                                            // 30%
+          //SetLimeGain(i);
+          Start_Highlights_Menu8();
+          CurrentMenu = 8;
+          UpdateWindow();
+          break;
+        case 7:                                            // Return to Settings Menu
+          printf("Settings Menu 3 requested\n");
+          CurrentMenu=3;
+          UpdateWindow();
+          break;
+        case 8:
+          if (freeze)
+          {
+            SetButtonStatus(ButtonNumber(CurrentMenu, 8), 0);
+            freeze = false;
+          }
+          else
+          {
+            SetButtonStatus(ButtonNumber(CurrentMenu, 8), 1);
+            freeze = true;
+          }
+          Start_Highlights_Menu8();
+          UpdateWindow();
+          break;
+        default:
+          printf("Menu 8 Error\n");
+      }
+      continue;  // Completed Menu 8 action, go and wait for touch
+    }
+
     if (CurrentMenu == 9)  // Config Menu
     {
       printf("Button Event %d, Entering Menu 9 Case Statement\n",i);
@@ -3217,11 +3488,14 @@ void *WaitButtonEvent(void * arg)
           Start_Highlights_Menu10();
           UpdateWindow();
           break;
-        case 3:                                            // Set Noise Source GPIO
-          SetSourceGPIO();
+        case 3:                                            // Freq Offset
+          ChangeLabel(16);
+          Start_Highlights_Menu9();
           UpdateWindow();
           break;
-        case 4:                                            // 
+        case 4:                                            // Edit Title
+          ChangeLabel(6);
+          UpdateWindow();          
           break;
         case 5:                                            // 
           break;
@@ -3293,13 +3567,133 @@ void *WaitButtonEvent(void * arg)
       }
       continue;  // Completed Menu 10 action, go and wait for touch
     }
+    if (CurrentMenu == 11)  // 20 dB range Menu
+    {
+      printf("Button Event %d, Entering Menu 11 Case Statement\n",i);
+      CallingMenu = 11;
+      switch (i)
+      {
+        case 0:                                            // Capture Snap
+          snap_from_menu();
+          break;
+        case 2:                                            // Back to Full Range
+          Range20dB = false;
+          SetConfigParam(PATH_CONFIG, "mode", "spectrum");
+          CalcSpan();
+          RedrawDisplay();
+          CurrentMenu=1;
+          UpdateWindow();
+          break;
+        case 5:                                            // up
+          if (BaseLine20dB <= -25)
+          {
+            BaseLine20dB = BaseLine20dB + 5;
+            RedrawDisplay();
+            snprintf(ValueToSave, 8, "%d", BaseLine20dB);
+            SetConfigParam(PATH_CONFIG, "baseline20db", ValueToSave);
+          }
+          UpdateWindow();
+          break;
+        case 6:                                            // down
+          if (BaseLine20dB >= -75)
+          {
+            BaseLine20dB = BaseLine20dB - 5;
+            RedrawDisplay();
+            snprintf(ValueToSave, 8, "%d", BaseLine20dB);
+            SetConfigParam(PATH_CONFIG, "baseline20db", ValueToSave);
+          }
+          UpdateWindow();
+          break;
+        case 7:                                            // Return to Main Menu
+          printf("Settings Menu 1 requested\n");
+          CurrentMenu=1;
+          UpdateWindow();
+          break;
+        case 8:
+          if (freeze)
+          {
+            SetButtonStatus(ButtonNumber(CurrentMenu, 8), 0);
+            freeze = false;
+          }
+          else
+          {
+            SetButtonStatus(ButtonNumber(CurrentMenu, 8), 1);
+            freeze = true;
+          }
+          UpdateWindow();
+          break;
+        default:
+          printf("Menu 11 Error\n");
+      }
+      continue;  // Completed Menu 11 action, go and wait for touch
+    }
+    if (CurrentMenu == 12)  // Waterfall Config
+    {
+      printf("Button Event %d, Entering Menu 12 Case Statement\n",i);
+      CallingMenu = 12;
+      switch (i)
+      {
+        case 0:                                            // Capture Snap
+          snap_from_menu();
+          break;
+        case 2:                                            // Set Waterfall Base
+        case 3:                                            // Set waterfall range
+          SetWfall(i);
+          UpdateWindow();
+          break;
+        case 4:                                            // Set Waterfall TimeSpan
+          SetWfall(12);
+          UpdateWindow();
+          break;
+        case 5:                                            // Set Waterfall trace type 
+          if (strcmp(TraceType, "single") == 0)
+          {
+            strcpy(TraceType, "average");
+          }
+          else if (strcmp(TraceType, "average") == 0)
+          {
+            strcpy(TraceType, "peak");
+          }
+          else if (strcmp(TraceType, "peak") == 0)
+          {
+            strcpy(TraceType, "single");
+          }
+          SetConfigParam(PATH_CONFIG, "tracetype", TraceType);
+          Start_Highlights_Menu12();
+          UpdateWindow();
+          break;
+        case 7:                                            // Return to Main Menu
+          printf("Main Menu 1 Requested\n");
+          CurrentMenu=1;
+          UpdateWindow();
+          break;
+        case 8:
+          if (freeze)
+          {
+            SetButtonStatus(ButtonNumber(CurrentMenu, 8), 0);
+            freeze = false;
+          }
+          else
+          {
+            SetButtonStatus(ButtonNumber(CurrentMenu, 8), 1);
+            freeze = true;
+          }
+          UpdateWindow();
+          break;
+        default:
+          printf("Menu 12 Error\n");
+      }
+      continue;  // Completed Menu 9 action, go and wait for touch
+    }
   }
   return NULL;
 }
 
+
 /////////////////////////////////////////////// DEFINE THE BUTTONS ///////////////////////////////
 
 void Define_Menu1()                                  // Main Menu
+
 {
   int button = 0;
 
@@ -3312,11 +3706,11 @@ void Define_Menu1()                                  // Main Menu
   AddButtonStatus(button, " ", &Green);
 
   button = CreateButton(1, 2);
-  AddButtonStatus(button, "Freq and^Bandwidth", &Blue);
+  AddButtonStatus(button, "Settings", &Blue);
   AddButtonStatus(button, " ", &Green);
 
   button = CreateButton(1, 3);
-  AddButtonStatus(button, "Set-up", &Blue);
+  AddButtonStatus(button, "Markers", &Blue);
   AddButtonStatus(button, " ", &Green);
 
   button = CreateButton(1, 4);
@@ -3344,7 +3738,6 @@ void Define_Menu1()                                  // Main Menu
   AddButtonStatus(button, "Unfreeze", &Green);
 }
 
-
 void Start_Highlights_Menu1()
 {
   if (PortsdownExitRequested)
@@ -3357,8 +3750,7 @@ void Start_Highlights_Menu1()
   }
 }
 
-
-void Define_Menu2()                                         // Set-up Menu
+void Define_Menu2()                                         // Marker Menu
 {
   int button = 0;
 
@@ -3367,65 +3759,52 @@ void Define_Menu2()                                         // Set-up Menu
   AddButtonStatus(button, " ", &Black);
 
   button = CreateButton(2, 1);
-  AddButtonStatus(button, "Set-up^Menu", &Black);
+  AddButtonStatus(button, "Marker^Menu", &Black);
   AddButtonStatus(button, " ", &Green);
 
   button = CreateButton(2, 2);
-  AddButtonStatus(button, "Set^ENR", &Blue);
-  AddButtonStatus(button, "Set^Input ENR", &Blue);
+  AddButtonStatus(button, "Peak", &Blue);
+  AddButtonStatus(button, "Peak", &Green);
 
   button = CreateButton(2, 3);
-  AddButtonStatus(button, "Gain Up", &Blue);
-  AddButtonStatus(button, "Gain Up", &Grey);
+  AddButtonStatus(button, "Peak^Hold", &Blue);
+  AddButtonStatus(button, "Peak^Hold", &Green);
 
   button = CreateButton(2, 4);
-  AddButtonStatus(button, "Gain", &Black);
+  AddButtonStatus(button, "Manual", &Blue);
+  AddButtonStatus(button, "Manual", &Green);
 
   button = CreateButton(2, 5);
-  AddButtonStatus(button, "Gain Down", &Blue);
-  AddButtonStatus(button, "Gain Down", &Grey);
+  AddButtonStatus(button, "<-", &Blue);
+  AddButtonStatus(button, "<-", &Grey);
 
   button = CreateButton(2, 6);
-  AddButtonStatus(button, "Calibrate", &Blue);
-  AddButtonStatus(button, "Calibrating", &LBlue);
-  AddButtonStatus(button, "Calibrated", &Green);
+  AddButtonStatus(button, "->", &Blue);
+  AddButtonStatus(button, "->", &Grey);
 
   button = CreateButton(2, 7);
-  AddButtonStatus(button, "Return to^Main Menu", &DBlue);
+  AddButtonStatus(button, "Markers^Off", &Blue);
+  AddButtonStatus(button, " ", &Green);
 
   button = CreateButton(2, 8);
+  AddButtonStatus(button, "Return to^Main Menu", &DBlue);
+
+  button = CreateButton(2, 9);
   AddButtonStatus(button, "Freeze", &Blue);
   AddButtonStatus(button, "Unfreeze", &Green);
 }
 
-
 void Start_Highlights_Menu2()
 {
-  char ButtText[31];
-  snprintf(ButtText, 30, "Gain=%d%%", limegain);
-  AmendButtonStatus(ButtonNumber(CurrentMenu, 4), 0, ButtText, &Black);
-
-  if (Calibrated == true)  // 
+  if ((markeron == true) && (markermode == 4))  // Manual Markers
   {
-    SetButtonStatus(ButtonNumber(2, 2), 1);
-    SetButtonStatus(ButtonNumber(2, 3), 1);
-    SetButtonStatus(ButtonNumber(2, 5), 1);
-    SetButtonStatus(ButtonNumber(2, 6), 2);
+    SetButtonStatus(ButtonNumber(2, 5), 0);
+    SetButtonStatus(ButtonNumber(2, 6), 0);
   }
   else
   {
-    SetButtonStatus(ButtonNumber(2, 2), 0);
-    SetButtonStatus(ButtonNumber(2, 3), 0);
-    SetButtonStatus(ButtonNumber(2, 5), 0);
-
-    if (CalibrateRequested == true)
-    {
-      SetButtonStatus(ButtonNumber(2, 6), 1);
-    }
-    else
-    {
-      SetButtonStatus(ButtonNumber(2, 6), 0);
-    }
+    SetButtonStatus(ButtonNumber(2, 5), 1);
+    SetButtonStatus(ButtonNumber(2, 6), 1);
   }
 }
 
@@ -3455,10 +3834,13 @@ void Define_Menu3()                                           // Settings Menu
   AddButtonStatus(button, " ", &Green);
 
   button = CreateButton(3, 5);
-  AddButtonStatus(button, "Set-up^Menu", &Blue);
+  AddButtonStatus(button, "Scope^Normal", &Blue);
+  AddButtonStatus(button, "Scope^Inverted", &Blue);
+
 
   button = CreateButton(3, 6);
-  AddButtonStatus(button, "Title", &Blue);
+  AddButtonStatus(button, "Waterfall^Config", &Blue);
+  AddButtonStatus(button, " ", &Green);
 
   button = CreateButton(3, 7);
   AddButtonStatus(button, "Return to^Main Menu", &DBlue);
@@ -3466,6 +3848,19 @@ void Define_Menu3()                                           // Settings Menu
   button = CreateButton(3, 8);
   AddButtonStatus(button, "Freeze", &Blue);
   AddButtonStatus(button, "Unfreeze", &Green);
+}
+
+
+void Start_Highlights_Menu3()
+{
+  if (invert_scope == true)
+  {
+    SetButtonStatus(ButtonNumber(CurrentMenu, 5), 1);
+  }
+  else
+  {
+    SetButtonStatus(ButtonNumber(CurrentMenu, 5), 0);
+  }
 }
 
 
@@ -3486,19 +3881,19 @@ void Define_Menu4()                                         // System Menu
   AddButtonStatus(button, " ", &Green);
 
   button = CreateButton(4, 3);
-  AddButtonStatus(button, "Re-start^NF Meter", &Blue);
+  AddButtonStatus(button, "Config^Menu", &Blue);
   AddButtonStatus(button, " ", &Green);
 
   button = CreateButton(4, 4);
-  AddButtonStatus(button, "Exit to^Portsdown", &Blue);
-  AddButtonStatus(button, " ", &Green);
+  AddButtonStatus(button, "Scope", &Blue);
+  AddButtonStatus(button, "Spectrum", &Blue);
 
   button = CreateButton(4, 5);
-  AddButtonStatus(button, "Shutdown^System", &Blue);
+  AddButtonStatus(button, "Re-start^BandView", &Blue);
   AddButtonStatus(button, " ", &Green);
 
   button = CreateButton(4, 6);
-  AddButtonStatus(button, "Re-cal^LimeSDR", &Blue);
+  AddButtonStatus(button, "Shutdown^System", &Blue);
   AddButtonStatus(button, " ", &Green);
 
   button = CreateButton(4, 7);
@@ -3507,6 +3902,19 @@ void Define_Menu4()                                         // System Menu
   button = CreateButton(4, 8);
   AddButtonStatus(button, "Freeze", &Blue);
   AddButtonStatus(button, "Unfreeze", &Green);
+}
+
+
+void Start_Highlights_Menu4()
+{
+  if (scope == true)
+  {
+    SetButtonStatus(ButtonNumber(CurrentMenu, 4), 0);
+  }
+  else
+  {
+    SetButtonStatus(ButtonNumber(CurrentMenu, 4), 1);
+  }
 }
 
 
@@ -3523,21 +3931,24 @@ void Define_Menu5()                                          // Mode Menu
   AddButtonStatus(button, " ", &Green);
 
   button = CreateButton(5, 2);
-  AddButtonStatus(button, "Spectrum^and NF", &Blue);
+  AddButtonStatus(button, "Classic^SA Display", &Blue);
+  AddButtonStatus(button, "Classic^SA Display", &Green);
 
   button = CreateButton(5, 3);
-  //AddButtonStatus(button, "NF^Meter", &Blue);
-  AddButtonStatus(button, " ", &Blue);
+  AddButtonStatus(button, "20 dB Range^SA Display", &Blue);
+  AddButtonStatus(button, "20 dB Range^SA Display", &Green);
 
   button = CreateButton(5, 4);
-  //AddButtonStatus(button, "Gain^Meter", &Blue);
-  AddButtonStatus(button, " ", &Blue);
+  AddButtonStatus(button, "Waterfall", &Blue);
+  AddButtonStatus(button, "Waterfall", &Green);
 
   button = CreateButton(5, 5);
-  AddButtonStatus(button, " ", &Blue);
+  AddButtonStatus(button, "Mix", &Blue);
+  AddButtonStatus(button, "Mix", &Green);
 
   button = CreateButton(5, 6);
-  AddButtonStatus(button, "Config^Menu", &Blue);
+  AddButtonStatus(button, "Show 20dB^Lower", &Blue);
+  AddButtonStatus(button, "Show 20dB^Lower", &Green);
 
   button = CreateButton(5, 7);
   AddButtonStatus(button, "Return to^Main Menu", &DBlue);
@@ -3547,6 +3958,17 @@ void Define_Menu5()                                          // Mode Menu
   AddButtonStatus(button, "Unfreeze", &Green);
 }
 
+void Start_Highlights_Menu5()
+{
+  if (BaselineShift == 0)
+  {
+    SetButtonStatus(ButtonNumber(CurrentMenu, 6), 0);
+  }
+  else
+  {
+    SetButtonStatus(ButtonNumber(CurrentMenu, 6), 1);
+  }
+}
 
 void Define_Menu6()                                           // Span Menu
 {
@@ -3561,41 +3983,48 @@ void Define_Menu6()                                           // Span Menu
   AddButtonStatus(button, " ", &Green);
 
   button = CreateButton(6, 2);
+  AddButtonStatus(button, "100", &Blue);
+  AddButtonStatus(button, "100", &Green);
+
+  button = CreateButton(6, 3);
+  AddButtonStatus(button, "200", &Blue);
+  AddButtonStatus(button, "200", &Green);
+
+  button = CreateButton(6, 4);
   AddButtonStatus(button, "500 kHz", &Blue);
   AddButtonStatus(button, "500 kHz", &Green);
 
-  button = CreateButton(6, 3);
+  button = CreateButton(6, 5);
   AddButtonStatus(button, "1 MHz", &Blue);
   AddButtonStatus(button, "1 MHz", &Green);
 
-  button = CreateButton(6, 4);
-  AddButtonStatus(button, "2 MHz", &Blue);
-  AddButtonStatus(button, "2 MHz", &Green);
-
-  button = CreateButton(6, 5);
-  AddButtonStatus(button, "5 MHz", &Blue);
-  AddButtonStatus(button, "5 MHz", &Green);
-
   button = CreateButton(6, 6);
+  AddButtonStatus(button, "2", &Blue);
+  AddButtonStatus(button, "2", &Green);
+
+  button = CreateButton(6, 7);
+  AddButtonStatus(button, "5", &Blue);
+  AddButtonStatus(button, "5", &Green);
+
+  button = CreateButton(6, 8);
   AddButtonStatus(button, "10", &Blue);
   AddButtonStatus(button, "10", &Green);
 
-  button = CreateButton(6, 7);
+  button = CreateButton(6, 9);
   AddButtonStatus(button, "20", &Blue);
   AddButtonStatus(button, "20", &Green);
 
-  button = CreateButton(6, 8);
+  button = CreateButton(6, 10);
   AddButtonStatus(button, "Back to^Settings", &DBlue);
 
-  button = CreateButton(6, 9);
+  button = CreateButton(6, 11);
   AddButtonStatus(button, "Freeze", &Blue);
   AddButtonStatus(button, "Unfreeze", &Green);
 }
 
-
 void Start_Highlights_Menu6()
 {
-  if (span == 512)
+  if (span == 102)
   {
     SetButtonStatus(ButtonNumber(CurrentMenu, 2), 1);
   }
@@ -3603,7 +4032,7 @@ void Start_Highlights_Menu6()
   {
     SetButtonStatus(ButtonNumber(CurrentMenu, 2), 0);
   }
-  if (span == 1024)
+  if (span == 205)
   {
     SetButtonStatus(ButtonNumber(CurrentMenu, 3), 1);
   }
@@ -3611,7 +4040,7 @@ void Start_Highlights_Menu6()
   {
     SetButtonStatus(ButtonNumber(CurrentMenu, 3), 0);
   }
-  if (span == 2048)
+  if (span == 512)
   {
     SetButtonStatus(ButtonNumber(CurrentMenu, 4), 1);
   }
@@ -3619,7 +4048,7 @@ void Start_Highlights_Menu6()
   {
     SetButtonStatus(ButtonNumber(CurrentMenu, 4), 0);
   }
-  if (span == 5120)
+  if (span == 1024)
   {
     SetButtonStatus(ButtonNumber(CurrentMenu, 5), 1);
   }
@@ -3627,7 +4056,7 @@ void Start_Highlights_Menu6()
   {
     SetButtonStatus(ButtonNumber(CurrentMenu, 5), 0);
   }
-  if (span == 10240)
+  if (span == 2048)
   {
     SetButtonStatus(ButtonNumber(CurrentMenu, 6), 1);
   }
@@ -3635,7 +4064,7 @@ void Start_Highlights_Menu6()
   {
     SetButtonStatus(ButtonNumber(CurrentMenu, 6), 0);
   }
-  if (span == 20480)
+  if (span == 5120)
   {
     SetButtonStatus(ButtonNumber(CurrentMenu, 7), 1);
   }
@@ -3643,8 +4072,23 @@ void Start_Highlights_Menu6()
   {
     SetButtonStatus(ButtonNumber(CurrentMenu, 7), 0);
   }
+  if (span == 10240)
+  {
+    SetButtonStatus(ButtonNumber(CurrentMenu, 8), 1);
+  }
+  else
+  {
+    SetButtonStatus(ButtonNumber(CurrentMenu, 8), 0);
+  }
+  if (span == 20480)
+  {
+    SetButtonStatus(ButtonNumber(CurrentMenu, 9), 1);
+  }
+  else
+  {
+    SetButtonStatus(ButtonNumber(CurrentMenu, 9), 0);
+  }
 }
-
 
 void Define_Menu7()                                            //Presets Menu
 {
@@ -3686,7 +4130,6 @@ void Define_Menu7()                                            //Presets Menu
   AddButtonStatus(button, "Unfreeze", &Green);
 }
 
-
 void Start_Highlights_Menu7()
 {
   char ButtText[15];
@@ -3709,6 +4152,7 @@ void Start_Highlights_Menu7()
   snprintf(ButtText, 14, "%0.1f MHz", ((float)pfreq5) / 1000);
   AmendButtonStatus(ButtonNumber(CurrentMenu, 6), 0, ButtText, &Blue);
   AmendButtonStatus(ButtonNumber(CurrentMenu, 6), 1, ButtText, &Green);
+
 
   if (centrefreq == pfreq1)
   {
@@ -3753,6 +4197,51 @@ void Start_Highlights_Menu7()
 }
 
 
+void Define_Menu8()                                    // Lime Gain Menu
+{
+  int button = 0;
+
+  button = CreateButton(8, 0);
+  AddButtonStatus(button, "Capture^Snap", &DGrey);
+  AddButtonStatus(button, " ", &Black);
+
+  button = CreateButton(8, 1);
+  AddButtonStatus(button, "Gain^Menu", &Black);
+  AddButtonStatus(button, " ", &Green);
+
+  button = CreateButton(8, 2);
+  AddButtonStatus(button, "100%", &Blue);
+  AddButtonStatus(button, "100%", &Green);
+
+  button = CreateButton(8, 3);
+  AddButtonStatus(button, "90%", &Blue);
+  AddButtonStatus(button, "90%", &Green);
+
+  button = CreateButton(8, 4);
+  AddButtonStatus(button, "70%", &Blue);
+  AddButtonStatus(button, "70%", &Green);
+
+  button = CreateButton(8, 5);
+  AddButtonStatus(button, "50%", &Blue);
+  AddButtonStatus(button, "50%", &Green);
+
+  button = CreateButton(8, 6);
+  AddButtonStatus(button, "30%", &Blue);
+  AddButtonStatus(button, "30%", &Green);
+
+  button = CreateButton(8, 7);
+  AddButtonStatus(button, "Back to^Settings", &DBlue);
+
+  button = CreateButton(8, 8);
+  AddButtonStatus(button, "Freeze", &Blue);
+  AddButtonStatus(button, "Unfreeze", &Green);
+}
+
+void Start_Highlights_Menu8()
+{
+  //
+}
+
 void Define_Menu9()                                          // Config Menu
 {
   int button = 0;
@@ -3768,11 +4257,11 @@ void Define_Menu9()                                          // Config Menu
   AddButtonStatus(button, "Set Freq^Presets", &Blue);
 
   button = CreateButton(9, 3);
-  AddButtonStatus(button, "Set Noise^Source GPIO", &Blue);
+  AddButtonStatus(button, "Set Freq^Offset", &Blue);
+  AddButtonStatus(button, "Set Freq^Offset", &Green);
 
-  //button = CreateButton(9, 4);
-  //AddButtonStatus(button, " ", &Blue);
-  //AddButtonStatus(button, " ", &Green);
+  button = CreateButton(9, 4);
+  AddButtonStatus(button, "Edit^Title", &Blue);
 
   //button = CreateButton(9, 5);
   //AddButtonStatus(button, " ", &Blue);
@@ -3788,6 +4277,20 @@ void Define_Menu9()                                          // Config Menu
   AddButtonStatus(button, "Freeze", &Blue);
   AddButtonStatus(button, "Unfreeze", &Green);
 }
+
+
+void Start_Highlights_Menu9()
+{
+  if (freqoffset == 0)
+  {
+    SetButtonStatus(ButtonNumber(9, 3), 0);
+  }
+  else
+  {
+    SetButtonStatus(ButtonNumber(9, 3), 1);
+  }
+}
+
 
 
 void Define_Menu10()                                          // Set Freq Presets Menu
@@ -3824,7 +4327,6 @@ void Define_Menu10()                                          // Set Freq Preset
   AddButtonStatus(button, "Unfreeze", &Green);
 }
 
-
 void Start_Highlights_Menu10()
 {
   char ButtText[31];
@@ -3842,6 +4344,93 @@ void Start_Highlights_Menu10()
 
   snprintf(ButtText, 30, "Preset 5^%0.1f MHz", ((float)pfreq5) / 1000);
   AmendButtonStatus(ButtonNumber(CurrentMenu, 6), 0, ButtText, &Blue);
+}
+
+void Define_Menu11()                                          // 20db Range Menu
+{
+  int button = 0;
+
+  button = CreateButton(11, 0);
+  AddButtonStatus(button, "Capture^Snap", &DGrey);
+  AddButtonStatus(button, " ", &Black);
+
+  button = CreateButton(11, 1);
+  AddButtonStatus(button, "Control^20 dB Range", &Black);
+
+  button = CreateButton(11, 2);
+  AddButtonStatus(button, "Back to^Full Range", &Blue);
+
+  //button = CreateButton(11, 3);
+  //AddButtonStatus(button, "Preset 2", &Blue);
+
+  //button = CreateButton(11, 4);
+  //AddButtonStatus(button, "Preset 3", &Blue);
+
+  button = CreateButton(11, 5);
+  AddButtonStatus(button, "Up", &Blue);
+
+  button = CreateButton(11, 6);
+  AddButtonStatus(button, "Down", &Blue);
+
+  button = CreateButton(11, 7);
+  AddButtonStatus(button, "Return to^Main Menu", &DBlue);
+
+  button = CreateButton(11, 8);
+  AddButtonStatus(button, "Freeze", &Blue);
+  AddButtonStatus(button, "Unfreeze", &Green);
+}
+
+void Define_Menu12()                                          // Waterfall Config Menu
+{
+  int button = 0;
+
+  button = CreateButton(12, 0);
+  AddButtonStatus(button, "Capture^Snap", &DGrey);
+  AddButtonStatus(button, " ", &Black);
+
+  button = CreateButton(12, 1);
+  AddButtonStatus(button, "Waterfall^Config Menu", &Black);
+
+  button = CreateButton(12, 2);
+  AddButtonStatus(button, "Set Wfall^Base Level", &Blue);
+
+  button = CreateButton(12, 3);
+  AddButtonStatus(button, "Set Wfall^Range", &Blue);
+
+  button = CreateButton(12, 4);
+  AddButtonStatus(button, "Set Wfall^Time Span", &Blue);
+
+  button = CreateButton(12, 5);
+  AddButtonStatus(button, "Waterfall^Normal", &Blue);
+  AddButtonStatus(button, "Waterfall^Peak", &Blue);
+  AddButtonStatus(button, "Waterfall^Single", &Blue);
+
+  //button = CreateButton(12, 6);
+  //AddButtonStatus(button, "", &Blue);
+
+  button = CreateButton(12, 7);
+  AddButtonStatus(button, "Return to^Main Menu", &DBlue);
+
+  button = CreateButton(12, 8);
+  AddButtonStatus(button, "Freeze", &Blue);
+  AddButtonStatus(button, "Unfreeze", &Green);
+}
+
+
+void Start_Highlights_Menu12()
+{
+  if (strcmp(TraceType, "average") == 0)
+  {
+    SetButtonStatus(ButtonNumber(CurrentMenu, 5), 0);
+  }
+  if (strcmp(TraceType, "peak") == 0)
+  {
+    SetButtonStatus(ButtonNumber(CurrentMenu, 5), 1);
+  }
+  if (strcmp(TraceType, "single") == 0)
+  {
+    SetButtonStatus(ButtonNumber(CurrentMenu, 5), 2);
+  }
 }
 
 
@@ -4098,93 +4687,275 @@ void Define_Menu41()
   AddButtonStatus(button, "0", &LBlue);
 }
 
+
+
+
 /////////////////////////////////////////// APPLICATION DRAWING //////////////////////////////////
+
 
 void DrawEmptyScreen()
 {
-    //setBackColour(0, 0, 0);
-    //clearScreen();
-    HorizLine(100, 270, 250, 255, 255, 255);
-    VertLine(100, 270, 200, 255, 255, 255);
-    HorizLine(100, 470, 250, 255, 255, 255);
-    VertLine(350, 270, 200, 255, 255, 255);
+  int div = 0;
+  
+    HorizLine(100, 70, 500, 255, 255, 255);
+    VertLine(100, 70, 400, 255, 255, 255);
+    HorizLine(100, 470, 500, 255, 255, 255);
+    VertLine(600, 70, 400, 255, 255, 255);
 
-    HorizLine(101, 320, 249, 63, 63, 63);
-    HorizLine(101, 370, 249, 63, 63, 63);
-    HorizLine(101, 420, 249, 63, 63, 63);
+    HorizLine(101, 120, 499, 63, 63, 63);
+    HorizLine(101, 170, 499, 63, 63, 63);
+    HorizLine(101, 220, 499, 63, 63, 63);
+    HorizLine(101, 270, 499, 63, 63, 63);
+    HorizLine(101, 320, 499, 63, 63, 63);
+    HorizLine(101, 370, 499, 63, 63, 63);
+    HorizLine(101, 420, 499, 63, 63, 63);
 
-    VertLine(150, 271, 199, 63, 63, 63);
-    VertLine(200, 271, 199, 63, 63, 63);
-    VertLine(250, 271, 199, 63, 63, 63);
-    VertLine(300, 271, 199, 63, 63, 63);
+    VertLine(150, 71, 399, 63, 63, 63);
+    VertLine(200, 71, 399, 63, 63, 63);
+    VertLine(250, 71, 399, 63, 63, 63);
+    VertLine(300, 71, 399, 63, 63, 63);
+    VertLine(350, 71, 399, 63, 63, 63);
+    VertLine(400, 71, 399, 63, 63, 63);
+    VertLine(450, 71, 399, 63, 63, 63);
+    VertLine(500, 71, 399, 63, 63, 63);
+    VertLine(550, 71, 399, 63, 63, 63);
+
+  for(div = 0; div < 10; div++)
+  {
+    VertLine(100 + div * 50 + 10, 265, 10, 63, 63, 63);
+    VertLine(100 + div * 50 + 20, 265, 10, 63, 63, 63);
+    VertLine(100 + div * 50 + 30, 265, 10, 63, 63, 63);
+    VertLine(100 + div * 50 + 40, 265, 10, 63, 63, 63);
+  }
+
+  for(div = 0; div < 8; div++)
+  {
+    HorizLine(345, 70 + div * 50 + 10, 10, 63, 63, 63);
+    HorizLine(345, 70 + div * 50 + 20, 10, 63, 63, 63);
+    HorizLine(345, 70 + div * 50 + 30, 10, 63, 63, 63);
+    HorizLine(345, 70 + div * 50 + 40, 10, 63, 63, 63);
+  }
+}
+
+
+void DrawTickMarks()
+{
+    VertLine(100, 64, 5, 255, 255, 255);
+    VertLine(150, 64, 5, 255, 255, 255);
+    VertLine(200, 64, 5, 255, 255, 255);
+    VertLine(250, 64, 5, 255, 255, 255);
+    VertLine(300, 64, 5, 255, 255, 255);
+    VertLine(350, 64, 5, 255, 255, 255);
+    VertLine(400, 64, 5, 255, 255, 255);
+    VertLine(450, 64, 5, 255, 255, 255);
+    VertLine(500, 64, 5, 255, 255, 255);
+    VertLine(550, 64, 5, 255, 255, 255);
+    VertLine(600, 64, 5, 255, 255, 255);
 }
 
 
 void DrawYaxisLabels()
 {
   const font_t *font_ptr = &font_dejavu_sans_18;   // 18pt
+  char caption[31];
+  int i;
+  int pixel_brightness;
 
   // Clear the previous scale first
-  rectangle(25, 263, 65, 217, 0, 0, 0);
+  rectangle(20, 63, 79, 417, 0, 0, 0);
 
-  pthread_mutex_lock(&text_lock);
+  // Clear the previous waterfall calibration
+  rectangle(610, 63, 5, 417, 0, 0, 0);
 
-    Text(48, 462,   "0 dB", font_ptr, 0, 0, 0, 255, 255, 255);
-    Text(30, 416, "-20 dB", font_ptr, 0, 0, 0, 255, 255, 255);
-    Text(30, 366, "-40 dB", font_ptr, 0, 0, 0, 255, 255, 255);
-    Text(30, 316, "-60 dB", font_ptr, 0, 0, 0, 255, 255, 255);
-    Text(30, 266, "-80 dB", font_ptr, 0, 0, 0, 255, 255, 255);
+  if (scope == true)
+  {
+    Text(60, 462, "+4", font_ptr, 0, 0, 0, 255, 255, 255);
+    Text(60, 416, "+3", font_ptr, 0, 0, 0, 255, 255, 255);
+    Text(60, 366, "+2", font_ptr, 0, 0, 0, 255, 255, 255);
+    Text(60, 316, "+1", font_ptr, 0, 0, 0, 255, 255, 255);
+    Text(72, 266, "0", font_ptr, 0, 0, 0, 255, 255, 255);
+    Text(66, 216, "-1", font_ptr, 0, 0, 0, 255, 255, 255);
+    Text(66, 166, "-2", font_ptr, 0, 0, 0, 255, 255, 255);
+    Text(66, 116, "-3", font_ptr, 0, 0, 0, 255, 255, 255);
+    Text(66,  66, "-4", font_ptr, 0, 0, 0, 255, 255, 255);
+    return;
+  }
 
-  pthread_mutex_unlock(&text_lock);
+  if ((Range20dB == false) && (waterfall == false))       // Full range spectrum
+  {
+    if (BaselineShift == 0)                     // 0 to -80
+    {
+      Text(15, 462, "+30 dBm", font_ptr, 0, 0, 0, 255, 255, 255);
+      Text(15, 412, "+20 dBm", font_ptr, 0, 0, 0, 255, 255, 255);
+      Text(15, 362, "+10 dBm", font_ptr, 0, 0, 0, 255, 255, 255);
+      Text(40, 316, "0 dBm", font_ptr, 0, 0, 0, 255, 255, 255);
+      Text(20, 266, "-10 dBm", font_ptr, 0, 0, 0, 255, 255, 255);
+      Text(20, 216, "-20 dBm", font_ptr, 0, 0, 0, 255, 255, 255);
+      Text(20, 166, "-30 dBm", font_ptr, 0, 0, 0, 255, 255, 255);
+      Text(20, 116, "-40 dBm", font_ptr, 0, 0, 0, 255, 255, 255);
+      Text(20, 66, "-50 dBm", font_ptr, 0, 0, 0, 255, 255, 255);
+    }
+    else                                         // -20 to -100
+    {
+      Text(15, 462, "+10 dBm", font_ptr, 0, 0, 0, 255, 255, 255);
+      Text(40, 416, "0 dBm", font_ptr, 0, 0, 0, 255, 255, 255);
+      Text(20, 366, "-10 dBm", font_ptr, 0, 0, 0, 255, 255, 255);
+      Text(20, 316, "-20 dBm", font_ptr, 0, 0, 0, 255, 255, 255);
+      Text(20, 266, "-30 dBm", font_ptr, 0, 0, 0, 255, 255, 255);
+      Text(20, 216, "-40 dBm", font_ptr, 0, 0, 0, 255, 255, 255);
+      Text(20, 166, "-50 dBm", font_ptr, 0, 0, 0, 255, 255, 255);
+      Text(20, 116, "-60 dBm", font_ptr, 0, 0, 0, 255, 255, 255);
+      Text(20,  66, "-70 dBm", font_ptr, 0, 0, 0, 255, 255, 255);
+    }
+    // Draw the waterfall calibration chart
+    for (i = 1; i <= 399; i++)
+    {
+      pixel_brightness = i - (400 + (5 * WaterfallBase)); // this in range -400 to +400, but only 0 to 400 is valid
+      pixel_brightness = (255 * pixel_brightness) / (WaterfallRange * 5);  // scale to 0 - 255
+      //printf("i = %d, Pixel = %d\n", i, pixel_brightness);
+      if ((pixel_brightness < 0) || (pixel_brightness == 255) || (pixel_brightness == 256))
+      {
+        pixel_brightness = 0;
+      }
+      if (pixel_brightness > 256)
+      {
+        pixel_brightness = 255;
+      }
+      setPixel(610, 70 + i, waterfall_map(pixel_brightness).Red, waterfall_map(pixel_brightness).Green, waterfall_map(pixel_brightness).Blue);
+      setPixel(611, 70 + i, waterfall_map(pixel_brightness).Red, waterfall_map(pixel_brightness).Green, waterfall_map(pixel_brightness).Blue);
+      setPixel(612, 70 + i, waterfall_map(pixel_brightness).Red, waterfall_map(pixel_brightness).Green, waterfall_map(pixel_brightness).Blue);
+      setPixel(613, 70 + i, waterfall_map(pixel_brightness).Red, waterfall_map(pixel_brightness).Green, waterfall_map(pixel_brightness).Blue);
+      setPixel(614, 70 + i, waterfall_map(pixel_brightness).Red, waterfall_map(pixel_brightness).Green, waterfall_map(pixel_brightness).Blue);
+      HorizLine(610, 470 + (5 * WaterfallBase), 5, 255, 255, 255);
+    }
+  }
+  else if ((Range20dB == true) && (waterfall == false))  // 20 dB range spectrum
+  {
+    snprintf(caption, 17, "%d dBm", BaseLine20dB + 20 - BaselineShift + 30);
+    Text(20, 462, caption, font_ptr, 0, 0, 0, 255, 255, 255);
+    snprintf(caption, 17, "%d dBm", BaseLine20dB + 15 - BaselineShift + 30);
+    Text(20, 366, caption, font_ptr, 0, 0, 0, 255, 255, 255);
+    snprintf(caption, 17, "%d dBm", BaseLine20dB + 10 - BaselineShift + 30);
+    Text(20, 266, caption, font_ptr, 0, 0, 0, 255, 255, 255);
+    snprintf(caption, 17, "%d dBm", BaseLine20dB + 5 - BaselineShift + 30);
+    Text(20, 166, caption, font_ptr, 0, 0, 0, 255, 255, 255);
+    snprintf(caption, 17, "%d dBm", BaseLine20dB - BaselineShift + 30);
+    Text(20,  66, caption, font_ptr, 0, 0, 0, 255, 255, 255);
+  }
+  else if ((spectrum == false) && (waterfall == true))   // Waterfall only
+  {
+    Text(35, 462, "0 s", font_ptr, 0, 0, 0, 255, 255, 255);
+    if (wfalltimespan > 4)   // only display requested timespan if not too fast
+    {
+      snprintf(caption, 15, "%3.1f s", (float)wfalltimespan * 0.5);
+      Text(25, 266, caption, font_ptr, 0, 0, 0, 255, 255, 255);
+      snprintf(caption, 15, "%3.1f s", (float)wfalltimespan);
+      Text(25,  66, caption, font_ptr, 0, 0, 0, 255, 255, 255);
+    }
+  }
+
+  else if ((spectrum == true) && (waterfall == true))   // Mix
+  {
+    if (BaselineShift == 0)                     // 0 to -80
+    {
+      Text(48, 462, "0 dB", font_ptr, 0, 0, 0, 255, 255, 255);
+      Text(30, 416, "-40 dB", font_ptr, 0, 0, 0, 255, 255, 255);
+      Text(30, 366, "-80 dB", font_ptr, 0, 0, 0, 255, 255, 255);
+    }
+    else                                        // -20 to -100
+    {
+      Text(30, 462, "-20 dB", font_ptr, 0, 0, 0, 255, 255, 255);
+      Text(30, 416, "-60 dB", font_ptr, 0, 0, 0, 255, 255, 255);
+      Text(20, 366, "-100 dB", font_ptr, 0, 0, 0, 255, 255, 255);
+    }
+    if (wfalltimespan > 4)   // only display requested timespan if not too fast
+    {
+      snprintf(caption, 15, "%3.1f s", (float)wfalltimespan * 0.5);
+      Text(25, 216, caption, font_ptr, 0, 0, 0, 255, 255, 255);
+      snprintf(caption, 15, "%3.1f s", (float)wfalltimespan);
+      Text(25,  66, caption, font_ptr, 0, 0, 0, 255, 255, 255);
+    }
+
+    // Draw the waterfall calibration chart
+    for (i = 301; i <= 399; i++)
+    {
+      pixel_brightness = (i - 300) - (400 + (5 * WaterfallBase)) / 4; // this in range -400 to +400, but only 0 to 400 is valid
+      pixel_brightness =  4 * (255 * pixel_brightness) / (WaterfallRange * 5);  // scale to 0 - 255
+
+      if (pixel_brightness < 0) 
+      {
+        pixel_brightness = 0;  // Black below gradient line
+      }
+      if (pixel_brightness > 256)
+      {
+        pixel_brightness = 255;
+      }
+      //setPixel(610, 410 - i, waterfall_map(pixel_brightness).Red, waterfall_map(pixel_brightness).Green, waterfall_map(pixel_brightness).Blue);
+      setPixel(610, 70 + i, waterfall_map(pixel_brightness).Red, waterfall_map(pixel_brightness).Green, waterfall_map(pixel_brightness).Blue);
+      setPixel(611, 70 + i, waterfall_map(pixel_brightness).Red, waterfall_map(pixel_brightness).Green, waterfall_map(pixel_brightness).Blue);
+      setPixel(612, 70 + i, waterfall_map(pixel_brightness).Red, waterfall_map(pixel_brightness).Green, waterfall_map(pixel_brightness).Blue);
+      setPixel(613, 70 + i, waterfall_map(pixel_brightness).Red, waterfall_map(pixel_brightness).Green, waterfall_map(pixel_brightness).Blue);
+      setPixel(614, 70 + i, waterfall_map(pixel_brightness).Red, waterfall_map(pixel_brightness).Green, waterfall_map(pixel_brightness).Blue);
+    }
+    HorizLine(610, 470 + (WaterfallBase * 5) / 4, 5, 255, 255, 255);  // White bar at bottom of gradient line
+    HorizLine(610, 470 + (WaterfallBase * 5) / 4 + (WaterfallRange * 5) /4, 5, 0, 0, 0);  // Black bar at top of gradient line
+    HorizLine(610, 471 + (WaterfallBase * 5) / 4 + (WaterfallRange * 5) /4, 5, 0, 0, 0);  // Black bar at top of gradient line
+  }
 }
 
 
 void DrawSettings()
 {
-  //setForeColour(255, 255, 255);                    // White text
-  //setBackColour(0, 0, 0);                          // on Black
   const font_t *font_ptr = &font_dejavu_sans_18;   // 18pt
   char DisplayText[63];
-  float ParamAsFloat;
-  int line1y = 245;
-  int line2y = 215;
+  int ParamAsInt;
+  int line1y = 45;
   int titley = 5;
 
   // Clear the previous text first
-  rectangle(100, 0, 505, 30, 0, 0, 0);
-  rectangle(100, line1y - 5, 250, 25, 0, 0, 0);
-  rectangle(100, line2y - 5, 250, 25, 0, 0, 0);
+  rectangle(100, 0, 505, 69, 0, 0, 0);
 
-  ParamAsFloat = (float)centrefreq / 1000.0;
-  snprintf(DisplayText, 63, "Centre Freq %5.2f MHz", ParamAsFloat);
-  pthread_mutex_lock(&text_lock);
-  Text(100, line1y, DisplayText, font_ptr, 0, 0, 0, 255, 255, 255);
-  pthread_mutex_unlock(&text_lock);
-
-  //nf_bandwidth
-
-  if ((nf_bandwidth > 0) && (nf_bandwidth < 1000))  // valid and less than 1000 kHz
+  // Wait for the data to be ready
+  while (dataready == false)
   {
-    ParamAsFloat = (float)nf_bandwidth;
-    snprintf(DisplayText, 63, "Bandwidth %5.1f kHz", ParamAsFloat);
-    pthread_mutex_lock(&text_lock);
-    Text(100, line2y, DisplayText, font_ptr, 0, 0, 0, 255, 255, 255);
-    pthread_mutex_unlock(&text_lock);
+    usleep(100);
   }
-  else if (nf_bandwidth >= 1000)                  // valid and greater 1000 kHz
+
+  if (scope == true)
   {
-    ParamAsFloat = (float)nf_bandwidth / 1000.0;
-    snprintf(DisplayText, 63, "Bandwidth %5.1f MHz", ParamAsFloat);
-    pthread_mutex_lock(&text_lock);
-    Text(100, line2y, DisplayText, font_ptr, 0, 0, 0, 255, 255, 255);
-    pthread_mutex_unlock(&text_lock);
+    if (ADCclkDiv_value < 959) // < 1ms/div
+    {
+      ParamAsInt = (50000 * ADCclkDiv_value)/48000;
+      snprintf(DisplayText, 63, "%d us/div", ParamAsInt);
+      Text(320, line1y, DisplayText, font_ptr, 0, 0, 0, 255, 255, 255);
+    }
+    else                        // > 1 ms/div
+    {
+      ParamAsInt = (50000 * ADCclkDiv_value)/48000000;
+      snprintf(DisplayText, 63, "%d ms/div", ParamAsInt);
+      Text(320, line1y, DisplayText, font_ptr, 0, 0, 0, 255, 255, 255);
+    }
+  }
+  else
+  {
+    // Left hand x axis label
+    Text(100, line1y, "0", font_ptr, 0, 0, 0, 255, 255, 255);
+
+    // Centre x axis label
+
+    ParamAsInt = 48000000/(2083 * ADCclkDiv_value * 2);
+    snprintf(DisplayText, 63, "%d kHz", ParamAsInt);
+    Text(320, line1y, DisplayText, font_ptr, 0, 0, 0, 255, 255, 255);
+
+    // Right hand x axis label
+    ParamAsInt = 48000000/(2083 * ADCclkDiv_value);
+    snprintf(DisplayText, 63, "%d kHz", ParamAsInt);
+    Text(520, line1y, DisplayText, font_ptr, 0, 0, 0, 255, 255, 255);
   }
 
   if (strcmp(PlotTitle, "-") != 0)
   {
-    pthread_mutex_lock(&text_lock);
     TextMid(350, titley, PlotTitle, &font_dejavu_sans_22, 0, 0, 0, 255, 255, 255);
-    pthread_mutex_unlock(&text_lock);
   }
 }
 
@@ -4199,6 +4970,16 @@ void DrawTrace(int xoffset, int prev2, int prev1, int current)
   int ypospix;  // ypos corrected for pixel map  
   int ymax;     // inclusive upper limit of this plot
   int ymin;     // inclusive lower limit of this plot
+  int trace_baseline;       // raised to top quarter for waterfall in mix mode
+
+  if (waterfall == true)
+  {
+    trace_baseline = 301;
+  }
+  else
+  {
+    trace_baseline = 1;
+  }
 
   for (ypos = 0; ypos < 401; ypos++)
   {
@@ -4275,324 +5056,130 @@ void DrawTrace(int xoffset, int prev2, int prev1, int current)
   // Draw the trace in the column
 
   for(ypos = ymin; ypos <= ymax; ypos++)
-  
   {
-    ypospix = 409 - ypos;  //409 = 479 - 70
-    //setPixel(xpos, ypospix, column[ypos], column[ypos], 0);  
-    setPixel(xpos, 479 - ypospix, column[ypos], column[ypos], 0);  
+    ypospix = ypos + 70;
+    setPixel(xpos, ypospix, column[ypos], column[ypos], 0);  
   }
 
   // Draw the background and grid (except in the active trace) to erase the previous scan
 
   if (xpos % 50 == 0)  // vertical int graticule
   {
-    for(ypos = 201; ypos < ymin; ypos++)
+    for(ypos = trace_baseline; ypos < ymin; ypos++)
     {
-      //setPixel(xpos, 479 - (70 + ypos), 64, 64, 64);
-      setPixel(xpos, (70 + ypos), 64, 64, 64);
+      setPixel(xpos, ypos + 70, 64, 64, 64);
     }
     for(ypos = 399; ypos > ymax; ypos--)
     {
-      //setPixel(xpos, 479 - (70 + ypos), 64, 64, 64);
-      setPixel(xpos, (70 + ypos), 64, 64, 64);
+      setPixel(xpos, ypos + 70, 64, 64, 64);
+    }
+  }
+  else if ((xpos > 344) && (xpos < 356))  // centre vertical graticule marks
+  {
+    for(ypos = trace_baseline; ypos < ymin; ypos++)
+    {
+      ypospix = ypos + 70;
+
+      if (ypos % 10 == 0)  // tick mark
+      {
+        setPixel(xpos, ypospix, 64, 64, 64);
+      }
+      else
+      {
+        setPixel(xpos, ypospix, 0, 0, 0);
+      }
+    }
+    for(ypos = 399; ypos > ymax; ypos--)
+    {
+      ypospix = ypos + 70;
+
+      if (ypos % 10 == 0)  // tick mark
+      {
+        setPixel(xpos, ypospix, 64, 64, 64);
+      }
+      else
+      {
+        setPixel(xpos, ypospix, 0, 0, 0);
+      }
     }
   }
   else  // horizontal graticule and open space
   {
-    for(ypos = 201; ypos < ymin; ypos++)  // below the trace
+    for(ypos = trace_baseline; ypos < ymin; ypos++)  // below the trace
     {
-      ypospix = 409 - ypos;  // 409 = 479 - 70
+      ypospix = ypos + 70;
 
       if (ypos % 50 == 0)  // graticule line
       {
-        //setPixel(xpos, ypospix, 64, 64, 64);
-        setPixel(xpos, 479 - ypospix, 64, 64, 64);
+        setPixel(xpos, ypospix, 64, 64, 64);
       }
       else
       {
-        //setPixel(xpos, ypospix, 0, 0, 0);
-        setPixel(xpos, 479 - ypospix, 0, 0, 0);
+        setPixel(xpos, ypospix, 0, 0, 0);
+      }
+      if ((xpos % 10 == 0) && (ypos > 195) && (ypos < 205)) // tick mark on x axis
+      {
+        setPixel(xpos, ypospix, 64, 64, 64);
       }
     }
     for(ypos = 399; ypos > ymax; ypos--)  // above the trace
     {
-      ypospix = 409 - ypos;  // 409 = 479 - 70
+      ypospix = ypos + 70;
+
       if (ypos % 50 == 0)  // graticule line
       {
-        //setPixel(xpos, ypospix, 64, 64, 64);
-        setPixel(xpos, 479 - ypospix, 64, 64, 64);
+        setPixel(xpos, ypospix, 64, 64, 64);
       }
       else
       {
-        //setPixel(xpos, ypospix, 0 ,0 ,0);
-        setPixel(xpos, 479 - ypospix, 0 ,0 ,0);
+        setPixel(xpos, ypospix, 0, 0, 0);
+      }
+      if ((xpos % 10 == 0) && (ypos > 195) && (ypos < 205)) // tick mark on x axis
+      {
+        setPixel(xpos, ypospix, 64, 64, 64);
       }
     }
   }
-}
 
+  // Draw the markers
 
-void DrawMeterArc()
-{
-  // Draws an anti-aliased meter arc
-
-  float x;
-  float y;
-//  int previous_x = 129; // Left most position of arc - 1
-  int previous_x = 364; // Left most position of arc - 1
-  float current_sin;
-  float current_cos;
-  float arc_angle;
-  int arc_deflection;
-  float contrast;
-
-  for (arc_deflection = 0; arc_deflection < 998; arc_deflection++)
+  if (markeron == true)
   {
-    arc_angle = (float)(arc_deflection) * 2 * PI / 4000.0 - PI / 4.0;
-    current_sin = sin(arc_angle);
-    current_cos = cos(arc_angle);
-
-
-//    x = 350 + 312 * current_sin;
-//    y = 90 + 312 * current_cos;
-    x = 475 + 156 * current_sin;
-    y = 290 + 156 * current_cos;
-
-    if ((x - (float)previous_x) >= 1.0)  // new pixel pair required
-    {
-      // Work out contrast for lower pixel and paint
-      contrast = (y - (int)y) * 255;
-      //setPixel(previous_x + 1, hscreen - (int)y, contrast, contrast, contrast);
-      setPixel(previous_x + 1, (int)y, contrast, contrast, contrast);
-
-      // work out contrast for upper pixel and paint
-      contrast = (1 - (y - (int)y)) * 255;
-      //setPixel(previous_x + 1, hscreen - ((int)y - 1), contrast, contrast, contrast);
-      setPixel(previous_x + 1, ((int)y - 1), contrast, contrast, contrast);
-
-      previous_x = previous_x + 1;
-    }
+    MarkerGrn(markerx, xpos, markery);
   }
-}
-
-
-void DrawMeterTicks(int major_ticks, int minor_ticks)
-{
-  float tick_deflection= 0;
-  int x1;
-  int x2;
-  int y1;
-  int y2;
-  float current_sin;
-  float current_cos;
-  int major_tick_number;
-  int minor_tick_number;
-
-//  float major_tick_length = 20.0;
-//  float minor_tick_length = 10.0;
-  float major_tick_length = 10.0;
-  float minor_tick_length = 5.0;
-
-  // Draw the major ticks.  Start at zero
-  for (major_tick_number = 0; major_tick_number <= major_ticks; major_tick_number++)
-  {
-    tick_deflection = (major_tick_number * 1000) / major_ticks;  // for majors
-
-    current_sin = sin((float)tick_deflection * 2.0 * PI / 4000.0 - PI / 4.0);
-    current_cos = cos((float)tick_deflection * 2.0 * PI / 4000.0 - PI / 4.0);
-
-//    x1 = (int)(350.0 + 312.0 * current_sin);
-//    y1 = (int)(90.0 + 312.0 * current_cos);
-//    x2 = (int)(350.0 + (312.0 + major_tick_length) * current_sin);
-//    y2 = (int)(90.0 + (312.0 + major_tick_length) * current_cos);
-    x1 = (int)(475.0 + 156.0 * current_sin);
-    y1 = (int)(290.0 + 156.0 * current_cos);
-    x2 = (int)(475.0 + (156.0 + major_tick_length) * current_sin);
-    y2 = (int)(290.0 + (156.0 + major_tick_length) * current_cos);
-
-    DrawAALine(x1, y1, x2, y2, 0, 0, 0, 255, 255, 255);
-
-    // Draw the minor ticks.  Start at one.  Don't draw for last major tick
-    if (major_tick_number < major_ticks)
-    {
-      for (minor_tick_number = 1; minor_tick_number <= minor_ticks; minor_tick_number++)
-      {
-        tick_deflection = tick_deflection + (minor_tick_number * 1000) / major_ticks / (minor_ticks + 1);
-
-        current_sin = sin((float)tick_deflection * 2.0 * PI / 4000.0 - PI / 4.0);
-        current_cos = cos((float)tick_deflection * 2.0 * PI / 4000.0 - PI / 4.0);
-
-//        x1 = (int)(350.0 + 312.0 * current_sin);
-//        y1 = (int)(90.0 + 312.0 * current_cos);
-//        x2 = (int)(350.0 + (312.0 + minor_tick_length) * current_sin);
-//        y2 = (int)(90.0 + (312.0 + minor_tick_length) * current_cos);
-        x1 = (int)(475.0 + 156.0 * current_sin);
-        y1 = (int)(290.0 + 156.0 * current_cos);
-        x2 = (int)(475.0 + (156.0 + minor_tick_length) * current_sin);
-        y2 = (int)(290.0 + (156.0 + minor_tick_length) * current_cos);
-
-        DrawAALine(x1, y1, x2, y2, 0, 0, 0, 255, 255, 255);
-      }
-    }
-  }
-}
-
-
-void Draw5MeterLabels(float LH_Value, float RH_Value)
-{
-  char labeltext[15];
-  const font_t *font_ptr = &font_dejavu_sans_18;   // 18pt
-  //setBackColour(0, 0, 0);
-
-  rectangle(351, 432, 40, 30, 0, 0, 0);
-  rectangle(378, 454, 40, 25, 0, 0, 0);
-  rectangle(430, 462, 40, 15, 0, 0, 0);
-  rectangle(482, 462, 40, 15, 0, 0, 0);
-  rectangle(532, 454, 40, 25, 0, 0, 0);
-  rectangle(575, 432, 40, 30, 0, 0, 0);
-
-  snprintf(labeltext, 14, "%d", (int)LH_Value);
-  pthread_mutex_lock(&text_lock);
-  TextMid(366, 432, labeltext, font_ptr, 0, 0, 0, 255, 255, 255);
-  pthread_mutex_unlock(&text_lock);
-
-  snprintf(labeltext, 14, "%d", (int)(LH_Value + (RH_Value -LH_Value) / 5));
-  pthread_mutex_lock(&text_lock);
-  TextMid(398, 454, labeltext, font_ptr, 0, 0, 0, 255, 255, 255);
-  pthread_mutex_unlock(&text_lock);
-
-  snprintf(labeltext, 14, "%d", (int)(LH_Value + 2 * (RH_Value -LH_Value) / 5));
-  pthread_mutex_lock(&text_lock);
-  TextMid(448, 462, labeltext, font_ptr, 0, 0, 0, 255, 255, 255);
-  pthread_mutex_unlock(&text_lock);
-
-  snprintf(labeltext, 14, "%d", (int)(LH_Value + 3 * (RH_Value -LH_Value) / 5));
-  pthread_mutex_lock(&text_lock);
-  TextMid(500, 462, labeltext, font_ptr, 0, 0, 0, 255, 255, 255);
-  pthread_mutex_unlock(&text_lock);
-
-  snprintf(labeltext, 14, "%d", (int)(LH_Value + 4 * (RH_Value -LH_Value) / 5));
-  pthread_mutex_lock(&text_lock);
-  TextMid(550, 454, labeltext, font_ptr, 0, 0, 0, 255, 255, 255);
-  pthread_mutex_unlock(&text_lock);
-
-  snprintf(labeltext, 14, "%d", (int)RH_Value);
-  pthread_mutex_lock(&text_lock);
-  TextMid(593, 432, labeltext, font_ptr, 0, 0, 0, 255, 255, 255);
-  pthread_mutex_unlock(&text_lock);
-}
-
-
-void *MeterMovement(void * arg)
-{
-  bool *exit_requested = (bool *)arg;
-  int current_meter_deflection = 0;
-  int meter_move;
-  float meter_angle;
-  float current_sin;
-  float current_cos;
-  float previous_sin = 0;
-  float previous_cos = 0;
-
-  while((false == *exit_requested))
-  {
-    while (freeze)  // Do not run if display is frozen
-    {
-      usleep(20000);
-    }
-
-    // Check Meter deflection is within bounds
-    if (meter_deflection > 1050)
-    {
-      meter_deflection = 1050;
-    }
-    if (meter_deflection < -50)
-    {
-      meter_deflection = -50;
-    }
-
-    if (meter_deflection != current_meter_deflection )        
-    {
-      // Physics
-      meter_move = (meter_deflection - current_meter_deflection) / 5;  // Reduce movement speed
-      if ((abs(meter_move) < 200) && (abs(meter_move) > 50))           // Slow as nearing position
-      {
-         meter_move = meter_move / 2;
-      }
-
-      if (meter_move > 200)                                            // Limit max speed
-      {
-        meter_move = 200;
-      }
-
-      if ((meter_deflection - current_meter_deflection) != 0)                                     // Only draw if needed
-      {
-        if (abs(meter_deflection - current_meter_deflection) > 5)                                 // Large move
-        {
-          meter_angle = (float)(current_meter_deflection + meter_move) * 2.0 * PI / 4000.0 - PI / 4.0;
-          current_meter_deflection = current_meter_deflection + meter_move;
-        }
-        else                                                                                      // last few degrees
-        {
-          meter_angle = (float)(meter_deflection) * 2.0 * PI / 4000.0 - PI / 4.0;
-          current_meter_deflection = meter_deflection;
-        }
-        current_sin = sin(meter_angle);
-        current_cos = cos(meter_angle);
-
-        // Overwrite previous position
-        DrawAALine(475, 290, 475 + (int)(153.0 * previous_sin), 290 + (int)(153.0 * previous_cos), 0, 0, 0, 0, 0, 0);
-
-        // Write new position
-        DrawAALine(475, 290, 475 + (int)(153.0 * current_sin), 290 + (int)(153.0 * current_cos), 0, 0, 0, 255, 255, 255);
-
-        // Set up for overwrite next time
-        previous_sin = current_sin;
-        previous_cos = current_cos;
-      }
-    }
-    usleep(20000);  // 50 Hz refresh rate
-  }
-  return NULL;
-}
-
-
-void CalibrateSystem()
-{
-  CalibrateRequested = true;
 }
 
 
 static void cleanexit(int calling_exit_code)
 {
   exit_code = calling_exit_code;
-  app_exit = true;
   printf("Clean Exit Code %d\n", exit_code);
+  app_exit = true;
   usleep(1000000);
+  printf("Close screen\n");
+  closeScreen();
   char Commnd[255];
   sprintf(Commnd,"stty echo");
   system(Commnd);
-  // Turn off Noise Source
-  digitalWrite(NoiseSourceGPIO, LOW);
+
   printf("scans = %d\n", tracecount);
-  clearScreen(0, 0, 0);
   exit(exit_code);
 }
 
 
 static void terminate(int sig)
 {
-  app_exit = true;
   printf("Terminating\n");
+  app_exit = true;
   usleep(1000000);
+  printf("Close screen\n");
+  closeScreen();
   char Commnd[255];
   sprintf(Commnd,"stty echo");
   system(Commnd);
-  // Turn off Noise Source
-  digitalWrite(NoiseSourceGPIO, LOW);
+
   printf("scans = %d\n", tracecount);
-  clearScreen(0, 0, 0);
-  exit(207);
+  exit(0);
 }
 
 
@@ -4604,43 +5191,23 @@ int main(void)
   int screenYmax, screenYmin;
   int i;
   int pixel;
-  float NF = 0;
-  float PNF = 0;
-  float pwrNF = 0;
-  float pwrPNF = 0;
-  float Avlpwrcold = -80;
-  float Avlpwrhot = -80;
-  int nextwebupdate = 10;
+  int PeakValueZeroCounter = 0;
+
+  uint64_t nextwebupdate = monotonic_ms() + 1000;
+  uint64_t next_spec_paint = monotonic_ms();
+  uint64_t next_wfall_paint = monotonic_ms();
+  uint64_t check_time;
+  uint16_t y4[625];
+  bool paint_line;
+  int w_index = 0;
+  int j;
+  int k;
+  screen_pixel_t wfparray[513][401];
+  int wfall_offset = 0;
+  int wfall_height;
+  int16_t pixel_brightness;
+  uint16_t AverageCount = 0;
   char response[63];
-
-  int NFScans = 0;
-  int NFTotalCold = 0;
-  int NFTotalHot = 0;
-  float pwrTotalHot = 0;
-  float pwrTotalCold = 0;
-  float lpwrhot;
-  float lpwrcold;
-  int SampleCount = 0;
-  float NoiseDiff;
-  float Y2;
-  float pwrY2;
-  float T2;
-  float pwrT2;
-  char NFText[31];
-  int CalibrateSmoothCount = 0;
-
-  float GDevice = 0;
-  float CalpwrTotalHot = 0;
-  float CalpwrTotalCold = 0;
-  float GDevicedB = 0;
-  float NFDevice = 0;
-  float NFsys = 0;
-  float CalNFsys = 0;
-  float NFDevicedB = 0;
-  float SmoothGDevicedB = 0;
-  float SmoothNFDevicedB = 0;
-  float meterNF = 30.0;
-  float meterG = 0.0;
 
   // Catch sigaction and call terminate
   for (i = 0; i < 16; i++)
@@ -4652,7 +5219,6 @@ int main(void)
   }
 
   // Sort out display and control.  If touchscreen detected, use that (and set config) with optional web control.
-  // Allow for mouse if touchscreen detected
   // If no touchscreen, check for mouse.  If mouse detected, use that and set hdmi720 if hdmi mode not selected
   // Allow optional web control.  If no mouse, set hdmi720 and enable web control.
 
@@ -4678,7 +5244,7 @@ int main(void)
     // Create Touchscreen thread
     pthread_create (&thtouchscreen, NULL, &WaitTouchscreenEvent, NULL);
 
-    if (CheckMouse() == 0)
+    if (FindMouseEvent() >= 0)
     {
       mouse_connected = true;
       mouse_active = true;
@@ -4691,7 +5257,7 @@ int main(void)
   }
   else // No touchscreen detected, check for mouse
   {
-    if (CheckMouse() == 0)
+    if (FindMouseEvent() >= 0)
     {
       mouse_connected = true;
       mouse_active = true;
@@ -4720,7 +5286,6 @@ int main(void)
   }
   printf("Completed Screen and Mouse checks\n");
 
-  // Set Screen parameters
   screenXmax = 799;
   screenXmin = 0;
   wscreen = 800;
@@ -4728,14 +5293,13 @@ int main(void)
   screenYmin = 0;
   hscreen = 480;
 
-
   // Calculate screen parameters
-  scaleXvalue = ((float)screenXmax-screenXmin) / wscreen;
+  scaleXvalue = ((float)(screenXmax - screenXmin)) / wscreen;
   printf ("X Scale Factor = %f\n", scaleXvalue);
   printf ("wscreen = %d\n", wscreen);
   printf ("screenXmax = %d\n", screenXmax);
   printf ("screenXmim = %d\n", screenXmin);
-  scaleYvalue = ((float)screenYmax-screenYmin) / hscreen;
+  scaleYvalue = ((float)(screenYmax - screenYmin)) / hscreen;
   printf ("Y Scale Factor = %f\n", scaleYvalue);
   printf ("hscreen = %d\n", hscreen);
 
@@ -4746,29 +5310,21 @@ int main(void)
   Define_Menu5();
   Define_Menu6();
   Define_Menu7();
+  Define_Menu8();
   Define_Menu9();
   Define_Menu10();
+  Define_Menu11();
+  Define_Menu12();
   Define_Menu41();
 
   CheckConfigFile();
   ReadSavedParams();
-
-  // Start Wiring Pi
-  wiringPiSetupPinType(WPI_PIN_BCM);  // Set up to use Broadcom GPIO numbers
-
-  // Set all nominated pins to outputs
-  pinMode(NoiseSourceGPIO, OUTPUT);
-
-  // Set idle conditions
-  digitalWrite(NoiseSourceGPIO, LOW);
+  CalcSpan();
 
   // Create Wait Button thread
   pthread_create (&thbutton, NULL, &WaitButtonEvent, NULL);
 
   // Initialise screen and splash
-
-  CurrentMenu = 2;
-  Start_Highlights_Menu2();
 
   initScreen();
 
@@ -4776,404 +5332,324 @@ int main(void)
 
   printf("Profiling FFTs..\n");
   fftwf_import_wisdom_from_filename("/home/pi/.fftwf_wisdom");
-  printf(" - Main Band FFT\n");
   main_fft_init();
   fftwf_export_wisdom_to_filename("/home/pi/.fftwf_wisdom");
   printf("FFTs Done.\n");
 
+
   /* Setting up buffers */
   buffer_circular_init(&buffer_circular_iq_main, sizeof(buffer_iqsample_t), 4096*1024);
 
-  /* LimeSDR Thread */
-  if(pthread_create(&lime_thread_obj, NULL, lime_thread, &app_exit))
+  // Check Pico Connected
+  if (CheckPicoConnect() == 1)
   {
-    fprintf(stderr, "Error creating %s pthread\n", "Lime");
-    return 1;
+    MsgBox4("No Pico Detected", "Check connections", "", "Touch Screen to Continue");
+    wait_touch();
+    if (CheckPicoConnect() == 1)
+    {
+      MsgBox4("Still No Pico Detected", "Exiting from PicoViewer", "", "Touch Screen to Continue");
+      wait_touch();
+      clearScreen(0, 0, 0);
+      cleanexit(129);
+    }
   }
-  pthread_setname_np(lime_thread_obj, "Lime");
 
+  // Serial Thread
+  printf("Starting Serial Thread\n");
+  if(pthread_create(&serial_thread_obj, NULL, serial_thread, &app_exit))
+  {
+      fprintf(stderr, "Error creating %s pthread\n", "Serial");
+      return 1;
+  }
+  pthread_setname_np(serial_thread_obj, "Serial");
+
+  // FFT Thread
   printf("Starting FFT Thread\n");
-
-  /* Band FFT Thread */
   if(pthread_create(&fft_thread_obj, NULL, fft_thread, &app_exit))
   {
-    fprintf(stderr, "Error creating %s pthread\n", "FFT");
-    return 1;
+      fprintf(stderr, "Error creating %s pthread\n", "FFT");
+      return 1;
   }
   pthread_setname_np(fft_thread_obj, "FFT");
 
-  // Zero the y value buffer
-  for(i = 1; i < 255; i++)
+  for(i = 1; i < 511; i++)
   {
-    y[i] = 201;
+    y[i] = 1;
   }
 
-  initScreen();
-
-  DrawEmptyScreen();  // Draws basic grid
-
+  DrawEmptyScreen();  // Required to set A value, which is not set in DrawTrace
   DrawYaxisLabels();  // dB calibration on LHS
-
   DrawSettings();     // Start, Stop RBW, Ref level and Title
-
   UpdateWindow();     // Draw the buttons
-  publish();
 
-  Tson = Tsoff * (1 + pow(10, (ENR / 10)));
-  //printf("ENR = %f dB.  Tson = %f degrees K\n", ENR, Tson);
-
-
-  // Start the meter movement
-  if(pthread_create(&thMeter_Movement, NULL, &MeterMovement, &app_exit))
+  while(app_exit == false)                                                  // Start of main display loop
   {
-    fprintf(stderr, "Error creating %s pthread\n", "MeterMovement");
-    return 1;
-  }
-
-  while(true)                                       // Continuous loop for running
-  {
-    // Process noise figure calcs and source switching
-    NFScans++;
-    if (NFScans <= (2 * ScansforLevel))  // NFScans = 1 ( Source on, Settling time) or
-                                         // NFScans = 2 (Source on, Measuring time)
+    // transfer the data into correct buffer (unnecesary step)
+    for (pixel = 0; pixel <= 512; pixel++)
     {
-      // Turn on
-      digitalWrite(NoiseSourceGPIO, HIGH);
-    }
-    else                                 // NFScans = 3 ( Source off, Settling time) or
-                                         // NFScans = 4 (Source off, Measuring time)
-    {
-      // Turn off
-      digitalWrite(NoiseSourceGPIO, LOW);
+      y3[pixel] = y[pixel];
     }
 
-    if (NFScans >= (4 * ScansforLevel))  // End of Source off measuring time, so calculate
+    activescan = true;
+
+    check_time = monotonic_ms();
+
+    if ((spectrum == true) && (check_time > next_spec_paint))             // Paint spectrum in full or mix modes  
     {
-      NFScans = 0;
+      // Set the time for the next spectrum paint after this one
+      next_spec_paint = next_spec_paint + 20;
 
-      // Draw Meter Surround
-      
-      if (ModeChanged == true)
+      // Make sure that we don't build up a time deficit
+      if (next_spec_paint < check_time)
       {
-        //setBackColour(0, 0, 0);
-        //setForeColour(255, 255, 255);
-
-        DrawMeterArc();
-        DrawMeterTicks(5, 1);
-        Draw5MeterLabels(ActiveZero, ActiveFSD);
-        
-        ModeChanged = false;
+        next_spec_paint = check_time + 20;
       }
 
-
-      // Calculate Noise difference in dB.  Totals are 4 dB per div
-      NoiseDiff = (float)(NFTotalHot - NFTotalCold) * 0.4 / (float)SampleCount;  //  NoiseDiff 4 div/dB and 10 samples averaged
-      // Noise Diff is Y expressed in dB as derived from spectrum display
-
-      Y2 = pow(10, (NoiseDiff / 10));  // Y2 is a pure ratio (= N2/N1)
-
-      T2 = (Tson - Y2 * Tsoff)/(Y2 - 1);
-      NFsys = 1 + (T2 / 290);
-      NF = (10 * log10(NFsys)) * 0.1 + (PNF * 0.9);
-      if (NF < 50)
+      if (waterfall == true)  // mix
       {
-        PNF = NF;
-      }
-
-      //printf("%d Samples. Hot Average = %d, Cold Average = %d, Noise Diff = %f\n",
-      //  SampleCount, (2 * NFTotalHot) / SampleCount, (2 * NFTotalCold) / SampleCount, NoiseDiff);
-
-
-      lpwrhot = 10.f * log10((0.5 * pwrTotalHot / SampleCount) + 1.0e-20);
-      lpwrcold = 10.f * log10((0.5 * pwrTotalCold / SampleCount) + 1.0e-20);
-
-      pwrY2 = pwrTotalHot / pwrTotalCold;
-      pwrT2 = (Tson - pwrY2 * Tsoff)/(pwrY2 - 1);
-      pwrNF = (10 * log10(1 + (pwrT2 / 290))) * (1.0 - NFsmoothingFactor) + (pwrPNF * NFsmoothingFactor);
-      if (pwrNF < 50)
-      {
-        pwrPNF = pwrNF;
-      }
-
-      Avlpwrhot = lpwrhot * 0.1 + Avlpwrhot * 0.9;
-      Avlpwrcold = lpwrcold * 0.1 + Avlpwrcold * 0.9;
-
-      //printf("%d Samples. Hot dB Power Average = %f, Cold dB Power Average = %f, Pwr noise diff = %f\n",
-      //  SampleCount, Avlpwrhot, Avlpwrcold, pwrNoiseDiff);
-
-      meterNF = pwrNF;
-
-      // Display Lower left quadrant (detailed parameters or large numbers)
-      if (LargeNumbers == false)   // display detailed parameters
-      {
-        // Clear the screen area if required
-        if (LargeNumbersDisplayed == true)
+        for (pixel = 0; pixel <= 512; pixel++)
         {
-          rectangle(100, 55, 200, 185, 0, 0, 0);  // Blank area
-          DrawSettings();                         // Redraw Bandwidth
-          LargeNumbersDisplayed = false;
-        }
-
-        // Display On Power Level
-        rectangle(100, 120, 250, 22, 0, 0, 0);  // Blank area
-        snprintf(NFText, 20, "Noise on %0.1f dB", Avlpwrhot + 20.0);
-        //setBackColour(0, 0, 0);
-        pthread_mutex_lock(&text_lock);
-        Text(100, 125, NFText, &font_dejavu_sans_18, 0, 0, 0, 255, 255, 255);
-        pthread_mutex_unlock(&text_lock);
-
-        // Display Off Power Level
-        rectangle(100, 90, 250, 22, 0, 0, 0);  // Blank area
-        snprintf(NFText, 20, "Noise off %0.1f dB", Avlpwrcold + 20.0);
-        //setBackColour(0, 0, 0);
-        pthread_mutex_lock(&text_lock);
-        if (Avlpwrcold + 20.0 < -65.0)
-        {
-          //setForeColour(255, 127, 127);
-          Text(100, 95, NFText, &font_dejavu_sans_18, 0, 0, 0, 255, 127, 127);
-        }
-        else
-        {
-          Text(100, 95, NFText, &font_dejavu_sans_18, 0, 0, 0, 255, 255, 255);
-        }
-        //setForeColour(255, 255, 255);
-        pthread_mutex_unlock(&text_lock);
-        rectangle(300, 90, 250, 22, 0, 0, 0);  // Blank area
-        if (Avlpwrcold + 20.0 < -65.0)
-        {
-          pthread_mutex_lock(&text_lock);
-          Text(300, 95, "Increase Lime Gain", &font_dejavu_sans_18, 0, 0, 0, 255, 255, 255);
-          pthread_mutex_unlock(&text_lock);
+          if (y3[pixel] < 4)
+          {
+            y3[pixel] = 4;
+          }
         }
       }
 
-      if (CalibrateRequested)
+      for (pixel = 8; pixel <= 506; pixel++)
       {
-        if (CalibrateSmoothCount == 0)
+        if (waterfall == false)   // full height mode
         {
-          // Initialise calibrate variables with first value
-          CalpwrTotalHot = pwrTotalHot;
-          CalpwrTotalCold = pwrTotalCold;
-          CalNFsys = NFsys;
+          DrawTrace((pixel - 6), y3[pixel - 2], y3[pixel - 1], y3[pixel]);
         }
-        if ((CalibrateSmoothCount > 0) &&  (CalibrateSmoothCount <= 19))
+        else                     //  mix mode
         {
-          // Add values to average
-          CalpwrTotalHot = CalpwrTotalHot + pwrTotalHot;
-          CalpwrTotalCold = CalpwrTotalCold + pwrTotalCold;
-          CalNFsys = CalNFsys + NFsys;     
+          DrawTrace((pixel - 6), (y3[pixel - 2] / 4) + 300, (y3[pixel - 1] / 4) + 300, (y3[pixel] / 4) + 300);
         }
-        if (CalibrateSmoothCount >= 19)
-        {
-          // Calculate constants for device cal
 
-          CalpwrTotalHot =  CalpwrTotalHot / 20.0;
-          CalpwrTotalCold =  CalpwrTotalCold / 20.0;
-          CalNFsys = CalNFsys / 20.0;
-
-          Calibrated = true;
-          CalibrateRequested = false;
-          CalibrateSmoothCount = -1;
-          Start_Highlights_Menu2();
-          UpdateWindow();
+        if ((PeakPlot == true) && (waterfall == false))  // only works without waterfall!
+        {
+          // draw [pixel - 1] here based on PeakValue[pixel -1]
+          if (y3[pixel - 1] > PeakValue[pixel -1])
+          {
+            PeakValue[pixel - 1] = y3[pixel - 1];
+          }
+          setPixel(pixel + 93, 70 + PeakValue[pixel - 1], 255, 0, 63);
         }
-        CalibrateSmoothCount++;
+
+        while (freeze)
+        {
+          frozen = true;
+          usleep(1000); // Pause to let things happen if CPU is busy
+        }
+        frozen = false;
       }
 
-      if (Calibrated)
+      if (waterfall == true) // mix, so draw the dividing line
       {
-        // Calculate and display device NF and gain
-
-        // Gain
-
-        GDevice = (pwrTotalHot - pwrTotalCold) / (CalpwrTotalHot - CalpwrTotalCold);
-        GDevicedB = 10 * log10(GDevice);
-
-        // NF
-
-        NFDevice = NFsys - (CalNFsys -1) / GDevice;
-        NFDevicedB = 10 * log10(NFDevice);
-
-        //  Add smoothing for displayed parameters in here?
-
-        // Constrain Parameters before smoothing
-
-        if (GDevicedB != GDevicedB)  // Test for NAN
-        {
-          GDevicedB = 0.0;
-          //printf("NaN\n");
-        }
-        if (GDevicedB > 100.0)
-        {
-          GDevicedB = 50.0;
-        }
-        if (GDevicedB < -50.0)
-        {
-          GDevicedB = -49.9;
-        }
-        if (NFDevicedB != NFDevicedB)  // Test for NAN
-        {
-          NFDevicedB = 0.0;
-          //printf("NaN\n");
-        }
-
-        if (NFDevicedB > 30.0)
-        {
-          NFDevicedB = 30.0;
-        }
-        if (NFDevicedB < -5.0)
-        {
-          NFDevicedB = -4.9;
-        }
-
-        SmoothGDevicedB =   GDevicedB * (1.0 - NFsmoothingFactor) + SmoothGDevicedB  * NFsmoothingFactor;
-        SmoothNFDevicedB = NFDevicedB * (1.0 - NFsmoothingFactor) + SmoothNFDevicedB * NFsmoothingFactor;
-
-        meterG = SmoothGDevicedB;
-        meterNF = SmoothNFDevicedB;
-
-        // Apply Transverter ENR if required
-        if ((Calibrated == true) && (ENR != RF_ENR))
-        {
-          meterNF = meterNF - ENR + RF_ENR;
-          meterG = meterG + ENR - RF_ENR;
-        }
-
-        //printf("NFDevicedB = %0.1f dB, SmoothNFDevicedB = %0.1f dB\n", NFDevicedB, SmoothNFDevicedB);
-
+        HorizLine(101, 370, 499, 63, 63, 63);
       }
 
-      if (meterNF != meterNF)
+      activescan = false;
+
+      if (markeron == true)
       {
-        meterNF = 30.0;
+        CalculateMarkers();
       }
 
-      switch (MeterScale)
+      if (RequestPeakValueZero == true)
       {
-      case 1:                   // 30 - 0
-        meter_deflection = (int)(1000 - meterNF * 1000 / 30);
-      break;
-      case 2:                   // 30 - 20
-        meter_deflection = (int)(1000 - meterNF * 1000 / 10) + 2000;
-      break;
-      case 3:                   // 20 - 10
-        meter_deflection = (int)(1000 - meterNF * 1000 / 10) + 1000;
-      break;
-      case 4:                   // 10 - 0
-        meter_deflection = (int)(1000 - meterNF * 1000 / 10);
-      break;
-      case 5:                   // 5 - 0
-        meter_deflection = (int)(1000 - meterNF * 1000 / 5);
-      break;
+        PeakValueZeroCounter++;
+        if (PeakValueZeroCounter > 19)
+        {
+          memset(PeakValue, 0, sizeof(PeakValue));
+          PeakValueZeroCounter = 0;
+          RequestPeakValueZero = false;
+        }
       }
+    }                                                // End of spectrum painting
+    else
+    {
+      usleep(100);                                   // Give the processor a rest
+    }
 
-      if (LargeNumbers == true)                                       // Clear lower left quadrant and Display large numbers
+    if (waterfall == true)                           // Paint waterfall
+    {
+      if (spectrum == true)
       {
-        snprintf(NFText, 20, "%0.1f", meterNF);
-        rectangle(100, 55, 200, 185, 0, 0, 0);  // Blank area
-        pthread_mutex_lock(&text_lock);
-        Text(100, 110, NFText, &font_dejavu_sans_72, 0, 0, 0, 255, 255, 255);
-        pthread_mutex_unlock(&text_lock);
-        LargeNumbersDisplayed = true;
-      }
-      
-      if(Calibrated == false)
-      {
-        snprintf(NFText, 20, "System NF %0.1f dB", meterNF);
+        wfall_height = 299;
       }
       else
       {
-        if (ENR != RF_ENR)
-        {
-          snprintf(NFText, 20, "Tvtr NF %0.1f dB", meterNF);
-        }
-        else
-        {
-          snprintf(NFText, 20, "Device NF %0.1f dB", meterNF);
-        }
+        wfall_height = 399;
       }
 
-      rectangle(360, 250, 280, 40, 0, 0, 0);  // Blank area
-      //setBackColour(0, 0, 0);
-      pthread_mutex_lock(&text_lock);
-      Text(360, 260, NFText, &font_dejavu_sans_28, 0, 0, 0, 255, 255, 255);
-      pthread_mutex_unlock(&text_lock);
-
-      rectangle(330, 190, 300, 40, 0, 0, 0);  // Blank area
-      if(Calibrated == true)
+      check_time = monotonic_ms();
+      if (check_time > next_wfall_paint)                   // Paint the waterfall if time is right
       {
-        if (ENR != RF_ENR)
+        // Set the time for the next paint after this one
+        if (spectrum == false)            // full screen waterfall
         {
-          snprintf(NFText, 20, "Tvtr gain %0.1f dB", meterG);
+          next_wfall_paint = next_wfall_paint + (wfalltimespan * 25) / 10;
         }
-        else
+        else                              // only 300 (not 400) lines so paint slower
         {
-          snprintf(NFText, 20, "Device gain %0.1f dB", meterG);
+          next_wfall_paint = next_wfall_paint + (wfalltimespan * 100) / 30;
         }
-        //setBackColour(0, 0, 0);
-        pthread_mutex_lock(&text_lock);
-        Text(330, 200, NFText, &font_dejavu_sans_28, 0, 0, 0, 255, 255, 255);
-        pthread_mutex_unlock(&text_lock);
+
+        // Make sure that we don't build up a time deficit
+        if (next_wfall_paint < check_time)
+        {
+          if (spectrum == false)            // full screen waterfall
+          {
+            next_wfall_paint = check_time + (wfalltimespan * 25) / 10;
+          }
+          else                              // only 300 (not 400) lines so paint slower
+          {
+            next_wfall_paint = check_time + (wfalltimespan * 100) / 30;
+          }
+        }
+        paint_line = true;                // remember that we need to paint on this pass
+
+        if (strcmp(TraceType, "peak") == 0)
+        {
+          for (j = 8; j <= 506; j++)
+          {
+            if (y3[j] > y4[j])  // store the peaks
+            {
+              y4[j] = y3[j];
+            }
+          }
+        }
+        else if (strcmp(TraceType, "single") == 0)
+        {
+          for (j = 8; j <= 506; j++)
+          {
+            y4[j] = y3[j];
+          }
+        }
+        else if (strcmp(TraceType, "average") == 0)
+        {
+          {
+            for (j = 8; j <= 506; j++)
+            {
+              y4[j] = y4[j] + y3[j];
+              y4[j] = y4[j] / (AverageCount + 1);
+            }
+            AverageCount = 0;
+          }
+        }
       }
-
-      // printf("Noise Diff = %0.2f  Y2 =  %0.2f.  T2 = %0.1f, NF = %0.2f\n", NoiseDiff, Y2, T2, NF);
-      NFTotalHot = 0;
-      NFTotalCold = 0;
-      pwrTotalHot = 0;
-      pwrTotalCold = 0;
-      SampleCount = 0;
-    }
-
-    for (pixel = 4; pixel < 253; pixel++)
-    {
-      DrawTrace((pixel - 2), y[pixel - 2], y[pixel - 1], y[pixel]);
-      //printf("pixel=%d, prev2=%d, prev1=%d, current=%d\n", pixel, y[pixel - 2], y[pixel - 1], y[pixel]);
-
-      if (((pixel > 3) && (pixel < 122)) || ((pixel > 133) && (pixel < 253)))
+      else         // If average or peak, add to the average or store the peak, but don't paint the waterfall line
       {
-        if ((NFScans >= ScansforLevel) && (NFScans <= (2 * ScansforLevel)))
+        if (strcmp(TraceType, "peak") == 0)
         {
-          NFTotalHot = NFTotalHot + 2 * (y[pixel - 1] - 200);
-          pwrTotalHot = pwrTotalHot + rawpwr[pixel - 1];
-          SampleCount++;
+          for (j = 8; j <= 506; j++)
+          {
+            if (y3[j] > y4[j])  // store the peaks
+            {
+              y4[j] = y3[j];
+            }
+          }
         }
-        if (((NFScans >= (3 * ScansforLevel)) && (NFScans <= (4 * ScansforLevel - 1))) || (NFScans == 0))
+        else if (strcmp(TraceType, "average") == 0)
         {
-          NFTotalCold = NFTotalCold + 2 * (y[pixel - 1] - 200);
-          pwrTotalCold = pwrTotalCold + rawpwr[pixel - 1];
-          SampleCount++;
+          for (j = 8; j <= 506; j++)
+          {
+            y4[j] = y4[j] + y3[j];
+          }
+          AverageCount++;
         }
-      }
+        paint_line = false;
+      } 
 
-
-      while (freeze)
+      if(paint_line)                                         // time is right, so paint waterfall
       {
-        frozen = true;
+        // Add the current line to the waterfall
+
+        for (j = 8; j <= 506; j++)
+        {
+          pixel_brightness = y4[j] - (400 + (5 * WaterfallBase));              // this in range -400 to +400, but only 0 to 400 is valid
+          y4[j] = 0;                                                           // Zero peak value in preparation for next line
+          pixel_brightness = (255 * pixel_brightness) / (WaterfallRange * 5);  // scale pixel brightness to 0 - 255
+
+          if (pixel_brightness < 0)                                            // and limit to 0 - 255
+          {
+            pixel_brightness = 0;
+          }
+          if (pixel_brightness > 255)
+          {
+            pixel_brightness = 255;
+          }
+          wfparray[j][w_index] = waterfall_map((uint8_t)pixel_brightness);     // Look up colour and store in array
+        }
+
+        // Render the waterfall
+        for (k = 0; k < wfall_height; k++)
+        {
+          // start by displaying the line stored at array[0] at the top of the waterfall
+          // so waterfall offset needs to be zero
+
+          // in the next frame w_index will be 1, so we need to display that line at the top
+          // so waterfall offset needs to be 0 when k is 1
+
+          wfall_offset = w_index - k;
+          if (wfall_offset >= wfall_height)
+          {
+            wfall_offset = wfall_offset - wfall_height;
+          }
+          if (wfall_offset < 0)
+          {
+            wfall_offset = wfall_offset + wfall_height;
+          }
+          for (j = 7; j <= 505; j++)
+          {
+            //setPixel(j + 94, (409 - wfall_height + wfall_offset), wfparray[j][k].Red, wfparray[j][k].Green, wfparray[j][k].Blue);
+            setPixel(j + 94, (70 + wfall_height - wfall_offset), wfparray[j][k].Red, wfparray[j][k].Green, wfparray[j][k].Blue);
+
+            while (freeze)
+            {
+              frozen = true;
+              usleep(100000); // Pause to let things happen if CPU is busy
+            }
+            frozen = false;
+          }
+        }
+
+        w_index++;                   // keep track of where we are in the circular buffer
+        if (w_index >= wfall_height)
+        {
+          w_index = 0;
+        }
+        activescan = false;
+      } 
+      else
+      {
+        usleep(100);                                   // Give the processor a rest
       }
-      frozen = false;
-    }
-    publish();
+
+    }                                                  // End of spectrum paint section
+
     tracecount++;
-    if (tracecount >= nextwebupdate)
-    {
-      //printf("tracecount = %d, Time ms = %llu \n", tracecount, monotonic_ms());
-      UpdateWeb();
-      usleep(10000);
-      nextwebupdate = tracecount + 500;  // About 800 ms between updates
-    }
-    //usleep(1000);
-  }
 
-  printf("Waiting for Lime Thread to exit..\n");
-  pthread_join(lime_thread_obj, NULL);
+    publish();                                         // 
+
+    if (monotonic_ms() >= nextwebupdate)
+    {
+      UpdateWeb();
+      nextwebupdate = nextwebupdate + 1000;  // Set next update for 1 second after the previous
+      if (nextwebupdate < monotonic_ms())    // Check for backlog due to a freeze
+      {
+        nextwebupdate = monotonic_ms() + 1000;  //Set next update for 1 second ahead
+      }
+    }
+  }                                                   // End of main while loop
+
+  printf("Waiting for the Serial Thread to exit..\n");
+  pthread_join(serial_thread_obj, NULL);
   printf("Waiting for FFT Thread to exit..\n");
   pthread_join(fft_thread_obj, NULL);
-  printf("Waiting for Screen Thread to exit..\n");
-  pthread_join(screen_thread_obj, NULL);
-  printf("Waiting for Meter Thread to exit..\n");
-  pthread_join(thMeter_Movement, NULL);
   printf("All threads caught, exiting..\n");
   pthread_join(thbutton, NULL);
-  pthread_mutex_destroy(&text_lock);
 }
 
