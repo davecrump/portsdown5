@@ -1,8 +1,6 @@
 # Portsdown 5 Development Project
 
-It is hoped that the Portsdown 5, when finished, will have similar functionality to the Portsdown 4, but will run on the Raspberry Pi 4 or the Raspberry Pi 5.  It uses the 64 bit version of the bookworm operating system.
-
-Do not try downloading and building the project yet, as it is simply a collection of ideas, not a finished product.  There is currently no transmitting or receiving functionality.  Only the development version exists.  There is no update functionality.
+It is hoped that the Portsdown 5, when finished, will have similar functionality to the Portsdown 4, but will run on the Raspberry Pi 4 or the Raspberry Pi 5.  It uses the 64 bit version of the trixie operating system.
 
 There are 3 target hardware configurations:
 
@@ -12,11 +10,11 @@ There are 3 target hardware configurations:
 
 Web control is available alongside either of the other configurations, but the HDMI display (with mouse) and touchscreen are mutually exclusive 
 
-# Installation for Portsdown 5 RPi 4 Version
+# Installation for Portsdown 5
 
 The preferred installation method only needs a Windows PC connected to the same (internet-connected) network as your Raspberry Pi.  Do not connect a keyboard or HDMI display directly to your Raspberry Pi.
 
-- First download the latest 64 bit bookworm lite release on to your Windows PC from here https://downloads.raspberrypi.org/raspios_lite_arm64/images/raspios_lite_arm64-2024-10-28/2024-10-22-raspios-bookworm-arm64-lite.img.xz
+- First download the latest 64 bit trixie lite release on to your Windows PC from here https://downloads.raspberrypi.org/raspios_lite_arm64/images/raspios_lite_arm64-2025-10-02/2025-10-01-raspios-trixie-arm64-lite.img.xz
 
 - Unzip the image (using 7zip as it is a .xz compressed file) and then transfer it to a Micro-SD Card using Win32diskimager https://sourceforge.net/projects/win32diskimager/
 
@@ -73,5 +71,5 @@ chmod +x install_p5.sh
 
 To pause the installation at the first reboot, add the parameter -w (or --wait) like this ./install_p5.sh -w
 
-To install for a LimeNET Micro 2.0 DE, aded the parameter -x (or --xtrx).
+To install for a LimeNET Micro 2.0 DE, add the parameter -x (or --xtrx).
 
