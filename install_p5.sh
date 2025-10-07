@@ -65,11 +65,11 @@ if [ $? != 0 ]; then
   exit
 fi
 
-# Check for 64 bit bookworm
-cat /etc/os-release | grep -q 'Debian GNU/Linux 12 (bookworm)'
+# Check for 64 bit trixie
+cat /etc/os-release | grep -q 'Debian GNU/Linux 13 (trixie)'
 if [ $? != 0 ]; then
   echo
-  echo "Portsdown 5 requires the 64 bit version of bookworm lite"
+  echo "Portsdown 5 requires the 64 bit version of trixie lite"
   echo "Please rebuild your SD Card with the correct OS"
   echo 
   echo "Press any key to exit"
@@ -77,9 +77,9 @@ if [ $? != 0 ]; then
   printf "\n"
   if [[ "$REPLY" = "d" || "$REPLY" = "D" ]]; then  # Allow to proceed for development
     echo "Continuing build......"
-    BuildLogMsg "1" "Continuing build, but NOT bookworm 64 bit"
+    BuildLogMsg "1" "Continuing build, but NOT trixie 64 bit"
   else
-    BuildLogMsg "1" "Exiting, not bookworm 64 bit"
+    BuildLogMsg "1" "Exiting, not trixie 64 bit"
     exit
   fi
 fi
@@ -709,6 +709,9 @@ if [ "$UPDATE" == "false" ]; then
   cd /home/pi
 fi
 
+# Record the installed version
+head -c 9 /home/pi/portsdown/version_history.txt > /home/pi/portsdown/configs/installed_version.txt
+
 if [ "$UPDATE" == "false" ]; then
 
   # Configure to start Portsdown on boot as a service
@@ -785,8 +788,7 @@ else   # Update
   DisplayUpdateMsg "Update Complete.  Rebooting"
   echo $(date -u) " Update Complete" | sudo tee -a /home/pi/p5_initial_build_log.txt  > /dev/null
 
-  # Record the Version Number in the file and build log
-  head -c 9 /home/pi/portsdown/version_history.txt > /home/pi/portsdown/configs/installed_version.txt
+  # Record the Version Number in the build log
   echo -e "\n" >> /home/pi/portsdown/configs/installed_version.txt
   printf "Version number: " | sudo tee -a /home/pi/p5_initial_build_log.txt  > /dev/null
   head -c 9 /home/pi/portsdown/version_history.txt | sudo tee -a /home/pi/p5_initial_build_log.txt  > /dev/null

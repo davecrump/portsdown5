@@ -5,7 +5,7 @@ clean:
 	indent -linux -c 60 -brf -l 132
 
 INCLUDEFLAGS2=-lpthread -I/opt/vc/include -I/opt/vc/include/interface/vmcs_host/linux -I/opt/vc/include/interface/vcos/pthreads -I..
-LIBFLAGS2=-L/opt/vc/lib -lpthread -lrt  -lbcm_host -lpng16 -lm -ldl -lfftw3f -lLimeSuite -lfcgi  -rdynamic -fcommon -lwiringPi
+LIBFLAGS2=-L/opt/vc/lib -lpthread -lrt -lpng16 -lm -ldl -lfftw3f -lLimeSuite -lfcgi  -rdynamic -fcommon -lwiringPi
 
 sa_bv: sa_bv.c 
 	gcc -fdiagnostics-color -Wall -std=gnu11 -D_GNU_SOURCE -DNEON_OPTS -pthread $(INCLUDEFLAGS2) -o  sa_bv \
