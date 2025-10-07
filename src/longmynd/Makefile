@@ -19,7 +19,7 @@ DTMODEL_RPI2 = Raspberry Pi 2 Model B
 DTMODEL_RPI3 = Raspberry Pi 3 Model B
 DTMODEL_RPI4 = Raspberry Pi 4 Model B
 COPT_RPI2 = -mfpu=neon-vfpv4
-COPT_RPI34 = -mfpu=neon-fp-armv8
+#COPT_RPI34 = -mfpu=neon-fp-armv8  # Not vaild with trixie
 COPT += $(call F_CHECKDTMODEL,$(DTMODEL_RPI2),$(COPT_RPI2))
 COPT += $(call F_CHECKDTMODEL,$(DTMODEL_RPI3),$(COPT_RPI34))
 COPT += $(call F_CHECKDTMODEL,$(DTMODEL_RPI4),$(COPT_RPI34))

@@ -726,7 +726,8 @@ if [ "$UPDATE" == "false" ]; then
   echo "------------------------------------------"
 
   # Amend /etc/fstab to create a tmpfs drive at ~/tmp for multiple images
-  sudo sed -i '4itmpfs           /home/pi/tmp    tmpfs   defaults,noatime,nosuid,size=10m  0  0' /etc/fstab
+  #sudo sed -i '4itmpfs           /home/pi/tmp    tmpfs   defaults,noatime,nosuid,size=10m  0  0' /etc/fstab
+  sudo sh -c ' echo "tmpfs           /home/pi/tmp    tmpfs   defaults,noatime,nosuid,size=10m  0  0" >> /etc/fstab'
 
   # Create a ~/snaps folder for captured images
   mkdir /home/pi/snaps
