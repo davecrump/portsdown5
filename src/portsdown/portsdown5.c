@@ -6653,6 +6653,13 @@ void selectTestEquip(int Button)   // Test Equipment
   switch(Button)
   {
     case 0:                              // KeyLimePi SA
+      // Check KLP installed.  If not, install it
+      if (file_exist("/home/pi/portsdown/bin/sa_sched") == 1) // File does not exist
+      {
+        MsgBox4("Please wait", "Installing KeyLimePi", "Applications", " ");
+        system("/home/pi/portsdown/scripts/set-up_configs/enable_klp.sh");
+        clearScreen(0, 0, 0);
+      }
       cleanexit(170);
       break;
     case 10:                             // SigGen
@@ -9635,6 +9642,7 @@ int main(int argc, char **argv)
   Define_Menus();
   ReadSavedParams();
   redrawMenu();
+  usleep(500000);
   redrawMenu();  // Second time over-writes system message
 
   printf("Waiting for button press on touchscreen\n");
