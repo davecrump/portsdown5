@@ -1,3 +1,6 @@
+202510070
+trixie tweaks
+
 202510060
 Pre-trixie install
 

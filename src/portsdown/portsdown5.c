@@ -9635,6 +9635,7 @@ int main(int argc, char **argv)
   Define_Menus();
   ReadSavedParams();
   redrawMenu();
+  redrawMenu();  // Second time over-writes system message
 
   printf("Waiting for button press on touchscreen\n");
   waitForScreenAction();
