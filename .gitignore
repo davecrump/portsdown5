@@ -11,4 +11,5 @@ src/limesdr_toolbox/limesdr_dump
 src/limesdr_toolbox/limesdr_dvb
 src/limesdr_toolbox/limesdr_forward
 src/limesdr_toolbox/limesdr_send
-
+src/express_server/
+src/rtl-sdr/
