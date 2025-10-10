@@ -5,7 +5,7 @@ clean:
 	indent -linux -c 60 -brf -l 132
 
 INCLUDEFLAGS2=-lpthread -I/opt/vc/include -I/opt/vc/include/interface/vmcs_host/linux -I/opt/vc/include/interface/vcos/pthreads -I..
-LIBFLAGS2=-L/opt/vc/lib -lbcm_host -lpthread -lpng16  -ljpeg -lrt -lm -ldl -lfftw3f -lLimeSuite -lfcgi -rdynamic  -fcommon -lwiringPi
+LIBFLAGS2=-L/opt/vc/lib -lpthread -lpng16  -ljpeg -lrt -lm -ldl -lfftw3f -lLimeSuite -lfcgi -rdynamic  -fcommon -lwiringPi
 
 noise_meter: noise_meter.c 
 	gcc -Wall -std=gnu11 -D_GNU_SOURCE -DNEON_OPTS -pthread $(INCLUDEFLAGS2) -o  noise_meter \

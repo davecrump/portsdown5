@@ -41,39 +41,24 @@ if (grep 'Installing LimeNET Micro DE' /home/pi/p5_initial_build_log.txt) then
   echo "-----    Installing LimeSuiteNG    -----"
   echo "----------------------------------------"
 
-  git clone https://github.com/myriadrf/LimeSuiteNG        # Download LimeSuiteNG
-    SUCCESS=$?; BuildLogMsg $SUCCESS "git clone LimeSuiteNG"
+#  git clone https://github.com/myriadrf/LimeSuiteNG        # Download LimeSuiteNG
+#    SUCCESS=$?; BuildLogMsg $SUCCESS "git clone LimeSuiteNG"
 
-  # Dependencies from install_dependencies.sh
-  # build-essential and cmake already installed
+#  cd LimeSuiteNG
 
-  sudo apt-get -y install --no-install-recommends linux-headers-generic
-  SUCCESS=$?; BuildLogMsg $SUCCESS "linux-headers-generic install"
+#  cmake -B build
+#    SUCCESS=$?; BuildLogMsg $SUCCESS "LimeSuiteNG cmake"
 
-  sudo apt-get -y install --no-install-recommends libsoapysdr-dev
-    SUCCESS=$?; BuildLogMsg $SUCCESS "libsoapysdr-dev install"
+#  cd build
 
-  sudo apt-get -y install --no-install-recommends libusb-1.0-0-dev
-    SUCCESS=$?; BuildLogMsg $SUCCESS "libusb-1.0-0-dev install"
+#  make -j 4 -O
+#    SUCCESS=$?; BuildLogMsg $SUCCESS "LimeSuiteNG make"
 
-  sudo apt-get -y install --no-install-recommends libwxgtk3.2-dev
-    SUCCESS=$?; BuildLogMsg $SUCCESS "libwxgtk3.2-dev install"
+#  sudo make install
+#    SUCCESS=$?; BuildLogMsg $SUCCESS "LimeSuiteNG make install"
 
-  cd LimeSuiteNG
-
-  cmake -B build
-    SUCCESS=$?; BuildLogMsg $SUCCESS "LimeSuiteNG cmake"
-
-  cd build
-
-  make -j 4 -O
-    SUCCESS=$?; BuildLogMsg $SUCCESS "LimeSuiteNG make"
-
-  sudo make install
-    SUCCESS=$?; BuildLogMsg $SUCCESS "LimeSuiteNG make install"
-
-  sudo ldconfig
-    SUCCESS=$?; BuildLogMsg $SUCCESS "LimeSuiteNG ldconfig"
+#  sudo ldconfig
+#    SUCCESS=$?; BuildLogMsg $SUCCESS "LimeSuiteNG ldconfig"
 
   cd /home/pi
 
@@ -85,33 +70,31 @@ if (grep 'Installing LimeNET Micro DE' /home/pi/p5_initial_build_log.txt) then
   echo "----- Compiling NG Lime BandViewer -----"
   echo "----------------------------------------"
 
-  cd /home/pi/portsdown/src/limeviewng
-  make -j 4 -O
-  SUCCESS=$?; BuildLogMsg $SUCCESS "Lime BandViewer NG compile"
+  #cd /home/pi/portsdown/src/limeviewng
+  #make -j 4 -O
+  #SUCCESS=$?; BuildLogMsg $SUCCESS "Lime BandViewer NG compile"
 
-  mv /home/pi/portsdown/src/limeviewng/limeviewng /home/pi/portsdown/bin/limeviewng
+  #mv /home/pi/portsdown/src/limeviewng/limeviewng /home/pi/portsdown/bin/limeviewng
 
 fi
 
 # Install SDRPlay driver
 
 cd /home/pi
-#if [ ! -f  SDRplay_RSP_API-Linux-3.15.2.run ]; then
-#  wget https://www.sdrplay.com/software/SDRplay_RSP_API-Linux-3.15.2.run
-#fi
-#chmod +x SDRplay_RSP_API-Linux-3.15.2.run
+if [ ! -f  SDRplay_RSP_API-Linux-3.15.2.run ]; then
+  wget https://www.sdrplay.com/software/SDRplay_RSP_API-Linux-3.15.2.run
+fi
+chmod +x SDRplay_RSP_API-Linux-3.15.2.run
 
-#/home/pi/portsdown/scripts/set-up_configs/sdrplay_api_install.exp
-#  SUCCESS=$?; BuildLogMsg $SUCCESS "sdrplay api install"
+/home/pi/portsdown/scripts/set-up_configs/sdrplay_api_install.exp
+  SUCCESS=$?; BuildLogMsg $SUCCESS "sdrplay api install"
 
-#cd /home/pi
-#rm SDRplay_RSP_API-Linux-3.15.2.run
-#sudo systemctl disable sdrplay  # service is started only when required
+cd /home/pi
+rm SDRplay_RSP_API-Linux-3.15.2.run
+sudo systemctl disable sdrplay  # service is started only when required
 
 
-# Record the Version Number
-head -c 9 /home/pi/portsdown/version_history.txt > /home/pi/portsdown/configs/installed_version.txt
-echo -e "\n" >> /home/pi/portsdown/configs/installed_version.txt
+# Record the Version Number in the build log
 printf "Version number: " | sudo tee -a /home/pi/p5_initial_build_log.txt  > /dev/null
 head -c 9 /home/pi/portsdown/version_history.txt | sudo tee -a /home/pi/p5_initial_build_log.txt  > /dev/null
 echo | sudo tee -a /home/pi/p5_initial_build_log.txt  > /dev/null
