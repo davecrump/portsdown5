@@ -9,7 +9,8 @@
 #include <errno.h>
 #include <inttypes.h>
 #include <pthread.h>
-#include <limesuiteng/LimeSuite.h>
+// #include <limesuiteng/LimeSuiteng.h>
+#include <limesuiteng/limesuiteng.hpp>
 #include "lime.h"
 #include "../common/timing.h"
 #include "../common/buffer/buffer_circular.h"

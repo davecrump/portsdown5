@@ -3927,8 +3927,8 @@ void Define_Menu7()
   AddButtonStatus(7, 18, "LimeSDR NG^NF Meter", &Blue);
   AddButtonStatus(7, 18, "LimeSDR NG^NF Meter", &Grey);
 
-  AddButtonStatus(7, 18, "LimeSDR^Noise Meter", &Blue);
-  AddButtonStatus(7, 18, "LimeSDR^Noise Meter", &Grey);
+  AddButtonStatus(7, 19, "LimeSDR^Noise Meter", &Blue);
+  AddButtonStatus(7, 19, "LimeSDR^Noise Meter", &Grey);
 
   AddButtonStatus(7, 10, "Signal^Generator", &Blue);
   AddButtonStatus(7, 10, "Signal^Generator", &Grey);
@@ -3956,7 +3956,7 @@ void Highlight_Menu7()
 {
   int i;
 
-  for (i = 15; i < 19; i++)
+  for (i = 15; i < 20; i++)
   {
     SetButtonStatus(7, i, 0);
   }
@@ -6689,6 +6689,9 @@ void selectTestEquip(int Button)   // Test Equipment
     case 18:                             // LimeSDR NG NF Meter
       cleanexit(152);
       break;
+    case 19:                             // LimeSDR Noise Meter
+      cleanexit(147);
+      break;
     case 20:                             // KeyLimePi BandViewer
       cleanexit(175);
       break;
@@ -8793,6 +8796,7 @@ void waitForScreenAction()
         case 16:
         case 17:
         case 18:
+        case 19:
         case 20:
         case 21:
         case 22:
@@ -9642,7 +9646,7 @@ int main(int argc, char **argv)
   Define_Menus();
   ReadSavedParams();
   redrawMenu();
-  usleep(500000);
+  usleep(1000000);
   redrawMenu();  // Second time over-writes system message
 
   printf("Waiting for button press on touchscreen\n");

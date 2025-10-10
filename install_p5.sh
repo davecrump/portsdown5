@@ -315,10 +315,16 @@ if [ "$UPDATE" == "false" ]; then
     SUCCESS=$?; BuildLogMsg $SUCCESS "sox"
   sudo apt-get install -y i2c-tools                               # For Rptr Controller
     SUCCESS=$?; BuildLogMsg $SUCCESS "i2c-tools"
-  sudo apt-get install -y telnet                                   # For Rptr Controller
+  sudo apt-get install -y telnet                                  # For Rptr Controller
     SUCCESS=$?; BuildLogMsg $SUCCESS "telnet"
-  sudo apt-get install -y cppcheck                                 # For TS Merger
+  sudo apt-get install -y cppcheck                                # For TS Merger
     SUCCESS=$?; BuildLogMsg $SUCCESS "cppcheck"
+  sudo apt-get -y install --no-install-recommends libglew-dev     # For LimeSuiteNG
+    SUCCESS=$?; BuildLogMsg $SUCCESS "libglew-dev install" 
+  sudo apt-get -y install --no-install-recommends libsoapysdr-dev # For LimeSuiteNG
+    SUCCESS=$?; BuildLogMsg $SUCCESS "libsoapysdr-dev install"
+  sudo apt-get -y install --no-install-recommends libwxgtk3.2-dev # For LimeSuiteNG
+    SUCCESS=$?; BuildLogMsg $SUCCESS "libwxgtk3.2-dev install" 
 fi
 
 # Placeholder for New packages during update
@@ -465,20 +471,20 @@ mv /home/pi/portsdown/src/portsdown/portsdown5 /home/pi/portsdown/bin/portsdown5
 cd /home/pi
 
 if [ "$UPDATE" == "false" ]; then
-  # Install LimeSuite 23.11 as at 8 May 2024
-  # Commit 9dce3b6a6bd66537a2249ad27101345d31aafc89
+  # Install LimeSuite 23.11 as at 14 July 2025
+  # Commit 524cd2e548b11084e6f739b2dfe0f958c2e30354
   echo
   echo "--------------------------------------"
-  echo "----- Installing LimeSuite 22.09 -----"
+  echo "----- Installing LimeSuite 23.11 -----"
   echo "--------------------------------------"
 
-  wget https://github.com/myriadrf/LimeSuite/archive/9dce3b6a6bd66537a2249ad27101345d31aafc89.zip -O master.zip
+  wget https://github.com/myriadrf/LimeSuite/archive/524cd2e548b11084e6f739b2dfe0f958c2e30354.zip -O master.zip
     SUCCESS=$?; BuildLogMsg $SUCCESS "LimeSuite download"
 
   # Copy into place
   unzip -o master.zip
-  cp -f -r LimeSuite-9dce3b6a6bd66537a2249ad27101345d31aafc89 LimeSuite
-  rm -rf LimeSuite-9dce3b6a6bd66537a2249ad27101345d31aafc89
+  cp -f -r LimeSuite-524cd2e548b11084e6f739b2dfe0f958c2e30354 LimeSuite
+  rm -rf LimeSuite-524cd2e548b11084e6f739b2dfe0f958c2e30354
   rm master.zip
 
   # Compile LimeSuite
@@ -501,7 +507,7 @@ if [ "$UPDATE" == "false" ]; then
   cd /home/pi	
 
   # Record the LimeSuite Version	
-  echo "9dce3b6" >/home/pi/LimeSuite/commit_tag.txt
+  echo "524cd2e" >/home/pi/LimeSuite/commit_tag.txt
 
   # Install libiio for Pluto
   echo
@@ -577,7 +583,6 @@ EOF
   touch /home/pi/portsdown/.post-install_actions
   cd /home/pi
 
-
 fi
 
 # Compile legacy LimeSDR Toolbox
@@ -585,7 +590,6 @@ echo
 echo "--------------------------------------------"
 echo "----- Compiling Legacy LimeSDR Toolbox -----"
 echo "--------------------------------------------"
-
 # Compile dvb2iq first
 cd /home/pi/portsdown/src/limesdr_toolbox/libdvbmod/libdvbmod
 make -j 4 -O
@@ -601,24 +605,24 @@ make -j 4 -O
   SUCCESS=$?; BuildLogMsg $SUCCESS "LimeSDR Toolbox compile"
 make dvb
   SUCCESS=$?; BuildLogMsg $SUCCESS "LimeSDR DVB compile"
-
 mv limesdr_send /home/pi/portsdown/bin/
 mv limesdr_dump /home/pi/portsdown/bin/
 mv limesdr_stopchannel /home/pi/portsdown/bin/
 mv limesdr_forward /home/pi/portsdown/bin/
 mv limesdr_dvb /home/pi/portsdown/bin/
 
+
 # Compile Framebuffer capture utility
 echo
 echo "-------------------------------------------------"
 echo "----- Compiling Framebuffer Capture Utility -----"
 echo "-------------------------------------------------"
-
 cd /home/pi/portsdown/src/fb2png
 make -j 4 -O
   SUCCESS=$?; BuildLogMsg $SUCCESS "fb2png compile"
 
 mv /home/pi/portsdown/src/fb2png/fb2png /home/pi/portsdown/bin/fb2png
+
 
 # Compile LongMynd
 echo
@@ -634,6 +638,7 @@ make -j 4 -O
 # Set up the udev rules for USB
 sudo cp minitiouner.rules /etc/udev/rules.d/
 
+
 # Compile Legacy Lime BandViewer
 echo
 echo "--------------------------------------------"
@@ -646,6 +651,56 @@ make -j 4 -O
 
 mv /home/pi/portsdown/src/limeview/limeview /home/pi/portsdown/bin/limeview
 
+
+# Compile the Signal Generator
+echo
+echo "--------------------------------------------"
+echo "------ Compiling the Signal Generator ------"
+echo "--------------------------------------------"
+
+cd /home/pi/portsdown/src/siggen
+make -j 4 -O
+  SUCCESS=$?; BuildLogMsg $SUCCESS "SigGen compile"
+sudo make install
+cd /home/pi
+
+
+# Compile the Sweeper
+echo
+echo "---------------------------------"
+echo "----- Compiling the Sweeper -----"
+echo "---------------------------------"
+cd /home/pi/portsdown/src/sweeper
+make -j 4 -O
+  SUCCESS=$?; BuildLogMsg $SUCCESS "Sweeper compile"
+mv /home/pi/portsdown/src/sweeper/sweeper /home/pi/portsdown/bin/sweeper
+cd /home/pi
+
+
+# Compile the DMM Display
+echo
+echo "-------------------------------------"
+echo "----- Compiling the DMM Display -----"
+echo "-------------------------------------"
+cd /home/pi/portsdown/src/dmm
+make -j 4 -O
+  SUCCESS=$?; BuildLogMsg $SUCCESS "DMM Display compile"
+mv /home/pi/portsdown/src/dmm/dmm /home/pi/portsdown/bin/dmm
+cd /home/pi
+
+
+# Compile the Power Meter
+echo
+echo "-------------------------------------"
+echo "----- Compiling the Power Meter -----"
+echo "-------------------------------------"
+cd /home/pi/portsdown/src/power_meter
+make -j 4 -O
+  SUCCESS=$?; BuildLogMsg $SUCCESS "Power Meter compile"
+mv /home/pi/portsdown/src/power_meter/power_meter /home/pi/portsdown/bin/power_meter
+cd /home/pi
+
+
 # Compile the PicoViewer
 echo
 echo "--------------------------------"
@@ -654,9 +709,9 @@ echo "--------------------------------"
 
 cd /home/pi/portsdown/src/picoview
 make -j 4 -O
-  SUCCESS=$?; BuildLogMsg $SUCCESS "Picoiewer compile"
+  SUCCESS=$?; BuildLogMsg $SUCCESS "PicoViewer compile"
+mv /home/pi/portsdown/src/picoview/picoview /home/pi/portsdown/bin/picoview
 
-mv /home/pi/portsdown/src/limeview/picoview /home/pi/portsdown/bin/picoview
 
 # Copy the fftw wisdom file to home so that there is no start-up delay
 # This file works for both BandViewer and NF Meter
@@ -664,55 +719,34 @@ mv /home/pi/portsdown/src/limeview/picoview /home/pi/portsdown/bin/picoview
 cd /home/pi
 
 # Compile Legacy Noise Figure Meter
-#echo
-#echo "-----------------------------------------------"
-#echo "----- Compiling Legacy Noise Figure Meter -----"
-#echo "-----------------------------------------------"
+echo
+echo "-----------------------------------------------"
+echo "----- Compiling Legacy Noise Figure Meter -----"
+echo "-----------------------------------------------"
 
-#cd /home/pi/portsdown/src/nf_meter
-#make -j 4 -O
-#  SUCCESS=$?; BuildLogMsg $SUCCESS "Lime NF Meter compile"
-
-#mv /home/pi/portsdown/src/nf_meter/nf_meter /home/pi/portsdown/bin/nf_meter
-#cd /home/pi
+cd /home/pi/portsdown/src/nf_meter
+make -j 4 -O
+  SUCCESS=$?; BuildLogMsg $SUCCESS "Lime NF Meter compile"
+mv /home/pi/portsdown/src/nf_meter/nf_meter /home/pi/portsdown/bin/nf_meter
+cd /home/pi
 
 # Compile Legacy Noise Meter
-#echo
-#echo "----------------------------------------"
-#echo "----- Compiling Legacy Noise Meter -----"
-#echo "----------------------------------------"
+echo
+echo "----------------------------------------"
+echo "----- Compiling Legacy Noise Meter -----"
+echo "----------------------------------------"
 
-#cd /home/pi/portsdown/src/noise_meter
-#make -j 4 -O
-#  SUCCESS=$?; BuildLogMsg $SUCCESS "Lime Noise Meter compile"
+cd /home/pi/portsdown/src/noise_meter
+make -j 4 -O
+  SUCCESS=$?; BuildLogMsg $SUCCESS "Lime Noise Meter compile"
 
-#mv /home/pi/portsdown/src/noise_meter/noise_meter /home/pi/portsdown/bin/noise_meter
-#cd /home/pi
-
-if [ "$UPDATE" == "false" ]; then
-
-  # Download, compile and install DATV Express-server
-  echo
-  echo "------------------------------------------"
-  echo "----- Installing DATV Express Server -----"
-  echo "------------------------------------------"
-  cd /home/pi
-  wget https://github.com/G4GUO/express_server/archive/master.zip
-    SUCCESS=$?; BuildLogMsg $SUCCESS "DATV Express Server Download"
-  unzip master.zip
-  mv express_server-master express_server
-  rm master.zip
-  cd /home/pi/express_server
-  make
-    SUCCESS=$?; BuildLogMsg $SUCCESS "DATV Express Server compile"
-  sudo make install
-  cd /home/pi
-fi
-
-# Record the installed version
-head -c 9 /home/pi/portsdown/version_history.txt > /home/pi/portsdown/configs/installed_version.txt
+mv /home/pi/portsdown/src/noise_meter/noise_meter /home/pi/portsdown/bin/noise_meter
+cd /home/pi
 
 if [ "$UPDATE" == "false" ]; then
+
+  # Enable spi for power meter and sweeper
+  sudo raspi-config nonint do_spi 0
 
   # Configure to start Portsdown on boot as a service
   sudo cp /home/pi/portsdown/scripts/set-up_configs/portsdown.service /etc/systemd/system/

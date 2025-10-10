@@ -1,4 +1,4 @@
-dmmmode=battery
+dmmmode=numeric
 metersensor=pdm300
 plotbase=2.000
 plotmax=6.000
