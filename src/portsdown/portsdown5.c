@@ -188,7 +188,9 @@ time_t t;                    // current time
 bool amendStreamPreset = false;        // Set to amend a stream preset
 int activeStream;                      // Stream currently ready to be played
 char streamURL[21][63];                // stream URL read from config file
-char streamLabel[21][63];              // stream Biutton Label read from config file
+char streamLabel[21][63];              // stream Button Label read from config file
+char StreamKey[9][63];                 // transmit stream name-key
+bool StreamerStoreTrigger = false;     // Set true to enable transmit stream to be changed
 
 // Threads
 pthread_t thtouchscreen;               //  listens to the touchscreen
@@ -223,6 +225,7 @@ pthread_t thbutton;                    //  Listens during receive
 // 23 Receive Config
 // 24 Receive Presets
 // 25 Stream Player
+// 26 Stream TX presets
 // 32 Decision of 2
 // 33 Decision of 3
 
@@ -274,6 +277,7 @@ void TransmitStop();
 void TransmitStart();
 void playStreamFFPlay();
 void playStreamVLC();
+void ShowTXVideo(bool start);
 
 // Create the Menus
 int IsMenuButtonPushed();
@@ -313,6 +317,8 @@ void Define_Menu7();
 void Highlight_Menu7();
 void Define_Menu8();
 void Highlight_Menu8();
+void Define_Menu9();
+void Highlight_Menu9();
 void Define_Menu11();
 void Highlight_Menu11();
 void Define_Menu12();
@@ -343,6 +349,8 @@ void Define_Menu24();
 void Highlight_Menu24();
 void Define_Menu25();
 void Highlight_Menu25();
+void Define_Menu26();
+void Highlight_Menu26();
 void Define_Menu32();
 void Highlight_Menu32();
 void Define_Menu33();
@@ -387,11 +395,16 @@ void AdjustVLCVolume(int adjustment);
 void ChangeStreamPreset(int NoButton);
 void ToggleAmendStreamPreset();
 void CheckforUpdate();
+void SelectStreamerAction(int NoButton);
+void AmendStreamerPreset(int NoButton);
+void SelectStreamer(int NoButton);
+void ToggleAmendStreamerPreset();
 
 // Useful stuff
 
 void InfoScreen();
 void checkTunerSettings();
+void SeparateStreamKey(char streamkey[127], char streamname[63], char key[63]);
 
 // Make things happen
 void UpdateWeb();
@@ -857,6 +870,20 @@ void ReadStreamPresets()
     GetConfigParam(PATH_STREAM_PRESETS, param, streamURL[i]);
     snprintf(param, 31, "label%d", i);
     GetConfigParam(PATH_STREAM_PRESETS, param, streamLabel[i]);
+  }
+
+  // Read in Streamer Transmit presets
+  
+  strcpy(response, "1");  // Default
+  GetConfigParam(PATH_PCONFIG, "streamkey", response);
+  strcpy(StreamKey[0], response);
+
+  for(i = 1; i < 9; i = i + 1)
+  {
+    // Streamname-key
+    snprintf(param, 15, "streamkey%d", i);
+    GetConfigParam(PATH_STREAM_PRESETS, param, response);
+    strcpy(StreamKey[i], response);
   }
 }
 
@@ -2787,8 +2814,37 @@ void playStreamVLC()
 }
 
 
-// Takes the global scaledX and scaled Y and checks against each defined button on the current menu.
-// returns the button number, 0 - 29 or -1 for not pushed
+/***************************************************************************//**
+ * @brief Clears the screen and then dispklays the current TX video from UDP 
+ *
+ * @param bool start, true to start the process, false to stop
+ *
+ * @return null
+*******************************************************************************/
+
+void ShowTXVideo(bool start)
+{
+  if (start == true)
+  {
+    clearScreen(0, 0, 0);
+    // Code here to show PiCam, Test Card or "not available"
+    MsgBox4(" ", "Not implemented yet", " ", " ");
+  }
+  else
+  {
+    // Code here to stop stuff being shown
+  }
+}
+
+
+/***************************************************************************//**
+ * @brief Takes the global scaledX and scaled Y and checks against each 
+ *        defined button on the current menu
+ *
+ * @param nil
+ *
+ * @return int the button number, 0 - 29 or -1 for not pushed
+*******************************************************************************/
 
 int IsMenuButtonPushed()
 {
@@ -3291,9 +3347,9 @@ void redrawMenu()
     case 8:
       Highlight_Menu8();
       break;
-//    case 9:
-//      Highlight_Menu9();
-//      break;
+    case 9:
+      Highlight_Menu9();
+      break;
 //    case 10:
 //      Highlight_Menu10();
 //      break;
@@ -3341,6 +3397,9 @@ void redrawMenu()
       break;
     case 25:
       Highlight_Menu25();
+      break;
+    case 26:
+      Highlight_Menu26();
       break;
   }
   
@@ -3662,6 +3721,16 @@ void Highlight_Menu1()
     AmendButtonStatus(1, 24, 0, "Source^ATEM USB", &Blue);
     AmendButtonStatus(1, 24, 1, "Source^ATEM USB", &Green);
   }
+  if (strcmp(config.videosource, "CAMLINK4K") == 0)
+  {
+    AmendButtonStatus(1, 24, 0, "Source^CamLink 4K", &Blue);
+    AmendButtonStatus(1, 24, 1, "Source^CamLink 4K", &Green);
+  }
+  if (strcmp(config.videosource, "EasyCap") == 0)
+  {
+    AmendButtonStatus(1, 24, 0, "Source^EasyCap", &Blue);
+    AmendButtonStatus(1, 24, 1, "Source^EasyCap", &Green);
+  }
   if (strcmp(config.videosource, "TestCard") == 0)
   {
     AmendButtonStatus(1, 24, 0, "Source^Test Card", &Blue);
@@ -3760,6 +3829,9 @@ void Define_Menu3()
   AddButtonStatus(3, 2, "Disp/Ctrl^Config", &Blue);
 
   AddButtonStatus(3, 4, "Return to^Main Menu", &Blue);
+
+  AddButtonStatus(3, 20, "Set Stream^Outputs", &Blue);
+
 }
 
 
@@ -3855,8 +3927,8 @@ void Define_Menu7()
   AddButtonStatus(7, 18, "LimeSDR NG^NF Meter", &Blue);
   AddButtonStatus(7, 18, "LimeSDR NG^NF Meter", &Grey);
 
-  AddButtonStatus(7, 18, "LimeSDR^Noise Meter", &Blue);
-  AddButtonStatus(7, 18, "LimeSDR^Noise Meter", &Grey);
+  AddButtonStatus(7, 19, "LimeSDR^Noise Meter", &Blue);
+  AddButtonStatus(7, 19, "LimeSDR^Noise Meter", &Grey);
 
   AddButtonStatus(7, 10, "Signal^Generator", &Blue);
   AddButtonStatus(7, 10, "Signal^Generator", &Grey);
@@ -3870,6 +3942,9 @@ void Define_Menu7()
   AddButtonStatus(7, 13, "AD Power^Detector", &Blue);
   AddButtonStatus(7, 13, "AD Power^Detector", &Grey);
 
+  AddButtonStatus(7, 14, "PicoViewer^ ", &Blue);
+  AddButtonStatus(7, 14, "PicoViewer^ ", &Grey);
+
   AddButtonStatus(7, 0, "Switch to^KeyLimePi SA", &Blue);
   AddButtonStatus(7, 0, "Switch to^KeyLimePi SA", &Grey);
 
@@ -3881,7 +3956,7 @@ void Highlight_Menu7()
 {
   int i;
 
-  for (i = 15; i < 19; i++)
+  for (i = 15; i < 20; i++)
   {
     SetButtonStatus(7, i, 0);
   }
@@ -3889,8 +3964,6 @@ void Highlight_Menu7()
   {
     SetButtonStatus(7, i, 0);
   }
-
-  SetButtonStatus(7, 0, 0);
 
   if (KeyLimePiEnabled == false)
   {
@@ -3902,7 +3975,7 @@ void Highlight_Menu7()
   }
   else
   {
-    SetButtonStatus(7, 0, 1);
+    SetButtonStatus(7, 0, 0);
     SetButtonStatus(7, 15, 1);
     SetButtonStatus(7, 16, 1);
     SetButtonStatus(7, 17, 1);
@@ -4264,6 +4337,168 @@ void Highlight_Menu8()
 }
 
 
+void Define_Menu9()
+{
+  strcpy(MenuTitle[9], "Transmit Control Menu (9)");
+
+  AddButtonStatus(9, 4, "Stop^Transmit", &DBlue);
+
+  AddButtonStatus(9, 15, " Freq ^437 MHz", &Blue);
+  AddButtonStatus(9, 15, " Freq ^437 MHz", &Green);
+  AddButtonStatus(9, 15, " Freq ^437 MHz", &Grey);
+
+  AddButtonStatus(9, 19, "Lime Gain^88",&Blue);
+  AddButtonStatus(9, 19, "Lime Gain^88",&Green);
+  AddButtonStatus(9, 19, "Lime Gain^88",&Grey);
+
+  AddButtonStatus(9, 20, "DVB-S^QPSK", &Blue);
+  AddButtonStatus(9, 20, "DVB-S^QPSK", &Green);
+  AddButtonStatus(9, 20, "DVB-S^QPSK", &Grey);
+
+  AddButtonStatus(9, 23, "Format^16:9", &Blue);
+  AddButtonStatus(9, 23, "Format^16:9", &Green);
+
+  AddButtonStatus(9, 24, "Source^Pi Cam", &Blue);
+  AddButtonStatus(9, 24, "Source^Pi Cam", &Green);
+
+  AddButtonStatus(9, 25, "Transmit^Selected",&Red);
+  AddButtonStatus(9, 25, "Transmit^Off",&Blue);
+
+  AddButtonStatus(9, 26, "RF On",&Red);
+  AddButtonStatus(9, 26, "RF Off",&Blue);
+
+  AddButtonStatus(9, 27, "PTT On",&Red);
+  AddButtonStatus(9, 27, "PTT Off",&Blue);
+
+  AddButtonStatus(9, 28, "Show^Video",&Blue);
+}
+
+
+void Highlight_Menu9()
+{
+  char freqLabel[63];
+  char limegainLabel[63];
+
+  // Display frequency on button 15
+  snprintf(freqLabel, 60, "Freq^%.2f", config.freqoutput);
+  AmendButtonStatus(9, 15, 0, freqLabel, &Blue);
+  AmendButtonStatus(9, 15, 1, freqLabel, &Green);
+  AmendButtonStatus(9, 15, 2, freqLabel, &Grey);
+  SetButtonStatus(9, 15, 2);
+
+  snprintf(limegainLabel, 60, "Lime Gain^%d", config.limegain);
+  AmendButtonStatus(9, 19, 0, limegainLabel, &Blue);
+  AmendButtonStatus(9, 19, 1, limegainLabel, &Green);
+  AmendButtonStatus(9, 19, 2, limegainLabel, &Grey);
+  SetButtonStatus(9, 19, 2);
+
+  // Display Correct Encoding on Button 21
+  if (strcmp(config.encoding, "IPTS in") == 0)
+  {
+    AmendButtonStatus(9, 21, 0, "Encoding^IPTS in", &Blue);
+    AmendButtonStatus(9, 21, 1, "Encoding^IPTS in", &Green);
+    AmendButtonStatus(9, 21, 2, "Encoding^IPTS in", &Grey);
+  }
+  if (strcmp(config.encoding, "IPTS in H264") == 0)
+  {
+    AmendButtonStatus(9, 21, 0, "Encoding^IPTS in H264", &Blue);
+    AmendButtonStatus(9, 21, 1, "Encoding^IPTS in H264", &Green);
+    AmendButtonStatus(9, 21, 2, "Encoding^IPTS in H264", &Grey);
+  }
+  if (strcmp(config.encoding, "IPTS in H265") == 0)
+  {
+    AmendButtonStatus(9, 21, 0, "Encoding^IPTS in H265", &Blue);
+    AmendButtonStatus(9, 21, 1, "Encoding^IPTS in H265", &Green);
+    AmendButtonStatus(9, 21, 2, "Encoding^IPTS in H265", &Grey);
+  }
+  if (strcmp(config.encoding, "MPEG-2") == 0)
+  {
+    AmendButtonStatus(9, 21, 0, "Encoding^MPEG-2", &Blue);
+    AmendButtonStatus(9, 21, 1, "Encoding^MPEG-2", &Green);
+    AmendButtonStatus(9, 21, 2, "Encoding^MPEG-2", &Grey);
+  }
+  if (strcmp(config.encoding, "H264") == 0)
+  {
+    AmendButtonStatus(9, 21, 0, "Encoding^H264", &Blue);
+    AmendButtonStatus(9, 21, 1, "Encoding^H264", &Green);
+    AmendButtonStatus(9, 21, 2, "Encoding^H264", &Grey);
+  }
+  if (strcmp(config.encoding, "H265") == 0)
+  {
+    AmendButtonStatus(9, 21, 0, "Encoding^H265", &Blue);
+    AmendButtonStatus(9, 21, 1, "Encoding^H265", &Green);
+    AmendButtonStatus(9, 21, 2, "Encoding^H265", &Grey);
+  }
+  if (strcmp(config.encoding, "H266") == 0)
+  {
+    AmendButtonStatus(9, 21, 0, "Encoding^H266", &Blue);
+    AmendButtonStatus(9, 21, 1, "Encoding^H266", &Green);
+    AmendButtonStatus(9, 21, 2, "Encoding^H266", &Grey);
+  }
+  if (strcmp(config.encoding, "TS File") == 0)
+  {
+    AmendButtonStatus(9, 21, 0, "Encoding^from TS File", &Blue);
+    AmendButtonStatus(9, 21, 1, "Encoding^from TS File", &Green);
+    AmendButtonStatus(9, 21, 2, "Encoding^from TS File", &Grey);
+  }
+  SetButtonStatus(9, 21, 2);
+
+  // Display Correct Output Format on Button 23
+  if (strcmp(config.format, "4:3") == 0)
+  {
+    AmendButtonStatus(9, 23, 0, "Format^4:3", &Blue);
+    AmendButtonStatus(9, 23, 1, "Format^4:3", &Green);
+    AmendButtonStatus(9, 23, 2, "Format^4:3", &Grey);
+  }
+  if (strcmp(config.format, "16:9") == 0)
+  {
+    AmendButtonStatus(9, 23, 0, "Format^16:9", &Blue);
+    AmendButtonStatus(9, 23, 1, "Format^16:9", &Green);
+    AmendButtonStatus(9, 23, 2, "Format^16:9", &Grey);
+  }
+  if (strcmp(config.format, "720p") == 0)
+  {
+    AmendButtonStatus(9, 23, 0, "Format^720p", &Blue);
+    AmendButtonStatus(9, 23, 1, "Format^720p", &Green);
+    AmendButtonStatus(9, 23, 2, "Format^720p", &Grey);
+  }
+  if (strcmp(config.format, "1080p") == 0)
+  {
+    AmendButtonStatus(9, 23, 0, "Format^1080p", &Blue);
+    AmendButtonStatus(9, 23, 1, "Format^1080p", &Green);
+    AmendButtonStatus(9, 23, 2, "Format^1080p", &Grey);
+  }
+  SetButtonStatus(9, 23, 2);
+
+  // Display source on button 24
+  if (strcmp(config.videosource, "PiCam") == 0)
+  {
+    AmendButtonStatus(9, 24, 0, "Source^Pi Cam", &Blue);
+    AmendButtonStatus(9, 24, 1, "Source^Pi Cam", &Green);
+    AmendButtonStatus(9, 24, 2, "Source^Pi Cam", &Grey);
+  }
+  if (strcmp(config.videosource, "WebCam") == 0)
+  {
+    AmendButtonStatus(9, 24, 0, "Source^Web Cam", &Blue);
+    AmendButtonStatus(9, 24, 1, "Source^Web Cam", &Green);
+    AmendButtonStatus(9, 24, 2, "Source^Web Cam", &Grey);
+  }
+  if (strcmp(config.videosource, "ATEMUSB") == 0)
+  {
+    AmendButtonStatus(9, 24, 0, "Source^ATEM USB", &Blue);
+    AmendButtonStatus(9, 24, 1, "Source^ATEM USB", &Green);
+    AmendButtonStatus(9, 24, 2, "Source^ATEM USB", &Grey);
+  }
+  if (strcmp(config.videosource, "TestCard") == 0)
+  {
+    AmendButtonStatus(9, 24, 0, "Source^Test Card", &Blue);
+    AmendButtonStatus(9, 24, 1, "Source^Test Card", &Green);
+    AmendButtonStatus(9, 24, 2, "Source^Test Card", &Grey);
+  }
+  SetButtonStatus(9, 24, 2);
+}
+
+
 void Define_Menu11()
 {
   strcpy(MenuTitle[11], "Modulation Selection Menu (11)");
@@ -4434,8 +4669,11 @@ void Define_Menu15()
   AddButtonStatus(15, 17, "ATEM USB", &Blue);
   AddButtonStatus(15, 17, "ATEM USB", &Green);
 
-  //AddButtonStatus(15, 18, "1080p^1080x1920", &Blue);
-  //AddButtonStatus(15, 18, "1080p^1080x1920", &Green);
+  AddButtonStatus(15, 18, "CamLink 4K^HDMI", &Blue);
+  AddButtonStatus(15, 18, "CamLink 4K^HDMI", &Green);
+
+  AddButtonStatus(15, 19, "EasyCap^Comp Vid", &Blue);
+  AddButtonStatus(15, 19, "EasyCap^Comp Vid", &Green);
 
   AddButtonStatus(15, 4, "Return to^Main Menu", &DBlue);
 }
@@ -4443,7 +4681,7 @@ void Define_Menu15()
 
 void Highlight_Menu15()
 {
-  SelectFromGroupOnMenu3(15, 15, 1, config.videosource, "PiCam", "WebCam", "ATEMUSB");
+  SelectFromGroupOnMenu5(15, 15, 1, config.videosource, "PiCam", "WebCam", "ATEMUSB", "CAMLINK4K", "EasyCap");
   SelectFromGroupOnMenu1(15, 10, 1, config.videosource, "TestCard");
 }
 
@@ -5387,6 +5625,85 @@ void Highlight_Menu25()
 }
 
 
+void Define_Menu26()
+{
+  int i;
+
+  strcpy(MenuTitle[26], "Stream Output Selection Menu (26)");
+
+  // Bottom Row, Menu 26  
+
+  AddButtonStatus(26, 9, "Amend^Preset", &Blue);
+  AddButtonStatus(26, 9, "Amend^Preset", &Red);
+
+  AddButtonStatus(26, 4, "Exit to^Main Menu", &DBlue);
+
+  // Rows 2, 3 and 4, Menu 25
+
+  for (i = 1; i < 9; i++)
+  {
+    if (i < 5)  // Bottom row
+    {
+      AddButtonStatus(26, i - 1, " ", &Blue);
+      AddButtonStatus(26, i - 1, " ", &Green);
+    }
+    if (i > 4) // Top row
+    {
+      AddButtonStatus(26, i, " ", &Blue);
+      AddButtonStatus(26, i, " ", &Green);
+    }
+  }
+}
+
+
+void Highlight_Menu26()
+{
+  int i;
+  char streamname[63];
+  char key[63];
+
+  for (i = 1; i < 9; i++)
+  {
+    SeparateStreamKey(StreamKey[i], streamname, key);
+
+    if (i < 5)  // Bottom row
+    {
+      AmendButtonStatus(26, i - 1, 0, streamname, &Blue);
+      AmendButtonStatus(26, i - 1, 1, streamname, &Green);
+      if (strcmp(StreamKey[0], StreamKey[i]) == 0)
+      {
+        SetButtonStatus(26, i - 1, 1);
+      }
+      else
+      {
+        SetButtonStatus(26, i - 1, 0);
+      }
+    }
+    if (i > 4) // Top row
+    {
+      AmendButtonStatus(26, i, 0, streamname, &Blue);
+      AmendButtonStatus(26, i, 1, streamname, &Green);
+      if (strcmp(StreamKey[0], StreamKey[i]) == 0)
+      {
+        SetButtonStatus(26, i, 1);
+      }
+      else
+      {
+        SetButtonStatus(26, i, 0);
+      }
+    }
+  }
+  if (StreamerStoreTrigger == true)
+  {
+    SetButtonStatus(26, 9, 1);
+  }
+  else
+  {
+    SetButtonStatus(26, 9, 0);
+  }
+}
+
+
 void Define_Menu32()                          // Decision 2 Menu
 {
   AddButtonStatus(32, 4, " ", &Black);
@@ -5656,6 +5973,7 @@ void Define_Menus()
   Define_Menu6();
   Define_Menu7();
   Define_Menu8();
+  Define_Menu9();
   Define_Menu11();
   Define_Menu12();
   Define_Menu13();
@@ -5671,6 +5989,7 @@ void Define_Menus()
   Define_Menu23();
   Define_Menu24();
   Define_Menu25();
+  Define_Menu26();
   Define_Menu32();
   Define_Menu33();
 
@@ -6334,6 +6653,13 @@ void selectTestEquip(int Button)   // Test Equipment
   switch(Button)
   {
     case 0:                              // KeyLimePi SA
+      // Check KLP installed.  If not, install it
+      if (file_exist("/home/pi/portsdown/bin/sa_sched") == 1) // File does not exist
+      {
+        MsgBox4("Please wait", "Installing KeyLimePi", "Applications", " ");
+        system("/home/pi/portsdown/scripts/set-up_configs/enable_klp.sh");
+        clearScreen(0, 0, 0);
+      }
       cleanexit(170);
       break;
     case 10:                             // SigGen
@@ -6348,6 +6674,9 @@ void selectTestEquip(int Button)   // Test Equipment
     case 13:                             // AD Power Meter
       cleanexit(137);
       break;
+    case 14:                             // PicoViewer
+      cleanexit(181);
+      break;
     case 15:                             // LimeSDR BandViewer
       cleanexit(136);
       break;
@@ -6359,6 +6688,9 @@ void selectTestEquip(int Button)   // Test Equipment
       break;
     case 18:                             // LimeSDR NG NF Meter
       cleanexit(152);
+      break;
+    case 19:                             // LimeSDR Noise Meter
+      cleanexit(147);
       break;
     case 20:                             // KeyLimePi BandViewer
       cleanexit(175);
@@ -6501,6 +6833,7 @@ void selectFormat(int Button)  // Transmitter image format
   SetConfigParam(PATH_PCONFIG, "format", config.format);
 }
 
+
 void selectVideosource(int Button)  // Transmitter Video Source
 {
   switch(Button)
@@ -6517,10 +6850,17 @@ void selectVideosource(int Button)  // Transmitter Video Source
     case 17:
       strcpy(config.videosource, "ATEMUSB");
       break;
+    case 18:
+      strcpy(config.videosource, "CAMLINK4K");
+      break;
+    case 19:
+      strcpy(config.videosource, "EasyCap");
+      break;
   }
 
   SetConfigParam(PATH_PCONFIG, "videosource", config.videosource);
 }
+
 
 void selectFreqoutput(int Button)  // Transmitter output Frequency
 {
@@ -7832,6 +8172,100 @@ void CheckforUpdate()
 }
 
 
+void SelectStreamerAction(int NoButton)
+{
+  if (StreamerStoreTrigger == false)      // Normal
+  {
+    SelectStreamer(NoButton);
+  }
+  else
+  {
+    AmendStreamerPreset(NoButton);
+    StreamerStoreTrigger = false;
+  }
+}
+
+
+void AmendStreamerPreset(int NoButton)
+{
+  int NoPreset;
+  char Param[63];
+  char Value[255];
+  char streamname[63];
+  char key[63];
+  char Prompt[63];
+  char KeyboardReturn[63];
+
+  // Map button numbering
+  if(NoButton < 5) // bottom row
+  {
+    NoPreset = NoButton + 1;
+  }
+  else  // top row
+  {
+    NoPreset = NoButton;
+  }
+
+  // streamurl is unchanged
+
+  SeparateStreamKey(StreamKey[NoPreset], streamname, key);
+  snprintf(Param, 31, "streamkey%d", NoPreset);
+
+  sprintf(Prompt, "Enter the streamname (lower case)");
+  Keyboard(Prompt, streamname, 15, KeyboardReturn, false);
+  strcpy(streamname, KeyboardReturn);
+
+  sprintf(Prompt, "Enter the stream key (6 characters)");
+  Keyboard(Prompt, key, 15, KeyboardReturn, false);
+  strcpy(key, KeyboardReturn);
+  
+  snprintf(Value, 127, "%s-%s", streamname, key);
+  SetConfigParam(PATH_STREAM_PRESETS, Param, Value);
+  strcpy(StreamKey[NoPreset], Value);
+
+  // Select this new streamer as the in-use streamer
+  SetConfigParam(PATH_PCONFIG, "streamkey", StreamKey[NoPreset]);
+  strcpy(StreamKey[0], StreamKey[NoPreset]);
+
+  clearScreen(0, 0, 0);
+}
+
+
+void SelectStreamer(int NoButton)
+{
+  int NoPreset;
+  //char Param[255];
+  //char Value[255];
+
+  // Map button numbering
+  if(NoButton < 4) // bottom row
+  {
+    NoPreset = NoButton + 1;
+  }
+  else  // top row
+  {
+    NoPreset = NoButton;
+  }
+
+  // Copy in Streamname-key
+  SetConfigParam(PATH_PCONFIG, "streamkey", StreamKey[NoPreset]);
+  strcpy(StreamKey[0], StreamKey[NoPreset]);
+}
+
+
+void ToggleAmendStreamerPreset()
+{
+  if (StreamerStoreTrigger == false)      // Normal
+  {
+    StreamerStoreTrigger = true;
+  }
+  else
+  {
+    StreamerStoreTrigger = false;
+  }
+}
+
+
 void InfoScreen()
 {
   char IPAddress[18] = "Not connected";
@@ -7934,6 +8368,51 @@ void checkTunerSettings()
 }
 
 
+void SeparateStreamKey(char streamkey[127], char streamname[63], char key[63])
+{
+  int n;
+  char delimiter[1] = "-";
+  int AfterDelimiter = 0;
+  int keystart;
+  int stringkeylength;
+  strcpy(streamname, "null");
+  strcpy(key, "null");
+
+  stringkeylength = strlen(streamkey);
+
+  for(n = 0; n < stringkeylength ; n = n + 1)  // for each character
+  {
+    if (AfterDelimiter == 0)                   // if streamname
+    {
+      streamname[n] = streamkey[n];            // copy character into streamname
+
+      if (n == stringkeylength - 1)            // if no delimiter found
+      {
+        streamname[n + 1] = '\0';                  // terminate streamname to prevent overflow
+      }
+    }
+    else
+    {
+      AfterDelimiter = AfterDelimiter + 1;     // if not streamname jump over delimiter
+    }
+    if (streamkey[n] == delimiter[0])          // if delimiter
+    {
+      streamname[n] = '\0';                    // end streamname
+      AfterDelimiter = 1;                      // set flag
+      keystart = n;                            // and note key start point
+    }
+    if (AfterDelimiter > 1)                    // if key
+    {
+      key[n - keystart - 1] = streamkey[n];    // copy character into key
+    }
+    if (n == stringkeylength - 2)              // if end of input string
+    {
+      key[n - keystart + 1] = '\0';            // end key
+    }
+  }
+}
+
+
 void UpdateWeb()
 {
   // Called after any screen update to update the web page if required.
@@ -7953,61 +8432,59 @@ void waitForScreenAction()
   int rawX = 0;
   int rawY = 0;
 
-  // Wait for a screen touch and act on its position
-  // Start the main loop for the Touchscreen
+  // Main loop for the Touchscreen
   for (;;)
   {
 
-    //if ((strcmp(ScreenState, "RXwithImage") != 0) && (strcmp(ScreenState, "VideoOut") != 0)
-    // && (boot_to_tx == false) && (boot_to_rx == false))  // Don't wait for touch if returning from recieve or booting to TX or rx
-    //{
+    if ((boot_to_tx == false) && (boot_to_rx == false))  // Don't wait for touch if booting to TX or RX
+    {
       // Wait here until screen touched
       if (getTouchSample(&rawX, &rawY) == 0) continue;
-    //}
+    }
 
     // Handle contexts first
 
     if (strcmp(ScreenState, "TXwithImage") == 0)
     {
-      SetButtonStatus(1, 25, 0);
+      ShowTXVideo(false);
       redrawMenu();
-      TransmitStop();
       strcpy(ScreenState, "NormalMenu");
       UpdateWeb();
       continue;  // All reset, and Menu displayed so go back and wait for next touch
      }
 
     // Now Sort TXwithMenu:
-    if (strcmp(ScreenState, "TXwithMenu") == 0)
-    {
-      SetButtonStatus(1, 25, 0);
-      redrawButton(1, 25);
-      TransmitStop();
-      strcpy(ScreenState, "NormalMenu");
-      UpdateWeb();
-      continue;  // All reset, and Menu displayed so go back and wait for next touch
-    }
+    //if (strcmp(ScreenState, "TXwithMenu") == 0)
+    //{
+    //  SetButtonStatus(1, 25, 0);
+    //  redrawButton(1, 25);
+    //  TransmitStop();
+    //  strcpy(ScreenState, "NormalMenu");
+    //  UpdateWeb();
+    //  continue;  // All reset, and Menu displayed so go back and wait for next touch
+    //}
 
 
     {                                           // Normal context
       i = IsMenuButtonPushed();
 
       // Deal with boot to tx or boot to rx
-//      if (boot_to_tx == true)
-//      {
-//        CurrentMenu = 1;
-//        i = 20;
-//        boot_to_tx = false;
-//      }
-//      if (boot_to_rx == true)
-//      {
-//        CurrentMenu = 8;
-//        i = 0;
-//        boot_to_rx = false;
-//      }
+      if (boot_to_tx == true)
+      {
+        CurrentMenu = 1;
+        i = 25;
+        boot_to_tx = false;
+      }
+      if (boot_to_rx == true)
+      {
+        CurrentMenu = 8;
+        i = 0;
+        boot_to_rx = false;
+      }
 
       if (i == -1)
       {
+        printf("Screen touched but not on a button\n");
         continue;  //Pressed, but not on a button so wait for the next touch
       }
 
@@ -8151,13 +8628,10 @@ void waitForScreenAction()
           redrawMenu();
           break;
         case 25:                                                      // Transmit
-          if (strcmp(ScreenState, "NormalMenu") == 0)
-          {
-            TransmitStart();
-            SetButtonStatus(1, 25, 2);
-            redrawButton(1, 25);
-            UpdateWeb();
-          }
+          TransmitStart();
+          SetButtonStatus(9, 25, 2);
+          CurrentMenu = 9;
+          redrawMenu();
           break;
         case 26:                                                      // Receive Menu
           printf("MENU 8 \n");
@@ -8219,6 +8693,11 @@ void waitForScreenAction()
         case 4:                        // Back to Main Menu
           printf("MENU 1 \n");
           CurrentMenu = 1;
+          redrawMenu();
+          break;
+        case 20:                        // Set Stream Output Menu
+          printf("MENU 26 \n");
+          CurrentMenu = 26;
           redrawMenu();
           break;
         }
@@ -8312,10 +8791,12 @@ void waitForScreenAction()
         case 11:
         case 12:
         case 13:
+        case 14:
         case 15:
         case 16:
         case 17:
         case 18:
+        case 19:
         case 20:
         case 21:
         case 22:
@@ -8393,6 +8874,45 @@ void waitForScreenAction()
           printf("MENU 23 \n");
           CurrentMenu = 23;
           redrawMenu();
+          break;
+        }
+        continue;
+      }
+      if (CurrentMenu == 9)           // Transmitting Menu
+      {
+        printf("Menu %d, Button %d\n", CallingMenu, i);
+        CallingMenu = 9;
+        switch (i)
+        {
+        case 4:                        // Stop transmit and back to Main Menu
+          TransmitStop();
+          strcpy(ScreenState, "NormalMenu");
+          printf("MENU 1 \n");
+          CurrentMenu = 1;
+          redrawMenu();
+          break;
+        case 15:                         // Change Frequency
+          break;
+        case 19:                         // ChangeGain                      
+          break;
+        case 20:
+          //selectModulation(i);         // Select Modulation type
+          //redrawMenu();                // Show 
+          //usleep(500000);
+          //CurrentMenu = 1;
+          //redrawMenu();                // and return to menu 1
+          break;
+        case 23:                        // Change format
+          break;
+        case 24:                        // Change Source
+          break;
+        case 26:                        // Toggle RF
+          break;
+        case 27:                        // Toggle PTT
+          break;
+        case 28:                        // Show Video
+          ShowTXVideo(true);
+          strcpy(ScreenState, "TXwithImage");
           break;
         }
         continue;
@@ -8521,7 +9041,8 @@ void waitForScreenAction()
         case 15:                       // Pi Cam
         case 16:                       // Web Cam
         case 17:                       // ATEM USB
-        //case 18:
+        case 18:                       // CAMLINK4K
+        case 19:                       // EasyCap
           selectVideosource(i);        // Select Video Source
           redrawMenu();                // Show 
           usleep(500000);
@@ -8936,6 +9457,35 @@ void waitForScreenAction()
         }
         continue;
       }
+      if (CurrentMenu == 26)           // Set Stream Outputs Menu
+      {
+        printf("Menu %d, Button %d\n", CallingMenu, i);
+        CallingMenu = 26;
+        switch (i)
+        {
+        case 4:                                          // Back to Main Menu
+          printf("MENU 1 \n");
+          CurrentMenu = 1;
+          redrawMenu();
+          break;
+        case 0:                                          // stream 
+        case 1:                                          // stream 
+        case 2:                                          // stream 
+        case 3:                                          // stream 
+        case 5:                                          // stream 
+        case 6:                                          // stream
+        case 7:                                          // stream
+        case 8:                                          // stream
+          SelectStreamerAction(i);                       // either select or edit
+          redrawMenu();
+          break;
+        case 9:                                          //  Amend Preset
+          ToggleAmendStreamerPreset();
+          redrawMenu();
+          break;
+        }
+        continue;
+      }
     }
   }
 }
@@ -9096,6 +9646,8 @@ int main(int argc, char **argv)
   Define_Menus();
   ReadSavedParams();
   redrawMenu();
+  usleep(1000000);
+  redrawMenu();  // Second time over-writes system message
 
   printf("Waiting for button press on touchscreen\n");
   waitForScreenAction();

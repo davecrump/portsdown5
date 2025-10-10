@@ -2,8 +2,7 @@
 
 # Portsdown 5 Install/Update script by davecrump
 
-Function to Read from Config File
-
+# Define Function to Read from Config File
 get_config_var() {
 lua - "$1" "$2" <<EOF
 local key=assert(arg[1])
@@ -18,7 +17,6 @@ end
 end
 EOF
 }
-
 
 # Define function to write messages to build log
 BuildLogMsg() {
@@ -67,11 +65,11 @@ if [ $? != 0 ]; then
   exit
 fi
 
-# Check for 64 bit bookworm
-cat /etc/os-release | grep -q 'Debian GNU/Linux 12 (bookworm)'
+# Check for 64 bit trixie
+cat /etc/os-release | grep -q 'Debian GNU/Linux 13 (trixie)'
 if [ $? != 0 ]; then
   echo
-  echo "Portsdown 5 requires the 64 bit version of bookworm lite"
+  echo "Portsdown 5 requires the 64 bit version of trixie lite"
   echo "Please rebuild your SD Card with the correct OS"
   echo 
   echo "Press any key to exit"
@@ -79,9 +77,9 @@ if [ $? != 0 ]; then
   printf "\n"
   if [[ "$REPLY" = "d" || "$REPLY" = "D" ]]; then  # Allow to proceed for development
     echo "Continuing build......"
-    BuildLogMsg "1" "Continuing build, but NOT bookworm 64 bit"
+    BuildLogMsg "1" "Continuing build, but NOT trixie 64 bit"
   else
-    BuildLogMsg "1" "Exiting, not bookworm 64 bit"
+    BuildLogMsg "1" "Exiting, not trixie 64 bit"
     exit
   fi
 fi
@@ -190,8 +188,8 @@ echo "----- Updating Package Manager -----"
 echo "------------------------------------"
 sudo dpkg --configure -a
   SUCCESS=$?; BuildLogMsg $SUCCESS "dpkg configure"
-sudo apt-get update --allow-releaseinfo-change
-  SUCCESS=$?; BuildLogMsg $SUCCESS "apt-get update"
+sudo apt update --allow-releaseinfo-change
+  SUCCESS=$?; BuildLogMsg $SUCCESS "apt update"
 
 # Uninstall the apt-listchanges package to allow silent install of ca certificates (201704030)
 # http://unix.stackexchange.com/questions/124468/how-do-i-resolve-an-apparent-hanging-update-process
@@ -210,10 +208,14 @@ echo
 echo "-----------------------------------"
 echo "----- Performing dist-upgrade -----"
 echo "-----------------------------------"
-sudo apt-get -y dist-upgrade
-  SUCCESS=$?; BuildLogMsg $SUCCESS "dist-upgrade"
+yes | sudo apt -y full-upgrade
+# sudo apt -y full-upgrade
+  SUCCESS=$?; BuildLogMsg $SUCCESS "full-upgrade"
 
 if [ "$UPDATE" == "false" ]; then
+
+  # Update the RPi firmware if required
+  # yes "yy"| sudo rpi-update
 
   # Install the packages that we need
   echo
@@ -234,15 +236,15 @@ if [ "$UPDATE" == "false" ]; then
   sudo apt-get -y install libfftw3-dev                            # For bandviewers
     SUCCESS=$?; BuildLogMsg $SUCCESS "libfftw3-dev install"
   sudo apt-get -y install nginx-light                             # For web access
-    SUCCESS=$?; BuildLogMsg $SUCCESS "libfcgi-dev install"
-  sudo apt-get -y install libfcgi-dev                             # For web control
     SUCCESS=$?; BuildLogMsg $SUCCESS "nginx-light install"
+  sudo apt-get -y install libfcgi-dev                             # For web control
+    SUCCESS=$?; BuildLogMsg $SUCCESS "libfcgi-dev install"
   sudo apt-get -y install libjpeg-dev                             #
     SUCCESS=$?; BuildLogMsg $SUCCESS "libjpeg-dev install"
   sudo apt-get -y install imagemagick                             # for captions
     SUCCESS=$?; BuildLogMsg $SUCCESS "imagemagick install"
-  sudo apt-get -y install libraspberrypi-dev                      # for bcm_host
-    SUCCESS=$?; BuildLogMsg $SUCCESS "libraspberrypi-dev install"
+  # sudo apt-get -y install libraspberrypi-dev                      # for bcm_host - removed as conflicts with vlc
+    # SUCCESS=$?; BuildLogMsg $SUCCESS "libraspberrypi-dev install"
   sudo apt-get -y install libpng-dev                              # for screen capture
     SUCCESS=$?; BuildLogMsg $SUCCESS "libpng-dev install"
   sudo apt-get -y install vlc                                     # for rx and replay
@@ -273,6 +275,56 @@ if [ "$UPDATE" == "false" ]; then
     SUCCESS=$?; BuildLogMsg $SUCCESS "flex"
   sudo apt-get -y install libaio-dev                              # For libiio
     SUCCESS=$?; BuildLogMsg $SUCCESS "libaio-dev"
+  sudo apt-get -y install pip                                     # For Langstone 3
+    SUCCESS=$?; BuildLogMsg $SUCCESS "pip"
+  sudo apt-get -y install gnuradio                                # For Langstone 3
+    SUCCESS=$?; BuildLogMsg $SUCCESS "gnuradio"
+  sudo apt-get -y install hackrf                                  # For Langstone 3
+    SUCCESS=$?; BuildLogMsg $SUCCESS "hackrf"
+  sudo apt-get -y install sshpass                                 # For Langstone 3
+    SUCCESS=$?; BuildLogMsg $SUCCESS "sshpass"
+  sudo apt-get -y install libairspy-dev                           # For Airspy Bandviewer
+    SUCCESS=$?; BuildLogMsg $SUCCESS "libairspy-dev"
+  sudo apt-get -y install expect                                  # For unattended installs
+    SUCCESS=$?; BuildLogMsg $SUCCESS "expect"
+  sudo apt-get -y install uhubctl                                 # For USB resets
+    SUCCESS=$?; BuildLogMsg $SUCCESS "uhubctl"
+  sudo apt-get -y install arp-scan                                # For List Network Devices
+    SUCCESS=$?; BuildLogMsg $SUCCESS "arp-scan"
+  sudo apt-get -y install mplayer                                 # For video monitor
+    SUCCESS=$?; BuildLogMsg $SUCCESS "mplayer"
+  sudo apt-get -y install ir-keytable                             # For Ryde
+    SUCCESS=$?; BuildLogMsg $SUCCESS "ir-keytable"
+  sudo apt-get -y install python3-pygame                          # For Ryde
+    SUCCESS=$?; BuildLogMsg $SUCCESS "python3-pygame"
+  sudo apt-get -y install python3-vlc                             # For Ryde
+    SUCCESS=$?; BuildLogMsg $SUCCESS "python3-vlc"
+  sudo apt-get -y install python3-evdev                           # For Ryde
+    SUCCESS=$?; BuildLogMsg $SUCCESS "python3-evdev"
+  sudo apt-get -y install python3-urwid                           # For Ryde Utils
+    SUCCESS=$?; BuildLogMsg $SUCCESS "python3-urwid"
+  sudo apt-get -y install python3-librtmp                         # For Ryde Stream RX
+    SUCCESS=$?; BuildLogMsg $SUCCESS "python3-librtmp"
+  sudo apt-get -y install ncat                                    # For Rptr Controller
+    SUCCESS=$?; BuildLogMsg $SUCCESS "ncat"
+  sudo apt-get -y install lirc                                    # For Rptr Controller
+    SUCCESS=$?; BuildLogMsg $SUCCESS "lirc"
+  sudo apt-get -y install multimon-ng                             # For Rptr Controller
+    SUCCESS=$?; BuildLogMsg $SUCCESS "multimon-ng"
+  sudo apt-get -y install sox                                     # For Rptr Controller
+    SUCCESS=$?; BuildLogMsg $SUCCESS "sox"
+  sudo apt-get install -y i2c-tools                               # For Rptr Controller
+    SUCCESS=$?; BuildLogMsg $SUCCESS "i2c-tools"
+  sudo apt-get install -y telnet                                  # For Rptr Controller
+    SUCCESS=$?; BuildLogMsg $SUCCESS "telnet"
+  sudo apt-get install -y cppcheck                                # For TS Merger
+    SUCCESS=$?; BuildLogMsg $SUCCESS "cppcheck"
+  sudo apt-get -y install --no-install-recommends libglew-dev     # For LimeSuiteNG
+    SUCCESS=$?; BuildLogMsg $SUCCESS "libglew-dev install" 
+  sudo apt-get -y install --no-install-recommends libsoapysdr-dev # For LimeSuiteNG
+    SUCCESS=$?; BuildLogMsg $SUCCESS "libsoapysdr-dev install"
+  sudo apt-get -y install --no-install-recommends libwxgtk3.2-dev # For LimeSuiteNG
+    SUCCESS=$?; BuildLogMsg $SUCCESS "libwxgtk3.2-dev install" 
 fi
 
 # Placeholder for New packages during update
@@ -346,11 +398,17 @@ if [ "$UPDATE" == "false" ]; then
   cd WiringPi
   ./build debian
     SUCCESS=$?; BuildLogMsg $SUCCESS "Wiring Pi Build"
-  mv debian-template/wiringpi_3.16_arm64.deb .
+
+  ## Read latest version number
+  vMaj=`cut -d. -f1 VERSION`
+  vMin=`cut -d. -f2 VERSION`
+
+  mv debian-template/wiringpi_"$vMaj"."$vMin"_arm64.deb .
     SUCCESS=$?; BuildLogMsg $SUCCESS "Moved wiringpi_3.16_arm64.deb"
-  sudo apt install ./wiringpi_3.16_arm64.deb
+  sudo apt install ./wiringpi_"$vMaj"."$vMin"_arm64.deb
     SUCCESS=$?; BuildLogMsg $SUCCESS "Installed Wiring Pi"
   cd /home/pi
+
 fi
 
 if [ "$UPDATE" == "true" ]; then
@@ -413,20 +471,20 @@ mv /home/pi/portsdown/src/portsdown/portsdown5 /home/pi/portsdown/bin/portsdown5
 cd /home/pi
 
 if [ "$UPDATE" == "false" ]; then
-  # Install LimeSuite 23.11 as at 8 May 2024
-  # Commit 9dce3b6a6bd66537a2249ad27101345d31aafc89
+  # Install LimeSuite 23.11 as at 14 July 2025
+  # Commit 524cd2e548b11084e6f739b2dfe0f958c2e30354
   echo
   echo "--------------------------------------"
-  echo "----- Installing LimeSuite 22.09 -----"
+  echo "----- Installing LimeSuite 23.11 -----"
   echo "--------------------------------------"
 
-  wget https://github.com/myriadrf/LimeSuite/archive/9dce3b6a6bd66537a2249ad27101345d31aafc89.zip -O master.zip
+  wget https://github.com/myriadrf/LimeSuite/archive/524cd2e548b11084e6f739b2dfe0f958c2e30354.zip -O master.zip
     SUCCESS=$?; BuildLogMsg $SUCCESS "LimeSuite download"
 
   # Copy into place
   unzip -o master.zip
-  cp -f -r LimeSuite-9dce3b6a6bd66537a2249ad27101345d31aafc89 LimeSuite
-  rm -rf LimeSuite-9dce3b6a6bd66537a2249ad27101345d31aafc89
+  cp -f -r LimeSuite-524cd2e548b11084e6f739b2dfe0f958c2e30354 LimeSuite
+  rm -rf LimeSuite-524cd2e548b11084e6f739b2dfe0f958c2e30354
   rm master.zip
 
   # Compile LimeSuite
@@ -449,7 +507,7 @@ if [ "$UPDATE" == "false" ]; then
   cd /home/pi	
 
   # Record the LimeSuite Version	
-  echo "9dce3b6" >/home/pi/LimeSuite/commit_tag.txt
+  echo "524cd2e" >/home/pi/LimeSuite/commit_tag.txt
 
   # Install libiio for Pluto
   echo
@@ -467,6 +525,64 @@ if [ "$UPDATE" == "false" ]; then
     SUCCESS=$?; BuildLogMsg $SUCCESS "make libiio"
   sudo make install
   cd /home/pi
+
+  echo
+  echo "------------------------------"
+  echo "----- Installing RTL-SDR -----"
+  echo "------------------------------"
+
+  cd /home/pi/portsdown/src
+  git clone git://git.osmocom.org/rtl-sdr.git
+    SUCCESS=$?; BuildLogMsg $SUCCESS "git clone rtl-sdr"
+  cd rtl-sdr
+  mkdir build
+  cd build
+  cmake ../ -DINSTALL_UDEV_RULES=ON
+    SUCCESS=$?; BuildLogMsg $SUCCESS "cmake rtl-sdr"
+  make
+    SUCCESS=$?; BuildLogMsg $SUCCESS "make rtl-sdr"
+  sudo make install
+  sudo cp ../rtl-sdr.rules /etc/udev/rules.d/
+  sudo ldconfig
+
+  # Create a new /etc/modprobe.d/blacklist-rtl.conf file
+  sudo cat > blacklist-rtl.conf << EOF
+blacklist dvb_usb_rtl28xxu
+blacklist rtl2832
+blacklist rtl2830
+EOF
+  sudo mv blacklist-rtl.conf /etc/modprobe.d/blacklist-rtl.conf
+
+  echo
+  echo "------------------------------------------"
+  echo "----- Installing DATV Express Server -----"
+  echo "------------------------------------------"
+
+  cd /home/pi
+  wget https://github.com/G4GUO/express_server/archive/master.zip
+    SUCCESS=$?; BuildLogMsg $SUCCESS "express_server download"
+  unzip master.zip
+  mv express_server-master /home/pi/portsdown/src/express_server
+  rm master.zip
+  cd /home/pi/portsdown/src/express_server
+  make
+    SUCCESS=$?; BuildLogMsg $SUCCESS "make express_server"
+  sudo make install
+
+  echo
+  echo "----------------------------------------"
+  echo "----- Preparing to install SDRPlay -----"
+  echo "----------------------------------------"
+
+  # Download api
+  cd /home/pi
+  wget https://www.sdrplay.com/software/SDRplay_RSP_API-Linux-3.15.2.run
+  chmod +x SDRplay_RSP_API-Linux-3.15.2.run
+
+  # Create file to trigger install on next reboot
+  touch /home/pi/portsdown/.post-install_actions
+  cd /home/pi
+
 fi
 
 # Compile legacy LimeSDR Toolbox
@@ -474,7 +590,6 @@ echo
 echo "--------------------------------------------"
 echo "----- Compiling Legacy LimeSDR Toolbox -----"
 echo "--------------------------------------------"
-
 # Compile dvb2iq first
 cd /home/pi/portsdown/src/limesdr_toolbox/libdvbmod/libdvbmod
 make -j 4 -O
@@ -490,24 +605,24 @@ make -j 4 -O
   SUCCESS=$?; BuildLogMsg $SUCCESS "LimeSDR Toolbox compile"
 make dvb
   SUCCESS=$?; BuildLogMsg $SUCCESS "LimeSDR DVB compile"
-
 mv limesdr_send /home/pi/portsdown/bin/
 mv limesdr_dump /home/pi/portsdown/bin/
 mv limesdr_stopchannel /home/pi/portsdown/bin/
 mv limesdr_forward /home/pi/portsdown/bin/
 mv limesdr_dvb /home/pi/portsdown/bin/
 
+
 # Compile Framebuffer capture utility
 echo
 echo "-------------------------------------------------"
 echo "----- Compiling Framebuffer Capture Utility -----"
 echo "-------------------------------------------------"
-
 cd /home/pi/portsdown/src/fb2png
 make -j 4 -O
   SUCCESS=$?; BuildLogMsg $SUCCESS "fb2png compile"
 
 mv /home/pi/portsdown/src/fb2png/fb2png /home/pi/portsdown/bin/fb2png
+
 
 # Compile LongMynd
 echo
@@ -523,6 +638,7 @@ make -j 4 -O
 # Set up the udev rules for USB
 sudo cp minitiouner.rules /etc/udev/rules.d/
 
+
 # Compile Legacy Lime BandViewer
 echo
 echo "--------------------------------------------"
@@ -535,58 +651,102 @@ make -j 4 -O
 
 mv /home/pi/portsdown/src/limeview/limeview /home/pi/portsdown/bin/limeview
 
+
+# Compile the Signal Generator
+echo
+echo "--------------------------------------------"
+echo "------ Compiling the Signal Generator ------"
+echo "--------------------------------------------"
+
+cd /home/pi/portsdown/src/siggen
+make -j 4 -O
+  SUCCESS=$?; BuildLogMsg $SUCCESS "SigGen compile"
+sudo make install
+cd /home/pi
+
+
+# Compile the Sweeper
+echo
+echo "---------------------------------"
+echo "----- Compiling the Sweeper -----"
+echo "---------------------------------"
+cd /home/pi/portsdown/src/sweeper
+make -j 4 -O
+  SUCCESS=$?; BuildLogMsg $SUCCESS "Sweeper compile"
+mv /home/pi/portsdown/src/sweeper/sweeper /home/pi/portsdown/bin/sweeper
+cd /home/pi
+
+
+# Compile the DMM Display
+echo
+echo "-------------------------------------"
+echo "----- Compiling the DMM Display -----"
+echo "-------------------------------------"
+cd /home/pi/portsdown/src/dmm
+make -j 4 -O
+  SUCCESS=$?; BuildLogMsg $SUCCESS "DMM Display compile"
+mv /home/pi/portsdown/src/dmm/dmm /home/pi/portsdown/bin/dmm
+cd /home/pi
+
+
+# Compile the Power Meter
+echo
+echo "-------------------------------------"
+echo "----- Compiling the Power Meter -----"
+echo "-------------------------------------"
+cd /home/pi/portsdown/src/power_meter
+make -j 4 -O
+  SUCCESS=$?; BuildLogMsg $SUCCESS "Power Meter compile"
+mv /home/pi/portsdown/src/power_meter/power_meter /home/pi/portsdown/bin/power_meter
+cd /home/pi
+
+
+# Compile the PicoViewer
+echo
+echo "--------------------------------"
+echo "----- Compiling PicoViewer -----"
+echo "--------------------------------"
+
+cd /home/pi/portsdown/src/picoview
+make -j 4 -O
+  SUCCESS=$?; BuildLogMsg $SUCCESS "PicoViewer compile"
+mv /home/pi/portsdown/src/picoview/picoview /home/pi/portsdown/bin/picoview
+
+
 # Copy the fftw wisdom file to home so that there is no start-up delay
 # This file works for both BandViewer and NF Meter
 #cp .fftwf_wisdom /home/pi/.fftwf_wisdom
 cd /home/pi
 
 # Compile Legacy Noise Figure Meter
-#echo
-#echo "-----------------------------------------------"
-#echo "----- Compiling Legacy Noise Figure Meter -----"
-#echo "-----------------------------------------------"
+echo
+echo "-----------------------------------------------"
+echo "----- Compiling Legacy Noise Figure Meter -----"
+echo "-----------------------------------------------"
 
-#cd /home/pi/portsdown/src/nf_meter
-#make -j 4 -O
-#  SUCCESS=$?; BuildLogMsg $SUCCESS "Lime NF Meter compile"
-
-#mv /home/pi/portsdown/src/nf_meter/nf_meter /home/pi/portsdown/bin/nf_meter
-#cd /home/pi
+cd /home/pi/portsdown/src/nf_meter
+make -j 4 -O
+  SUCCESS=$?; BuildLogMsg $SUCCESS "Lime NF Meter compile"
+mv /home/pi/portsdown/src/nf_meter/nf_meter /home/pi/portsdown/bin/nf_meter
+cd /home/pi
 
 # Compile Legacy Noise Meter
-#echo
-#echo "----------------------------------------"
-#echo "----- Compiling Legacy Noise Meter -----"
-#echo "----------------------------------------"
+echo
+echo "----------------------------------------"
+echo "----- Compiling Legacy Noise Meter -----"
+echo "----------------------------------------"
 
-#cd /home/pi/portsdown/src/noise_meter
-#make -j 4 -O
-#  SUCCESS=$?; BuildLogMsg $SUCCESS "Lime Noise Meter compile"
+cd /home/pi/portsdown/src/noise_meter
+make -j 4 -O
+  SUCCESS=$?; BuildLogMsg $SUCCESS "Lime Noise Meter compile"
 
-#mv /home/pi/portsdown/src/noise_meter/noise_meter /home/pi/portsdown/bin/noise_meter
-#cd /home/pi
-
-if [ "$UPDATE" == "false" ]; then
-
-  # Download, compile and install DATV Express-server
-  echo
-  echo "------------------------------------------"
-  echo "----- Installing DATV Express Server -----"
-  echo "------------------------------------------"
-  cd /home/pi
-  wget https://github.com/G4GUO/express_server/archive/master.zip
-    SUCCESS=$?; BuildLogMsg $SUCCESS "DATV Express Server Download"
-  unzip master.zip
-  mv express_server-master express_server
-  rm master.zip
-  cd /home/pi/express_server
-  make
-    SUCCESS=$?; BuildLogMsg $SUCCESS "DATV Express Server compile"
-  sudo make install
-  cd /home/pi
-fi
+mv /home/pi/portsdown/src/noise_meter/noise_meter /home/pi/portsdown/bin/noise_meter
+cd /home/pi
 
 if [ "$UPDATE" == "false" ]; then
+
+  # Enable spi for power meter and sweeper
+  sudo raspi-config nonint do_spi 0
 
   # Configure to start Portsdown on boot as a service
   sudo cp /home/pi/portsdown/scripts/set-up_configs/portsdown.service /etc/systemd/system/
@@ -603,7 +763,8 @@ if [ "$UPDATE" == "false" ]; then
   echo "------------------------------------------"
 
   # Amend /etc/fstab to create a tmpfs drive at ~/tmp for multiple images
-  sudo sed -i '4itmpfs           /home/pi/tmp    tmpfs   defaults,noatime,nosuid,size=10m  0  0' /etc/fstab
+  #sudo sed -i '4itmpfs           /home/pi/tmp    tmpfs   defaults,noatime,nosuid,size=10m  0  0' /etc/fstab
+  sudo sh -c ' echo "tmpfs           /home/pi/tmp    tmpfs   defaults,noatime,nosuid,size=10m  0  0" >> /etc/fstab'
 
   # Create a ~/snaps folder for captured images
   mkdir /home/pi/snaps
@@ -644,8 +805,9 @@ if [ "$UPDATE" == "false" ]; then
       echo "-----                                  -----"
       echo "-----       Waiting for Reboot         -----"
       echo "--------------------------------------------"
+      echo "Press enter to reboot for stage 2 of the installation"
+      read -p "or ctrl-c to exit to the command prompt"
       echo
-      read -p "Press enter to reboot for stage 2 of the installation"
     fi
 
     echo "-----                                  -----"
@@ -660,11 +822,11 @@ else   # Update
   DisplayUpdateMsg "Update Complete.  Rebooting"
   echo $(date -u) " Update Complete" | sudo tee -a /home/pi/p5_initial_build_log.txt  > /dev/null
 
-  # Record the Version Number
-  head -c 9 /home/pi/portsdown/version_history.txt > /home/pi/portsdown/configs/installed_version.txt
+  # Record the Version Number in the build log
   echo -e "\n" >> /home/pi/portsdown/configs/installed_version.txt
-  echo "Version number" | sudo tee -a /home/pi/p5_initial_build_log.txt  > /dev/null
+  printf "Version number: " | sudo tee -a /home/pi/p5_initial_build_log.txt  > /dev/null
   head -c 9 /home/pi/portsdown/version_history.txt | sudo tee -a /home/pi/p5_initial_build_log.txt  > /dev/null
+  echo | sudo tee -a /home/pi/p5_initial_build_log.txt  > /dev/null
 
   echo
   echo "--------------------------------------------"

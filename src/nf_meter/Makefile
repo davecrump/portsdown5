@@ -5,7 +5,7 @@ clean:
 	indent -linux -c 60 -brf -l 132
 
 INCLUDEFLAGS2=-lpthread -I/opt/vc/include -I/opt/vc/include/interface/vmcs_host/linux -I/opt/vc/include/interface/vcos/pthreads -I..
-LIBFLAGS2=-L/opt/vc/lib -lpthread -lrt -lbcm_host -lpng16 -ljpeg -lm -ldl -lfftw3f -lLimeSuite -lfcgi -rdynamic -fcommon -lwiringPi 
+LIBFLAGS2=-L/opt/vc/lib -lpthread -lrt -lpng16 -ljpeg -lm -ldl -lfftw3f -lLimeSuite -lfcgi -rdynamic -fcommon -lwiringPi 
 
 nf_meter: nf_meter.c 
 	gcc -fdiagnostics-color -Wall -std=gnu11 -D_GNU_SOURCE -DNEON_OPTS -pthread $(INCLUDEFLAGS2) -o  nf_meter \
@@ -25,6 +25,7 @@ nf_meter: nf_meter.c
 		../common/buffer/buffer_circular.c \
 		../common/hardware.c \
 		../common/temperature.c \
+		../common/utils.c \
 		nf_meter.c $(LIBFLAGS2)
 
 install:

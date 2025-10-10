@@ -5,7 +5,7 @@ clean:
 	indent -linux -c 60 -brf -l 132
 
 INCLUDEFLAGS2=-lpthread -I/opt/vc/include -I/opt/vc/include/interface/vmcs_host/linux -I/opt/vc/include/interface/vcos/pthreads -I.. -fdiagnostics-color
-LIBFLAGS2=-L/opt/vc/lib -lbcm_host -lpthread  -ljpeg -lpng16 -lrt -lm -ldl -lwiringPi -lfcgi -rdynamic -fcommon 
+LIBFLAGS2=-L/opt/vc/lib -lpthread  -ljpeg -lpng16 -lrt -lm -ldl -lwiringPi -lfcgi -rdynamic -fcommon 
 
 #power_meter: mcp3002.h mcp3002.c power_meter.c 
 power_meter: power_meter.c 

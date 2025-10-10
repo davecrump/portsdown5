@@ -1,3 +1,6 @@
+#!/bin/bash
+
+
 # Functions called by tx.sh
 
 ############ FUNCTION TO READ CONFIG FILE #############################
@@ -127,6 +130,22 @@ detect_audio()
       WC_AUDIO_CHANNELS=2
       WC_AUDIO_SAMPLE=48000
       WC_VIDEO_FPS=29.97
+    fi
+
+    ATEMUSBPresent=0
+    # Check for the presence of an ATEM USB Connection with stereo audio
+    arecord -l | grep -E -q \
+      "ATEM Mini"
+    if [ $? == 0 ]; then   ## Present
+      ATEMUSBPresent=1
+      # Look for the ATEM, select the line and take
+      # the 6th character.  Max card number = 8 !!
+      ATEM="$(arecord -l | grep -E \
+        "ATEM Mini" \
+        | head -c 6 | tail -c 1)"
+      ATEM_AUDIO_CHANNELS=2
+      ATEM_AUDIO_SAMPLE=48000
+      ATEM_VIDEO_FPS=24
     fi
 
     C920Present=0
@@ -295,6 +314,11 @@ detect_audio()
               AUDIO_CARD_NUMBER=$WCAM
               AUDIO_CHANNELS=2
               AUDIO_SAMPLE=48000
+            elif [ "$ATEMUSBPresent" == "1" ]; then
+              AUDIO_CARD=1                                  # so use ATEM USB Audio
+              AUDIO_CARD_NUMBER=$ATEM
+              AUDIO_CHANNELS=2
+              AUDIO_SAMPLE=48000
             else                                            # Neither available
               AUDIO_CARD=0                                  # So no audio
               AUDIO_CHANNELS=0
@@ -394,10 +418,12 @@ detect_audio()
     esac
   fi
 
-  #printf "AUDIO_CARD = $AUDIO_CARD\n"
-  #printf "AUDIO_CARD_NUMBER = $AUDIO_CARD_NUMBER \n"
-  #printf "AUDIO_CHANNELS = $AUDIO_CHANNELS \n"
-  #printf "AUDIO_SAMPLE = $AUDIO_SAMPLE \n"
+  echo
+  printf "AUDIO_CARD = $AUDIO_CARD\n"
+  printf "AUDIO_CARD_NUMBER = $AUDIO_CARD_NUMBER \n"
+  printf "AUDIO_CHANNELS = $AUDIO_CHANNELS \n"
+  printf "AUDIO_SAMPLE = $AUDIO_SAMPLE \n"
+  echo
 }
 
 
@@ -462,6 +488,14 @@ detect_video()
       sed -n '/Cam Link 4K/,/dev/p' | grep 'dev' | tr -d '\t')"
   fi
 
+  if [ "${#VID_WEBCAM}" -lt "10" ]; then #                 Check for ATEM USB
+
+    # List the video devices, select the 2 lines for a ATEM USB device, then
+    # select the line with the device details and delete the leading tab
+    VID_WEBCAM="$(v4l2-ctl --list-devices 2> /dev/null | \
+      sed -n '/ATEM Mini/,/dev/p' | grep 'dev' | tr -d '\t')"
+  fi
+
   if [ "${#VID_WEBCAM}" -lt "10" ]; then #                 Check for BRIO 4K Stream Edition 
     # List the video devices, select the 2 lines for a BRIO 4K Stream Edition device, then
     # select the line with the device details and delete the leading tab
@@ -518,9 +552,11 @@ detect_video()
     VID_WEBCAM="/dev/video2"
   fi
 
+  echo
   printf "The PI-CAM device string is $VID_PICAM\n"
   printf "The USB device string is $VID_USB\n"
   printf "The Webcam device string is $VID_WEBCAM\n"
+  echo
 
   # Check for the presence of a new C920 without H264 encoder
   NEWC920Present=0

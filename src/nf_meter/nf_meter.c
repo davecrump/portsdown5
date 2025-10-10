@@ -27,6 +27,7 @@
 #include "../common/touch.h"
 #include "../common/graphics.h"
 #include "../common/timing.h"
+#include "../common/utils.h"
 #include "../common/buffer/buffer_circular.h"
 #include "../common/ffunc.h"
 #include "../common/hardware.h"
@@ -203,7 +204,6 @@ int TouchTrigger = 0;
 bool touchneedsinitialisation = true;
 bool FalseTouch = false;     // used to simulate a screen touch if a monitored event finishes
 
-
 char DisplayType[31];
 bool touchscreen_present = false;
 
@@ -214,6 +214,7 @@ void SetConfigParam(char *, char *, char *);
 void CheckConfigFile();
 void ReadSavedParams();
 void *WaitTouchscreenEvent(void * arg);
+void *WaitMouseEvent(void * arg);
 void *WebClickListener(void * arg);
 void parseClickQuerystring(char *query_string, int *x_ptr, int *y_ptr);
 FFUNC touchscreenClick(ffunc_session_t * session);
@@ -247,6 +248,7 @@ void SetLimeGain(int);
 void AdjustLimeGain(int);
 void SetENR();
 void SetRF_ENR();
+void SetSourceGPIO();
 void SetFreqPreset(int);
 void ShiftFrequency(int);
 void CalcSpan();
@@ -553,23 +555,47 @@ void *WaitMouseEvent(void * arg)
   int y = 0;
   int scroll = 0;
   int fd;
-  //t inv_y;
-
   bool left_button_action = false;
+  FILE *fp;
+  char response[255];
+  char mouse_device[255] = "";
 
-  // Note x = y = 0 at bottom left
+  // Look up the mouse event entry
+  fp = popen("echo \"0\" | sudo evemu-describe 2>&1 | grep '/dev/input/event' | grep -e 'Mouse' -e 'mouse'", "r");
+  if (fp == NULL)
+  {
+    printf("Failed to run command\n" );
+    exit(1);
+  }
 
-  if ((fd = open("/dev/input/event0", O_RDONLY)) < 0)
+  // crop the entry to the event address
+  while (fgets(response, 65, fp) != NULL)
+  {
+    if (response[17] == ':')  // event 0 - 9
+    {
+      strcpyn(mouse_device, response, 17);
+    }
+    else if (response[18] == ':')  // event 10 - 99
+    {
+      strcpyn(mouse_device, response, 18);
+    }
+  }
+
+  // Close the file command
+  pclose(fp);
+
+  // Open the mouse device
+  if ((fd = open(mouse_device, O_RDONLY)) < 0)
   {
     perror("evdev open");
     exit(1);
   }
+
   struct input_event ev;
 
-  while(1)
+  while(app_exit == false)
   {
     read(fd, &ev, sizeof(struct input_event));
-
     if (ev.type == 2)  // EV_REL
     {
       if (ev.code == 0) // x
@@ -584,11 +610,9 @@ void *WaitMouseEvent(void * arg)
           x = 799;
         }
         //printf("value %d, type %d, code %d, x_pos %d, y_pos %d\n",ev.value,ev.type,ev.code, x, y);
-        //printf("x_pos %d, y_pos %d\n", x, y);
-        mouse_active = true;
-        moveCursor(x, y);
         mouse_x = x;
         mouse_y = y;
+        moveCursor(x, y);
       }
       else if (ev.code == 1) // y
       {
@@ -602,16 +626,13 @@ void *WaitMouseEvent(void * arg)
           y = 479;
         }
         //printf("value %d, type %d, code %d, x_pos %d, y_pos %d\n",ev.value,ev.type,ev.code, x, y);
-        //printf("x_pos %d, y_pos %d\n", x, y);
-        mouse_active = true;
-        while (image_complete == false)  // Wait for menu to be drawn
-        {
-          usleep(1000);
-        }
-        mouse_active = true;
-        moveCursor(x, y);
+//        while (image_complete == false)  // Wait for menu to be drawn
+//        {
+//          usleep(1000);
+//        }
         mouse_x = x;
         mouse_y = y;
+        moveCursor(x, y);
       }
       else if (ev.code == 8) // scroll wheel
       {
@@ -648,7 +669,10 @@ void *WaitMouseEvent(void * arg)
       {
         mouse_x = x;
         mouse_y = y;
+        scaledX = mouse_x;
+        scaledY = mouse_y;
         MouseClickForAction = true;
+        printf("scaledX = %d, scaledY = %d\n", scaledX, scaledY);
       }
       left_button_action = false;
     }
@@ -656,23 +680,10 @@ void *WaitMouseEvent(void * arg)
     { 
       //printf("value %d, type %d, code %d\n", ev.value, ev.type, ev.code);
     }
-    //printf("Mouse X = %d, mouse Y = %d\n", x, y);
   }
+  close(fd);
+  return NULL;
 }
-
-
-//void handle_mouse()
-//{
-  // First check if mouse is connected
-//  if (CheckMouse() != 0)    // Mouse not connected
-//  {
-//    return;
-//  }
-//  mouse_connected = true;
-//  printf("Starting Mouse Thread\n");
-//  pthread_create (&thmouse, NULL, &WaitMouseEvent, NULL);
-//}
-
 
 
 void *WebClickListener(void * arg)
@@ -2337,6 +2348,50 @@ void SetRF_ENR()
 }
 
 
+void SetSourceGPIO()
+{
+  char RequestText[64];
+  char InitText[63];
+  int newNoiseSourceGPIO;
+
+  // Stop the scan at the end of the current one and wait for it to stop
+  freeze = true;
+  while(! frozen)
+  {
+    usleep(10);                                   // wait till the end of the scan
+  }
+
+  // Define request string
+  strcpy(RequestText, "Enter the physical pin no for the GPIO (default 26)");
+
+  printf("NSG = %d, pin = %d\n", NoiseSourceGPIO, BroadcomToPin(NoiseSourceGPIO));
+
+  // Define initial value
+  snprintf(InitText, 10, "%d", BroadcomToPin(NoiseSourceGPIO));
+ 
+  // Ask for the new value
+  do
+  {
+    Keyboard(RequestText, InitText, 10);
+    newNoiseSourceGPIO = PinToBroadcom(atoi(KeyboardReturn));
+  }
+  while ((newNoiseSourceGPIO < 0) || (newNoiseSourceGPIO > 40));
+
+  NoiseSourceGPIO = newNoiseSourceGPIO;
+
+  SetConfigParam(PATH_CONFIG, "noiseswitchpin", KeyboardReturn);
+  printf("New Noise Source GPIO set to physical pin %s, Broadcom %d\n", KeyboardReturn, NoiseSourceGPIO);
+
+  // Tidy up, paint around the screen and then unfreeze
+  clearScreen(0, 0, 0);
+  DrawEmptyScreen();  // Required to set A value, which is not set in DrawTrace
+  DrawYaxisLabels();  // dB calibration on LHS
+  DrawSettings();     // Start, Stop RBW, Ref level and Title
+  ModeChanged = true; // Redraw the meter scale
+  freeze = false;
+}
+
+
 void SetFreqPreset(int button)
 {  
   char ValueToSave[63];
@@ -2768,8 +2823,8 @@ void *WaitButtonEvent(void * arg)
             freeze = true;
             usleep(100000);
             clearScreen(0, 0, 0);
-            UpdateWeb();
             publish();
+            UpdateWeb();
             usleep(1000000);
             //closeScreen();
             cleanexit(207);
@@ -3162,7 +3217,9 @@ void *WaitButtonEvent(void * arg)
           Start_Highlights_Menu10();
           UpdateWindow();
           break;
-        case 3:                                            // 
+        case 3:                                            // Set Noise Source GPIO
+          SetSourceGPIO();
+          UpdateWindow();
           break;
         case 4:                                            // 
           break;
@@ -3710,9 +3767,8 @@ void Define_Menu9()                                          // Config Menu
   button = CreateButton(9, 2);
   AddButtonStatus(button, "Set Freq^Presets", &Blue);
 
-  //button = CreateButton(9, 3);
-  //AddButtonStatus(button, "Y Plot", &Blue);
-  //AddButtonStatus(button, " ", &Green);
+  button = CreateButton(9, 3);
+  AddButtonStatus(button, "Set Noise^Source GPIO", &Blue);
 
   //button = CreateButton(9, 4);
   //AddButtonStatus(button, " ", &Blue);
@@ -4066,8 +4122,6 @@ void DrawEmptyScreen()
 
 void DrawYaxisLabels()
 {
-  //setForeColour(255, 255, 255);                    // White text
-  //setBackColour(0, 0, 0);                          // on Black
   const font_t *font_ptr = &font_dejavu_sans_18;   // 18pt
 
   // Clear the previous scale first
@@ -4544,7 +4598,6 @@ static void terminate(int sig)
 
 int main(void)
 {
-  int NoDeviceEvent=0;
   wscreen = 800;
   hscreen = 480;
   int screenXmax, screenXmin;
@@ -4598,23 +4651,43 @@ int main(void)
     sigaction(i, &sa, NULL);
   }
 
+  // Sort out display and control.  If touchscreen detected, use that (and set config) with optional web control.
+  // Allow for mouse if touchscreen detected
+  // If no touchscreen, check for mouse.  If mouse detected, use that and set hdmi720 if hdmi mode not selected
+  // Allow optional web control.  If no mouse, set hdmi720 and enable web control.
+
   // Check the display type in the config file
-  strcpy(response, "Element14_7");
+  strcpy(response, "not_set");
   GetConfigParam(PATH_SCONFIG, "display", response);
   strcpy(DisplayType, response);
 
-  // Check for presence of touchscreen
-  for(NoDeviceEvent = 0; NoDeviceEvent < 7; NoDeviceEvent++)
+  if ((strcmp(DisplayType, "Element14_7") == 0) || (strcmp(DisplayType, "touch2") == 0))
   {
-    if (openTouchScreen(NoDeviceEvent) == 1)
+    printf("Touchscreen detected after boot\n");
+    touchscreen_present = true;
+
+    // Open the touchscreen
+    for (i = 0; i < 7; i++)
     {
-      if(getTouchScreenDetails(&screenXmin, &screenXmax, &screenYmin, &screenYmax) == 1) break;
+      if (openTouchScreen(i) == 1)
+      {
+        if(getTouchScreenDetails(&screenXmin, &screenXmax, &screenYmin, &screenYmax) == 1) break;
+      }
     }
-  }
-  if(NoDeviceEvent != 7)  // Touchscreen detected
-  {
+
     // Create Touchscreen thread
     pthread_create (&thtouchscreen, NULL, &WaitTouchscreenEvent, NULL);
+
+    if (CheckMouse() == 0)
+    {
+      mouse_connected = true;
+      mouse_active = true;
+      printf("Mouse Connected\n");
+
+      // And start the mouse listener thread
+      printf("Starting Mouse Thread\n");
+      pthread_create (&thmouse, NULL, &WaitMouseEvent, NULL);
+    }
   }
   else // No touchscreen detected, check for mouse
   {
@@ -4624,17 +4697,6 @@ int main(void)
       mouse_active = true;
       printf("Mouse Connected\n");
 
-      // If display not previously set to hdmi, correct it
-      if ((strcmp(DisplayType, "hdmi") != 0) && (strcmp(DisplayType, "hdmi480") != 0)
-        && (strcmp(DisplayType, "hdmi720") != 0) && (strcmp(DisplayType, "hdmi1080") != 0))
-      {
-        strcpy(DisplayType, "hdmi720");
-        SetConfigParam(PATH_SCONFIG, "display", "hdmi720");
-        // need a linux command here to edit the cmdline.txt file and a reboot
-        //system ("/home/pi/rpidatv/scripts/set_display_config.sh");
-        //system ("sudo reboot now");
-      }
-
       // And start the mouse listener thread
       printf("Starting Mouse Thread\n");
       pthread_create (&thmouse, NULL, &WaitMouseEvent, NULL);
@@ -4643,18 +4705,16 @@ int main(void)
     {
       printf("Mouse not Connected\n");
 
-      SetConfigParam(PATH_SCONFIG, "webcontrol", "enabled");
-      webcontrol = true;
-
-      // If display not previously set to hdmi, correct it
-      if ((strcmp(DisplayType, "hdmi") != 0) && (strcmp(DisplayType, "hdmi480") != 0)
-        && (strcmp(DisplayType, "hdmi720") != 0) && (strcmp(DisplayType, "hdmi1080") != 0))
+      strcpy(response, "0");  // highlight null responses
+      GetConfigParam(PATH_SCONFIG, "webcontrol", response);
+      if (strcmp(response, "enabled") != 0)
       {
-        strcpy(DisplayType, "hdmi720");
-        SetConfigParam(PATH_SCONFIG, "display", "hdmi720");
-        // need a linux command here to edit the cmdline.txt file and a reboot
-        //system ("/home/pi/rpidatv/scripts/set_display_config.sh");
-        //system ("sudo reboot now");
+        SetConfigParam(PATH_SCONFIG, "webcontrol", "enabled");
+        webcontrol = true;
+
+        // Start the web click listener
+        pthread_create (&thwebclick, NULL, &WebClickListener, NULL);
+        printf("Created webclick listener thread\n");
       }
     }
   }
@@ -4694,7 +4754,6 @@ int main(void)
   ReadSavedParams();
 
   // Start Wiring Pi
-  //wiringPiSetup();
   wiringPiSetupPinType(WPI_PIN_BCM);  // Set up to use Broadcom GPIO numbers
 
   // Set all nominated pins to outputs
@@ -4712,8 +4771,6 @@ int main(void)
   Start_Highlights_Menu2();
 
   initScreen();
-
-  //UpdateWindow();
 
   MsgBox4("Starting the Band Viewer", "Profiling FFTs on first use", "Please wait 80 seconds", "No delay next time");
 
@@ -5095,7 +5152,7 @@ int main(void)
       }
       frozen = false;
     }
-      publish();
+    publish();
     tracecount++;
     if (tracecount >= nextwebupdate)
     {

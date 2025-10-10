@@ -30,6 +30,7 @@ extern float smoothing_factor; // 0.0 - 1.0
 extern uint8_t band;
 extern int ScaleShift;
 extern float FreqGainCal;
+extern int32_t IFatten;                     // IF attenuator, 0 through -30 dB
 
 static float hanning_window_const[FFT_SIZE];
 static float hamming_window_const[FFT_SIZE];
@@ -183,6 +184,9 @@ void *fft_thread(void *arg)
 
       // Apply the ScaleShift
       y_buffer = y_buffer + (ScaleShift * 5);
+
+      // Apply the IF Mixer loss (4 dB) and IF attenuator
+      y_buffer = y_buffer + (5 * 4) - (5 * IFatten);
 
       // Make sure that the data is within bounds
       if (y_buffer < 1)

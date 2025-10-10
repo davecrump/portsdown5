@@ -1,0 +1,15 @@
+startfreq=430000
+stopfreq=440000
+reflevel=99
+normlevel=-40
+rbw=0
+title=Portsdown HP8559A Display
+metersensor=bolo
+metertitle=KeyLimePi Power Meter
+metersource=mw
+meterrange=25
+meterzero=-15
+metermwrange=2.000000
+meteratten=0
+metercalfactor=100
+

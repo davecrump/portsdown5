@@ -9,7 +9,7 @@
 #include <linux/types.h>
 #include <linux/spi/spidev.h>
 #include <time.h>
-#include <iio.h>
+//#include <iio.h>
 #include "mcp3002.h"
 
 #define ARRAY_SIZE(a) (sizeof(a) / sizeof((a)[0]))

@@ -1,0 +1,14 @@
+dmmmode=numeric
+metersensor=pdm300
+plotbase=2.000
+plotmax=6.000
+plotduration=300
+singlescan=false
+discharged=4.000
+initialcurrent=1.000
+load=resistive
+serialplarity=normal
+title=Portsdown Digital Multimeter Display
+serialinpin=18
+loadswitchpin=7
+
