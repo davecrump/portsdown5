@@ -21,6 +21,7 @@
 
 #define PATH_SCONFIG "/home/pi/portsdown/configs/system_config.txt"
 
+bool webcontrol = true;                // Sets the extern variable in graphics.c
 bool mouse_active = false;             // Sets the extern variable in graphics.c
 int mouse_x;                           // Sets the extern variable in graphics.c
 int mouse_y;                           // Sets the extern variable in graphics.c
