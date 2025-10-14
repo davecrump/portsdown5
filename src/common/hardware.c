@@ -103,6 +103,39 @@ int CheckMouse()
 
 
 /***************************************************************************//**
+ * @brief Checks whether a Raspberry Pi Pico is connected
+ *
+ * @param 
+ *
+ * @return 0 if present, 1 if absent
+*******************************************************************************/
+
+int CheckPicoConnect()
+{
+  FILE *fp;
+  char response[255];
+  int responseint = 1;
+
+  /* Open the command for reading. */
+  fp = popen("lsusb | grep -q 'Pi Pico' ; echo $?", "r");
+  if (fp == NULL) {
+    printf("Failed to run command\n" );
+    exit(1);
+  }
+
+  /* Read the output a line at a time - output it. */
+  while (fgets(response, 7, fp) != NULL)
+  {
+    responseint = atoi(response);
+  }
+
+  /* close */
+  pclose(fp);
+  return responseint;
+}
+
+
+/***************************************************************************//**
  * @brief Looks up the current IPV4 address
  *
  * @param IPAddress (str) IP Address to be passed as a string
