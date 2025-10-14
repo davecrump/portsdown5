@@ -197,7 +197,6 @@ void *WaitTouchscreenEvent(void * arg);
 void *WebClickListener(void * arg);
 void parseClickQuerystring(char *query_string, int *x_ptr, int *y_ptr);
 FFUNC touchscreenClick(ffunc_session_t * session);
-void UpdateWeb();
 void do_snapcheck();
 int IsImageToBeChanged(int x,int y);
 void Keyboard(char RequestText[63], char InitText[63], int MaxLength);
@@ -732,17 +731,6 @@ FFUNC touchscreenClick(ffunc_session_t * session)
     ffunc_write_out(session, "Status: 400 Bad Request\r\n");
     ffunc_write_out(session, "Content-Type: text/plain\r\n\r\n");
     ffunc_write_out(session, "%s\n", "payload not found.");
-  }
-}
-
-
-void UpdateWeb()
-{
-  // Called after any screen update to update the web page if required.
-
-  if(webcontrol == true)
-  {
-    system("/home/pi/portsdown/scripts/single_screen_grab_for_web.sh &");
   }
 }
 

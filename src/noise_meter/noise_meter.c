@@ -223,7 +223,6 @@ void take_snap();
 void snap_from_menu();
 void do_snapcheck();
 int IsImageToBeChanged(int, int);
-void UpdateWeb();
 void Keyboard(char RequestText[63], char InitText[63], int MaxLength);
 int openTouchScreen(int);
 int getTouchScreenDetails(int*, int* ,int* ,int*);
@@ -948,17 +947,6 @@ int IsImageToBeChanged(int x,int y)
   else
   {
     return 0;
-  }
-}
-
-
-void UpdateWeb()
-{
-  // Called after any screen update to update the web page if required.
-
-  if(webcontrol == true)
-  {
-    system("/home/pi/portsdown/scripts/single_screen_grab_for_web.sh &");
   }
 }
 

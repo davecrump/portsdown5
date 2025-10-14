@@ -5,8 +5,9 @@ sudo killall portsdown >/dev/null 2>/dev/null
 
 # Compile Signal Generator
 cd /home/pi/portsdown/src/siggen
+touch siggen5.c
 
-make
+make -j 4 -O
 if [ $? != "0" ]; then
   echo
   echo "failed install"

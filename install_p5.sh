@@ -639,19 +639,6 @@ make -j 4 -O
 sudo cp minitiouner.rules /etc/udev/rules.d/
 
 
-# Compile Legacy Lime BandViewer
-echo
-echo "--------------------------------------------"
-echo "----- Compiling Legacy Lime BandViewer -----"
-echo "--------------------------------------------"
-
-cd /home/pi/portsdown/src/limeview
-make -j 4 -O
-  SUCCESS=$?; BuildLogMsg $SUCCESS "Lime BandViewer compile"
-
-mv /home/pi/portsdown/src/limeview/limeview /home/pi/portsdown/bin/limeview
-
-
 # Compile the Signal Generator
 echo
 echo "--------------------------------------------"
@@ -665,15 +652,42 @@ sudo make install
 cd /home/pi
 
 
-# Compile the Sweeper
+# Compile Legacy Lime BandViewer
 echo
-echo "---------------------------------"
-echo "----- Compiling the Sweeper -----"
-echo "---------------------------------"
-cd /home/pi/portsdown/src/sweeper
+echo "--------------------------------------------"
+echo "----- Compiling Legacy Lime BandViewer -----"
+echo "--------------------------------------------"
+
+cd /home/pi/portsdown/src/limeview
 make -j 4 -O
-  SUCCESS=$?; BuildLogMsg $SUCCESS "Sweeper compile"
-mv /home/pi/portsdown/src/sweeper/sweeper /home/pi/portsdown/bin/sweeper
+  SUCCESS=$?; BuildLogMsg $SUCCESS "Lime BandViewer compile"
+mv /home/pi/portsdown/src/limeview/limeview /home/pi/portsdown/bin/limeview
+cd /home/pi
+
+
+# Compile Legacy Noise Figure Meter
+echo
+echo "-----------------------------------------------"
+echo "----- Compiling Legacy Noise Figure Meter -----"
+echo "-----------------------------------------------"
+
+cd /home/pi/portsdown/src/nf_meter
+make -j 4 -O
+  SUCCESS=$?; BuildLogMsg $SUCCESS "Lime NF Meter compile"
+mv /home/pi/portsdown/src/nf_meter/nf_meter /home/pi/portsdown/bin/nf_meter
+cd /home/pi
+
+
+# Compile Legacy Noise Meter
+echo
+echo "----------------------------------------"
+echo "----- Compiling Legacy Noise Meter -----"
+echo "----------------------------------------"
+
+cd /home/pi/portsdown/src/noise_meter
+make -j 4 -O
+  SUCCESS=$?; BuildLogMsg $SUCCESS "Lime Noise Meter compile"
+mv /home/pi/portsdown/src/noise_meter/noise_meter /home/pi/portsdown/bin/noise_meter
 cd /home/pi
 
 
@@ -701,6 +715,30 @@ mv /home/pi/portsdown/src/power_meter/power_meter /home/pi/portsdown/bin/power_m
 cd /home/pi
 
 
+# Compile the Sweeper
+echo
+echo "---------------------------------"
+echo "----- Compiling the Sweeper -----"
+echo "---------------------------------"
+cd /home/pi/portsdown/src/sweeper
+make -j 4 -O
+  SUCCESS=$?; BuildLogMsg $SUCCESS "Sweeper compile"
+mv /home/pi/portsdown/src/sweeper/sweeper /home/pi/portsdown/bin/sweeper
+cd /home/pi
+
+
+# Compile the wav2lime utility
+echo
+echo "--------------------------------"
+echo "----- Compiling wav2lime -----"
+echo "--------------------------------"
+cd /home/pi/portsdown/src/wav2lime
+gcc -o wav2lime wav2lime.c -lLimeSuite
+  SUCCESS=$?; BuildLogMsg $SUCCESS "wav2lime compile"
+mv /home/pi/portsdown/src/wav2lime/wav2lime /home/pi/portsdown/bin/wav2lime
+cd /home/pi
+
+
 # Compile the PicoViewer
 echo
 echo "--------------------------------"
@@ -711,39 +749,14 @@ cd /home/pi/portsdown/src/picoview
 make -j 4 -O
   SUCCESS=$?; BuildLogMsg $SUCCESS "PicoViewer compile"
 mv /home/pi/portsdown/src/picoview/picoview /home/pi/portsdown/bin/picoview
-
-
-# Copy the fftw wisdom file to home so that there is no start-up delay
-# This file works for both BandViewer and NF Meter
-#cp .fftwf_wisdom /home/pi/.fftwf_wisdom
 cd /home/pi
 
-# Compile Legacy Noise Figure Meter
-echo
-echo "-----------------------------------------------"
-echo "----- Compiling Legacy Noise Figure Meter -----"
-echo "-----------------------------------------------"
-
-cd /home/pi/portsdown/src/nf_meter
-make -j 4 -O
-  SUCCESS=$?; BuildLogMsg $SUCCESS "Lime NF Meter compile"
-mv /home/pi/portsdown/src/nf_meter/nf_meter /home/pi/portsdown/bin/nf_meter
-cd /home/pi
-
-# Compile Legacy Noise Meter
-echo
-echo "----------------------------------------"
-echo "----- Compiling Legacy Noise Meter -----"
-echo "----------------------------------------"
-
-cd /home/pi/portsdown/src/noise_meter
-make -j 4 -O
-  SUCCESS=$?; BuildLogMsg $SUCCESS "Lime Noise Meter compile"
-
-mv /home/pi/portsdown/src/noise_meter/noise_meter /home/pi/portsdown/bin/noise_meter
-cd /home/pi
 
 if [ "$UPDATE" == "false" ]; then
+
+  # Copy the fftw wisdom file to home so that there is no start-up delay
+  # This file works for all the fft-based apps
+  cp /home/pi/portsdown/scripts/set-up_configs/.fftwf_wisdom /home/pi/.fftwf_wisdom
 
   # Enable spi for power meter and sweeper
   sudo raspi-config nonint do_spi 0
@@ -763,7 +776,6 @@ if [ "$UPDATE" == "false" ]; then
   echo "------------------------------------------"
 
   # Amend /etc/fstab to create a tmpfs drive at ~/tmp for multiple images
-  #sudo sed -i '4itmpfs           /home/pi/tmp    tmpfs   defaults,noatime,nosuid,size=10m  0  0' /etc/fstab
   sudo sh -c ' echo "tmpfs           /home/pi/tmp    tmpfs   defaults,noatime,nosuid,size=10m  0  0" >> /etc/fstab'
 
   # Create a ~/snaps folder for captured images
@@ -823,7 +835,6 @@ else   # Update
   echo $(date -u) " Update Complete" | sudo tee -a /home/pi/p5_initial_build_log.txt  > /dev/null
 
   # Record the Version Number in the build log
-  echo -e "\n" >> /home/pi/portsdown/configs/installed_version.txt
   printf "Version number: " | sudo tee -a /home/pi/p5_initial_build_log.txt  > /dev/null
   head -c 9 /home/pi/portsdown/version_history.txt | sudo tee -a /home/pi/p5_initial_build_log.txt  > /dev/null
   echo | sudo tee -a /home/pi/p5_initial_build_log.txt  > /dev/null
