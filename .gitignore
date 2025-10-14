@@ -12,5 +12,6 @@ src/limesdr_toolbox/limesdr_dvb
 src/limesdr_toolbox/limesdr_forward
 src/limesdr_toolbox/limesdr_send
 src/express_server/
+src/siggen/siggen
 src/rtl-sdr/
 

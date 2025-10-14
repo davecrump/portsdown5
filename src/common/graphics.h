@@ -39,6 +39,7 @@ void MarkerGrn(int markerx, int x, int y);
 void fb2png();
 void publishRectangle(int x, int y, int w, int h);
 void publish();
+void UpdateWeb();
 void moveCursor(int new_x, int new_y);
 void addCursor(int x, int y);
 

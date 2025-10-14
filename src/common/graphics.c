@@ -45,6 +45,7 @@ int Yinvert = 479;
 
 extern bool rotate_display;
 extern int FBOrientation;
+extern bool webcontrol;
 
 int32_t fbBytesPerPixel = 2;  // RGB565
 //int32_t fbBytesPerPixel = 4;  // RGBA8888
@@ -607,6 +608,7 @@ void MsgBox4(char *message1, char *message2, char *message3, char *message4)
   TextMid(canvasXsize / 2, canvasYsize - 4 * (linepitch * 2), message4, font_ptr, 0, 0, 0, 255, 255, 255);
 
   publish();
+  UpdateWeb();
 }
 
 
@@ -1783,4 +1785,14 @@ void publishRectangle(int x, int y, int w, int h)
   }
 }
 
+
+void UpdateWeb()
+{
+  // Called after any screen update to update the web page if required.
+
+  if(webcontrol == true)
+  {
+    system("/home/pi/portsdown/scripts/single_screen_grab_for_web.sh &");
+  }
+}
 

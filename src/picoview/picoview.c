@@ -220,8 +220,6 @@ void take_snap();
 void snap_from_menu();
 void do_snapcheck();
 int IsImageToBeChanged(int x,int y);
-int CheckPicoConnect();
-void UpdateWeb();
 void Keyboard(char RequestText[63], char InitText[63], int MaxLength);
 int openTouchScreen(int NoDevice);
 int getTouchScreenDetails(int *screenXmin, int *screenXmax,int *screenYmin,int *screenYmax);
@@ -924,50 +922,6 @@ int IsImageToBeChanged(int x,int y)
   else
   {
     return 0;
-  }
-}
-
-
-/***************************************************************************//**
- * @brief Checks whether a Raspberry Pi Pico is connected
- *
- * @param 
- *
- * @return 0 if present, 1 if absent
-*******************************************************************************/
-
-int CheckPicoConnect()
-{
-  FILE *fp;
-  char response[255];
-  int responseint = 1;
-
-  /* Open the command for reading. */
-  fp = popen("lsusb | grep -q 'Pi Pico' ; echo $?", "r");
-  if (fp == NULL) {
-    printf("Failed to run command\n" );
-    exit(1);
-  }
-
-  /* Read the output a line at a time - output it. */
-  while (fgets(response, 7, fp) != NULL)
-  {
-    responseint = atoi(response);
-  }
-
-  /* close */
-  pclose(fp);
-  return responseint;
-}
-
-
-void UpdateWeb()
-{
-  // Called after any screen update to update the web page if required.
-
-  if(webcontrol == true)
-  {
-    system("/home/pi/portsdown/scripts/single_screen_grab_for_web.sh &");
   }
 }
 

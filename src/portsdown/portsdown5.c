@@ -407,7 +407,6 @@ void checkTunerSettings();
 void SeparateStreamKey(char streamkey[127], char streamname[63], char key[63]);
 
 // Make things happen
-void UpdateWeb();
 void waitForScreenAction();
 static void cleanexit(int exit_code);
 static void terminate(int dummy);
@@ -8409,17 +8408,6 @@ void SeparateStreamKey(char streamkey[127], char streamname[63], char key[63])
     {
       key[n - keystart + 1] = '\0';            // end key
     }
-  }
-}
-
-
-void UpdateWeb()
-{
-  // Called after any screen update to update the web page if required.
-
-  if(webcontrol == true)
-  {
-    system("/home/pi/portsdown/scripts/single_screen_grab_for_web.sh &");
   }
 }
 
