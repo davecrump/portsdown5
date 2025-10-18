@@ -150,6 +150,7 @@ if [ "$UPDATE" == "true" ]; then
   DisplayUpdateMsg "Starting Software Update"
 fi
 
+echo
 if [ "$GIT_SRC" == "davecrump" ]; then
   echo "--------------------------------------------------------"
   echo "----- Installing development version of Portsdown 5-----"
@@ -793,7 +794,7 @@ if [ "$UPDATE" == "false" ]; then
   cd /home/pi
 
   if [ "$BUILD_STATUS" == "Fail" ] ; then
-    echo $(date -u) " Build stage 1 fail" | sudo tee -a /home/pi/p5_initial_build_log.txt  > /dev/null
+    echo $(date -u) "Build stage 1 fail" | sudo tee -a /home/pi/p5_initial_build_log.txt  > /dev/null
     echo
     echo "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
     echo "!!!!!   Build stage 1 complete with errors   !!!!!!!"
@@ -810,7 +811,6 @@ if [ "$UPDATE" == "false" ]; then
     echo "--------------------------------------------"
     echo "-----  Successful stage 1, no errors   -----"
     echo "-----                                  -----"
-    echo "-----           Rebooting now          -----"
     echo "--------------------------------------------"
 
     if [ "$WAIT" == "true" ]; then                 ## Wait for key press before reboot
@@ -832,7 +832,7 @@ if [ "$UPDATE" == "false" ]; then
 else   # Update
 
   DisplayUpdateMsg "Update Complete.  Rebooting"
-  echo $(date -u) " Update Complete" | sudo tee -a /home/pi/p5_initial_build_log.txt  > /dev/null
+  echo $(date -u) "Update Complete" | sudo tee -a /home/pi/p5_initial_build_log.txt  > /dev/null
 
   # Record the Version Number in the build log
   printf "Version number: " | sudo tee -a /home/pi/p5_initial_build_log.txt  > /dev/null
