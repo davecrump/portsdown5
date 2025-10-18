@@ -1,3 +1,6 @@
+202510180
+Correct SDRPlay Install
+
 202510141
 Bug fix fb2png
 
