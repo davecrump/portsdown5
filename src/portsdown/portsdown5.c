@@ -2814,7 +2814,7 @@ void playStreamVLC()
 
 
 /***************************************************************************//**
- * @brief Clears the screen and then dispklays the current TX video from UDP 
+ * @brief Clears the screen and then displays the current TX video from UDP 
  *
  * @param bool start, true to start the process, false to stop
  *
@@ -3034,7 +3034,6 @@ void SetButtonStatus(int menu, int button_number, int Status)
 }
 
 
-// int GetButtonStatus(int ButtonIndex)
 int GetButtonStatus(int menu, int button_number)
 {
   button_t *Button = &(ButtonArray[menu][button_number]);
@@ -3943,6 +3942,9 @@ void Define_Menu7()
 
   AddButtonStatus(7, 14, "PicoViewer^ ", &Blue);
   AddButtonStatus(7, 14, "PicoViewer^ ", &Grey);
+
+  AddButtonStatus(7, 6, "SDRPlay^BandViewer", &Blue);
+  AddButtonStatus(7, 6, "SDRPlay^BandViewer", &Grey);
 
   AddButtonStatus(7, 0, "Switch to^KeyLimePi SA", &Blue);
   AddButtonStatus(7, 0, "Switch to^KeyLimePi SA", &Grey);
@@ -6661,6 +6663,9 @@ void selectTestEquip(int Button)   // Test Equipment
       }
       cleanexit(170);
       break;
+    case 6:                              // SDRPlay BandViewer
+      cleanexit(144);
+      break;
     case 10:                             // SigGen
       cleanexit(130);
       break;
@@ -8775,6 +8780,7 @@ void waitForScreenAction()
           redrawMenu();
           break;
         case 0:
+        case 6:
         case 10:
         case 11:
         case 12:

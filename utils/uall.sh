@@ -18,6 +18,7 @@
 # wav2lime.c
 # fb2png.c
 # picoview.c
+# sdrplayview.c
 
 # limeng bv - to do
 # limeng nf - to do
@@ -292,6 +293,25 @@ else
   echo "Successful SA wideband SDR compile"
   echo
   mv /home/pi/portsdown/src/sa_sdr/sa_sdr /home/pi/portsdown/bin/sa_sdr
+fi
+cd /home/pi
+
+
+# Compile the SDRPlay BandViewer
+cd /home/pi/portsdown/src/sdrplayview
+touch sdrplayview.c
+make -j 4 -O
+if [ $? != "0" ]; then
+  echo
+  echo "The SDRPlay BandViewer failed to compile"
+  echo "/home/pi/portsdown/src/sdrplayview/sdrplayview.c"
+  cd /home/pi
+  exit
+else
+  echo
+  echo "Successful SDRPlay BandViewer compile"
+  echo
+  mv /home/pi/portsdown/src/sdrplayview/sdrplayview /home/pi/portsdown/bin/sdrplayview
 fi
 cd /home/pi
 

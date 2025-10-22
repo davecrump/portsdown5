@@ -9,6 +9,6 @@ tracetype=single
 freqoffset=0
 baselineshift=20
 baseline20db=-40
-display=spectrum
+display=scope
 invert=yes
 

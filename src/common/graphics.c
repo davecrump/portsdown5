@@ -645,7 +645,7 @@ void rectangle(int xpos, int ypos, int xsize, int ysize, int r, int g, int b)
         {
           p = (xpos + x + screenXsize * (Yinvert - (ypos + y))) * 2;
         }
-        else if (FBOrientation == 180)
+        else // (FBOrientation == 180)
         {
           p = (Xinvert - (xpos + x) + screenXsize * (ypos + y)) * 2;
         }

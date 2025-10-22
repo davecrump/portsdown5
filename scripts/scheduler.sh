@@ -43,8 +43,8 @@ DisplayMsg() {
     /home/pi/tmp/update.jpg
 
   # Display the update message on the desktop
-  sudo fbi -T 1 -noverbose -a /home/pi/tmp/update.jpg >/dev/null 2>/dev/null
-  (sleep 1; sudo killall -9 fbi >/dev/null 2>/dev/null) &  ## kill fbi once it has done its work
+#  sudo fbi -T 1 -noverbose -a /home/pi/tmp/update.jpg >/dev/null 2>/dev/null
+#  (sleep 1; sudo killall -9 fbi >/dev/null 2>/dev/null) &  ## kill fbi once it has done its work
 }
 
 ############ Function to check which BandViewer to start ####################

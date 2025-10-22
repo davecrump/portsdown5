@@ -1,0 +1,13 @@
+title=KeyLimePi RF Analyser IF FFT View
+span=1024
+limegain=90
+mode=spectrum
+wfallbase=-70
+wfallrange=30
+wfalltimespan=30
+tracetype=single
+freqoffset=0
+baselineshift=0
+baseline20db=-15
+scaleshift=-40
+
