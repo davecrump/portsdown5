@@ -753,7 +753,7 @@ mv /home/pi/portsdown/src/picoview/picoview /home/pi/portsdown/bin/picoview
 cd /home/pi
 
 
-if [ "$UPDATE" == "false" ]; then    # SDRPlay drivers only installed in stage 2 of build
+if [ "$UPDATE" == "true" ]; then    # SDRPlay drivers only installed in stage 2 of build
   # Compile the SDRPlay BandViewer
   echo
   echo "----------------------------------------"
