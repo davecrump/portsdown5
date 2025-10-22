@@ -753,6 +753,19 @@ mv /home/pi/portsdown/src/picoview/picoview /home/pi/portsdown/bin/picoview
 cd /home/pi
 
 
+# Compile the SDRPlay BandViewer
+echo
+echo "----------------------------------------"
+echo "----- Compiling SDRPlay BandViewer -----"
+echo "----------------------------------------"
+
+cd /home/pi/portsdown/src/sdrplayview
+make -j 4 -O
+  SUCCESS=$?; BuildLogMsg $SUCCESS "SDRPlay BandViewer compile"
+mv /home/pi/portsdown/src/sdrplayview/sdrplayview /home/pi/portsdown/bin/sdrplayview
+cd /home/pi
+
+
 if [ "$UPDATE" == "false" ]; then
 
   # Copy the fftw wisdom file to home so that there is no start-up delay
