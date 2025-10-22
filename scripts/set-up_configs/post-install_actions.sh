@@ -94,6 +94,19 @@ rm SDRplay_RSP_API-Linux-3.15.2.run
 sudo systemctl disable sdrplay  # service is started only when required
 
 
+# Compile the SDRPlay BandViewer
+echo
+echo "----------------------------------------"
+echo "----- Compiling SDRPlay BandViewer -----"
+echo "----------------------------------------"
+
+cd /home/pi/portsdown/src/sdrplayview
+make -j 4 -O
+  SUCCESS=$?; BuildLogMsg $SUCCESS "SDRPlay BandViewer compile"
+mv /home/pi/portsdown/src/sdrplayview/sdrplayview /home/pi/portsdown/bin/sdrplayview
+cd /home/pi
+
+
 # Record the Version Number in the build log
 printf "Version number: " | sudo tee -a /home/pi/p5_initial_build_log.txt  > /dev/null
 head -c 9 /home/pi/portsdown/version_history.txt | sudo tee -a /home/pi/p5_initial_build_log.txt  > /dev/null
@@ -110,8 +123,6 @@ if [ "$BUILD_STATUS" == "Fail" ] ; then
   echo
   cat /home/pi/p5_initial_build_log.txt
   echo
-  echo Enter "ugui" to run the touchscreen anyway
-  echo 
   sleep 10
 else
   echo $(date -u) "Build Stage 2 Complete" | sudo tee -a /home/pi/p5_initial_build_log.txt  > /dev/null
@@ -121,8 +132,6 @@ else
   echo "-----                                  -----"
   echo "--------------------------------------------"
   echo
-  echo Enter "ugui" to run the touchscreen
-  echo 
 fi
 
 cd /home/pi

@@ -1,6 +1,6 @@
-# Portsdown 5 Development Project
+# The Portsdown 5 Project
 
-It is hoped that the Portsdown 5, when finished, will have similar functionality to the Portsdown 4, but will run on the Raspberry Pi 4 or the Raspberry Pi 5.  It uses the 64 bit version of the trixie operating system.
+It is hoped that the Portsdown 5, when finished, will have similar functionality to the Portsdown 4, but will run on the Raspberry Pi 4 or the Raspberry Pi 5.  It uses the 64 bit version of the trixie operating system.  Development is slow because of the magnitude of the changes between 32 bit buster and 64 bit trixie.
 
 There are 3 target hardware configurations:
 
@@ -39,7 +39,7 @@ chmod +x install_p5.sh
 ./install_p5.sh
 ```
 
-The initial build can take between 45 minutes and one hour, however it does not need any user input, so go and make a cup of coffee and keep an eye on the touchscreen.  When the build is finished the Pi will reboot and start-up with the touchscreen menu.
+The initial build can take between 45 minutes and one hour, however it does not need any user input, so go and make a cup of coffee and keep an eye on the touchscreen.  When the build is finished the Pi will reboot (twice) and start-up with the touchscreen menu.
 
 - If your ISP is Virgin Media and you receive an error after entering the wget line: 'GnuTLS: A TLS fatal alert has been received.', it may be that your ISP is blocking access to GitHub.  If (only if) you get this error with Virgin Media, paste the following command in, and press return.
 ```sh
