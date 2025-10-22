@@ -102,14 +102,32 @@ echo | sudo tee -a /home/pi/p5_initial_build_log.txt  > /dev/null
 if [ "$BUILD_STATUS" == "Fail" ] ; then
   echo $(date -u) "Build Stage 2 Fail" | sudo tee -a /home/pi/p5_initial_build_log.txt  > /dev/null
   DisplayUpdateMsg "Build stage 2, failed\nread the log at\n/home/pi/p5_initial_build_log.txt"
+  echo
+  echo "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
+  echo "!!!!!   Build stage 2 complete with errors   !!!!!!!"
+  echo "!!!!!       Read log below for details       !!!!!!!"
+  echo "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
+  echo
+  cat /home/pi/p5_initial_build_log.txt
+  echo
+  echo Enter "ugui" to run the touchscreen anyway
+  echo 
   sleep 10
 else
   echo $(date -u) "Build Stage 2 Complete" | sudo tee -a /home/pi/p5_initial_build_log.txt  > /dev/null
+  echo
+  echo "--------------------------------------------"
+  echo "-----  Successful stage 2, no errors   -----"
+  echo "-----                                  -----"
+  echo "--------------------------------------------"
+  echo
+  echo Enter "ugui" to run the touchscreen
+  echo 
 fi
 
 cd /home/pi
 
 # Delete the trigger file
-rm /home/pi/portsdown/.post-install_actions
+rm /home/pi/portsdown/.post-install_actions >/dev/null 2>/dev/null
 
 exit
