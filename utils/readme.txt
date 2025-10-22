@@ -49,6 +49,8 @@ uw2l.sh : recompiles wav2lime and runs it with /home/pi/hamtv_short.wav
 
 uw2lng.sh : recompiles wav2limeng and runs it with /home/pi/hamtv_short.wav
 
+ulbvsp.sh : Recompiles the SDRPlay bandviewer app and runs it without the scheduler
+
 uall.sh: recompiles each app in term but does not run them.  Use after changes in the common libraries
 
 

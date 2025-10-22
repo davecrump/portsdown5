@@ -21,9 +21,9 @@ DisplayUpdateMsg() {
     /home/pi/tmp/update.jpg
 
   # Display the update message on the desktop
-  sudo fbi -T 1 -noverbose -a /home/pi/tmp/update.jpg >/dev/null 2>/dev/null
-  (sleep 1; sudo killall -9 fbi >/dev/null 2>/dev/null) &  ## kill fbi once it has done its work
-  /home/pi/portsdown/scripts/single_screen_grab_for_web.sh &
+#  sudo fbi -T 1 -noverbose -a /home/pi/tmp/update.jpg >/dev/null 2>/dev/null
+#  (sleep 1; sudo killall -9 fbi >/dev/null 2>/dev/null) &  ## kill fbi once it has done its work
+#  /home/pi/portsdown/scripts/single_screen_grab_for_web.sh &
 }
 
 echo $(date -u) "Build Stage 2 Started" | sudo tee -a /home/pi/p5_initial_build_log.txt  > /dev/null

@@ -1,0 +1,10 @@
+centrefreq=731000
+freqspan=100000
+points=100
+normlevel=-20
+normlabel=0
+title=KeyLimePi Sweeper Display
+sensor=ad8318-k
+source=lime
+limegain=87
+plutopwr=30

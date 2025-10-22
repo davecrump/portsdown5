@@ -4,19 +4,19 @@
 startup=Portsdown_boot
 
 # display: Element14_7, touch2, hdmi, web.  Do not set manually!
-display=hdmi
+display=Element14_7
 
 # VLC Transform required?.  0, 90, 180, 270.  Do not set manually!
-vlctransform=0
+vlctransform=180
 
 # Frame buffer rotate required? 0, 90, 180 or 270.  Do not set manually!
-fborientation=0
+fborientation=180
 
 # hdmiresolution: 720 or 1080
 hdmiresolution=720
 
 # player: vlc or ffplay
-player=vlc
+player=ffplay
 
 # touch: normal, inverted (only for Element14_7 screen)
 touch=inverted
