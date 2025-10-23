@@ -21,9 +21,9 @@ DisplayUpdateMsg() {
     /home/pi/tmp/update.jpg
 
   # Display the update message on the desktop
-  sudo fbi -T 1 -noverbose -a /home/pi/tmp/update.jpg >/dev/null 2>/dev/null
-  (sleep 1; sudo killall -9 fbi >/dev/null 2>/dev/null) &  ## kill fbi once it has done its work
-  /home/pi/portsdown/scripts/single_screen_grab_for_web.sh &
+#  sudo fbi -T 1 -noverbose -a /home/pi/tmp/update.jpg >/dev/null 2>/dev/null
+#  (sleep 1; sudo killall -9 fbi >/dev/null 2>/dev/null) &  ## kill fbi once it has done its work
+#  /home/pi/portsdown/scripts/single_screen_grab_for_web.sh &
 }
 
 echo $(date -u) "Build Stage 2 Started" | sudo tee -a /home/pi/p5_initial_build_log.txt  > /dev/null
@@ -94,6 +94,19 @@ rm SDRplay_RSP_API-Linux-3.15.2.run
 sudo systemctl disable sdrplay  # service is started only when required
 
 
+# Compile the SDRPlay BandViewer
+echo
+echo "----------------------------------------"
+echo "----- Compiling SDRPlay BandViewer -----"
+echo "----------------------------------------"
+
+cd /home/pi/portsdown/src/sdrplayview
+make -j 4 -O
+  SUCCESS=$?; BuildLogMsg $SUCCESS "SDRPlay BandViewer compile"
+mv /home/pi/portsdown/src/sdrplayview/sdrplayview /home/pi/portsdown/bin/sdrplayview
+cd /home/pi
+
+
 # Record the Version Number in the build log
 printf "Version number: " | sudo tee -a /home/pi/p5_initial_build_log.txt  > /dev/null
 head -c 9 /home/pi/portsdown/version_history.txt | sudo tee -a /home/pi/p5_initial_build_log.txt  > /dev/null
@@ -102,14 +115,28 @@ echo | sudo tee -a /home/pi/p5_initial_build_log.txt  > /dev/null
 if [ "$BUILD_STATUS" == "Fail" ] ; then
   echo $(date -u) "Build Stage 2 Fail" | sudo tee -a /home/pi/p5_initial_build_log.txt  > /dev/null
   DisplayUpdateMsg "Build stage 2, failed\nread the log at\n/home/pi/p5_initial_build_log.txt"
+  echo
+  echo "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
+  echo "!!!!!   Build stage 2 complete with errors   !!!!!!!"
+  echo "!!!!!       Read log below for details       !!!!!!!"
+  echo "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
+  echo
+  cat /home/pi/p5_initial_build_log.txt
+  echo
   sleep 10
 else
   echo $(date -u) "Build Stage 2 Complete" | sudo tee -a /home/pi/p5_initial_build_log.txt  > /dev/null
+  echo
+  echo "--------------------------------------------"
+  echo "-----  Successful stage 2, no errors   -----"
+  echo "-----                                  -----"
+  echo "--------------------------------------------"
+  echo
 fi
 
 cd /home/pi
 
 # Delete the trigger file
-rm /home/pi/portsdown/.post-install_actions
+rm /home/pi/portsdown/.post-install_actions >/dev/null 2>/dev/null
 
 exit
