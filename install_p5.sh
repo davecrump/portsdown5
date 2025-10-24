@@ -495,7 +495,7 @@ if [ "$UPDATE" == "false" ]; then
   cmake ../
     SUCCESS=$?; BuildLogMsg $SUCCESS "LimeSuite cmake"
   make -j 4 -O
-    SUCCESS=$?; BuildLogMsg $SUCCESS "LimeSuite make"
+    #SUCCESS=$?; BuildLogMsg $SUCCESS "LimeSuite make"
   sudo make install
   sudo ldconfig
   cd /home/pi

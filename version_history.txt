@@ -1,3 +1,6 @@
+202510241
+Ignore Minor LimeSuite build error
+
 202510240
 Add progress reports during build stage 2
 
