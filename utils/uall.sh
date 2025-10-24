@@ -17,6 +17,7 @@
 # sweeper.c
 # wav2lime.c
 # fb2png.c
+# msgbox.c
 # picoview.c
 # sdrplayview.c
 
@@ -198,6 +199,44 @@ else
   echo "Successful Sweeper compile"
   echo
   mv /home/pi/portsdown/src/sweeper/sweeper /home/pi/portsdown/bin/sweeper
+fi
+cd /home/pi
+
+
+# Compile the fb2png utility
+cd /home/pi/portsdown/src/fb2png
+touch fb2png.c
+make -j 4 -O
+if [ $? != "0" ]; then
+  echo
+  echo "The fb2png utility failed to compile"
+  echo "/home/pi/portsdown/src/fb2png/fb2png.c"
+  cd /home/pi
+  exit
+else
+  echo
+  echo "Successful fb2png compile"
+  echo
+  mv /home/pi/portsdown/src/fb2png/fb2png /home/pi/portsdown/bin/fb2png
+fi
+cd /home/pi
+
+
+# Compile the msgbox utility
+cd /home/pi/portsdown/src/msgbox
+touch msgbox.c
+make -j 4 -O
+if [ $? != "0" ]; then
+  echo
+  echo "The msgbox utility failed to compile"
+  echo "/home/pi/portsdown/src/msgbox/msgbox.c"
+  cd /home/pi
+  exit
+else
+  echo
+  echo "Successful msgbox compile"
+  echo
+  mv /home/pi/portsdown/src/msgbox/msgbox /home/pi/portsdown/bin/msgbox
 fi
 cd /home/pi
 

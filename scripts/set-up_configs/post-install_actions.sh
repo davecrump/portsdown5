@@ -9,23 +9,6 @@ BuildLogMsg() {
   fi
 }
 
-DisplayUpdateMsg() {
-  # Delete any old update message image
-  rm /home/pi/tmp/update.jpg >/dev/null 2>/dev/null
-
-  # Create the update image in the tempfs folder
-  convert -font "FreeSans" -size 800x480 xc:white \
-    -gravity North -pointsize 40 -annotate 0,0,0,20 "Installing Portsdown Software" \
-    -gravity Center -pointsize 50 -annotate 0 "$1""\n\nPlease wait" \
-    -gravity South -pointsize 50 -annotate 0,0,0,20 "DO NOT TURN POWER OFF" \
-    /home/pi/tmp/update.jpg
-
-  # Display the update message on the desktop
-#  sudo fbi -T 1 -noverbose -a /home/pi/tmp/update.jpg >/dev/null 2>/dev/null
-#  (sleep 1; sudo killall -9 fbi >/dev/null 2>/dev/null) &  ## kill fbi once it has done its work
-#  /home/pi/portsdown/scripts/single_screen_grab_for_web.sh &
-}
-
 echo $(date -u) "Build Stage 2 Started" | sudo tee -a /home/pi/p5_initial_build_log.txt  > /dev/null
 
 BUILD_STATUS="Success"
@@ -33,7 +16,7 @@ BUILD_STATUS="Success"
 # Check if LimeSuiteNG needs to be installed (requires reboot after config.txt amendments in Stage 1)
 if (grep 'Installing LimeNET Micro DE' /home/pi/p5_initial_build_log.txt) then
 
-  DisplayUpdateMsg "Build stage 2, step 1\nInstalling LimeSuiteNG"
+  /home/pi/portsdown/bin/msgbox -a "Build stage 2" -b "Step 1" -c "Installing LimeSuiteNG"
 
   cd /home/pi
   echo
@@ -70,6 +53,8 @@ if (grep 'Installing LimeNET Micro DE' /home/pi/p5_initial_build_log.txt) then
   echo "----- Compiling NG Lime BandViewer -----"
   echo "----------------------------------------"
 
+  /home/pi/portsdown/bin/msgbox -a "Build stage 2" -b "Step 2" -c "Compiling Lime BandViewerNG"
+
   #cd /home/pi/portsdown/src/limeviewng
   #make -j 4 -O
   #SUCCESS=$?; BuildLogMsg $SUCCESS "Lime BandViewer NG compile"
@@ -79,7 +64,12 @@ if (grep 'Installing LimeNET Micro DE' /home/pi/p5_initial_build_log.txt) then
 fi
 
 # Install SDRPlay driver
+echo
+echo "-------------------------------------"
+echo "----- Installing SDRPlay driver -----"
+echo "-------------------------------------"
 
+/home/pi/portsdown/bin/msgbox -a "Build stage 2" -b "Step 3" -c "Installing SDRPlay driver"
 cd /home/pi
 if [ ! -f  SDRplay_RSP_API-Linux-3.15.2.run ]; then
   wget https://www.sdrplay.com/software/SDRplay_RSP_API-Linux-3.15.2.run
@@ -95,11 +85,13 @@ sudo systemctl disable sdrplay  # service is started only when required
 
 
 # Compile the SDRPlay BandViewer
+
 echo
 echo "----------------------------------------"
 echo "----- Compiling SDRPlay BandViewer -----"
 echo "----------------------------------------"
 
+/home/pi/portsdown/bin/msgbox -a "Build stage 2" -b "Step 4" -c "Compiling SDRPlay driver"
 cd /home/pi/portsdown/src/sdrplayview
 make -j 4 -O
   SUCCESS=$?; BuildLogMsg $SUCCESS "SDRPlay BandViewer compile"
@@ -114,7 +106,6 @@ echo | sudo tee -a /home/pi/p5_initial_build_log.txt  > /dev/null
 
 if [ "$BUILD_STATUS" == "Fail" ] ; then
   echo $(date -u) "Build Stage 2 Fail" | sudo tee -a /home/pi/p5_initial_build_log.txt  > /dev/null
-  DisplayUpdateMsg "Build stage 2, failed\nread the log at\n/home/pi/p5_initial_build_log.txt"
   echo
   echo "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
   echo "!!!!!   Build stage 2 complete with errors   !!!!!!!"
@@ -123,6 +114,7 @@ if [ "$BUILD_STATUS" == "Fail" ] ; then
   echo
   cat /home/pi/p5_initial_build_log.txt
   echo
+  /home/pi/portsdown/bin/msgbox -a "Build stage 2" -b "Complete with errors" -c "Check log for details" -d "home/pi/p5_initial_build_log.txt"
   sleep 10
 else
   echo $(date -u) "Build Stage 2 Complete" | sudo tee -a /home/pi/p5_initial_build_log.txt  > /dev/null
@@ -132,6 +124,7 @@ else
   echo "-----                                  -----"
   echo "--------------------------------------------"
   echo
+  /home/pi/portsdown/bin/msgbox -a "Build stage 2" -b "Complete" -c "Starting Portsdown"
 fi
 
 cd /home/pi
