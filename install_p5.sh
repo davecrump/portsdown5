@@ -621,8 +621,18 @@ echo "-------------------------------------------------"
 cd /home/pi/portsdown/src/fb2png
 make -j 4 -O
   SUCCESS=$?; BuildLogMsg $SUCCESS "fb2png compile"
-
 mv /home/pi/portsdown/src/fb2png/fb2png /home/pi/portsdown/bin/fb2png
+
+
+# Compile the MsgBox utility
+echo
+echo "----------------------------------------"
+echo "----- Compiling the MsgBox Utility -----"
+echo "----------------------------------------"
+cd /home/pi/portsdown/src/msgbox
+make -j 4 -O
+  SUCCESS=$?; BuildLogMsg $SUCCESS "msgbox compile"
+mv /home/pi/portsdown/src/msgbox/msgbox /home/pi/portsdown/bin/msgbox
 
 
 # Compile LongMynd
@@ -635,7 +645,6 @@ cp -r /home/pi/portsdown/src/longmynd/ /home/pi/
 cd longmynd
 make -j 4 -O
   SUCCESS=$?; BuildLogMsg $SUCCESS "LongMynd compile"
-
 # Set up the udev rules for USB
 sudo cp minitiouner.rules /etc/udev/rules.d/
 

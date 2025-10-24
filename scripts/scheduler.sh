@@ -31,21 +31,6 @@ end
 EOF
 }
 
-########### Function to display message ####################
-
-DisplayMsg() {
-  # Delete any old update message image
-  rm /home/pi/tmp/update.jpg >/dev/null 2>/dev/null
-
-  # Create the update image in the tempfs folder
-  convert -size 800x480 xc:black -font FreeSans -fill white \
-    -gravity Center -pointsize 30 -annotate 0 "$1" \
-    /home/pi/tmp/update.jpg
-
-  # Display the update message on the desktop
-#  sudo fbi -T 1 -noverbose -a /home/pi/tmp/update.jpg >/dev/null 2>/dev/null
-#  (sleep 1; sudo killall -9 fbi >/dev/null 2>/dev/null) &  ## kill fbi once it has done its work
-}
 
 ############ Function to check which BandViewer to start ####################
 
@@ -284,34 +269,34 @@ echo
       RPISTATE="Not_Ready"
       while [[ "$RPISTATE" == "Not_Ready" ]]
       do
-        DisplayMsg "Restarting SDRPlay Service\n\nThis may take up to 90 seconds"
+        /home/pi/portsdown/bin/msgbox -a "Restarting SDRPlay Service" -b "This may take up to 90 seconds"
         /home/pi/portsdown/scripts/single_screen_grab_for_web.sh &
 
         sudo systemctl restart sdrplay
 
-        DisplayMsg " "                      # Display Blank screen
+        /home/pi/portsdown/bin/msgbox -a blank    # Display Blank screen
         /home/pi/portsdown/scripts/single_screen_grab_for_web.sh &
 
         lsusb | grep -q '1df7:'             # check for SDRPlay
         if [ $? != 0 ]; then                # Not detected
-          DisplayMsg "Unable to detect SDRPlay\n\nResetting the USB Bus"
+          /home/pi/portsdown/bin/msgbox -a "Unable to detect SDRPlay" -b "Resetting the USB Bus"
           /home/pi/portsdown/scripts/single_screen_grab_for_web.sh &
           sudo uhubctl -R -a 2              # So reset USB bus
           sleep 1
 
           lsusb | grep -q '1df7:'           # Check again
           if [ $? != 0 ]; then              # Not detected
-            DisplayMsg "Unable to detect SDRPlay\n\nResetting the USB Bus"
+            /home/pi/portsdown/bin/msgbox -a "Still unable to detect SDRPlay" -b "Resetting the USB Bus again"
             /home/pi/portsdown/scripts/single_screen_grab_for_web.sh &
             sudo uhubctl -R -a 2            # Try reset USB bus again
             sleep 1
 
             lsusb | grep -q '1df7:'         # Has that worked?
             if [ $? != 0 ]; then            # No
-              DisplayMsg "Still Unable to detect SDRPlay\n\n\nCheck connections"
+              /home/pi/portsdown/bin/msgbox -a "Still unable to detect SDRPlay" -b "Check connections"
               /home/pi/portsdown/scripts/single_screen_grab_for_web.sh &
               sleep 2
-              DisplayMsg " "                # Display Blank screen
+              /home/pi/portsdown/bin/msgbox -a blank               # Display Blank screen
               /home/pi/portsdown/scripts/single_screen_grab_for_web.sh &
             else
               RPISTATE="Ready"     
@@ -365,34 +350,34 @@ echo
       RPISTATE="Not_Ready"
       while [[ "$RPISTATE" == "Not_Ready" ]]
       do
-        DisplayMsg "Restarting SDRPlay Service\n\nThis may take up to 90 seconds"
+        /home/pi/portsdown/bin/msgbox -a "Restarting SDRPlay Service" -b "This may take up to 90 seconds"
         /home/pi/portsdown/scripts/single_screen_grab_for_web.sh &
 
         sudo systemctl restart sdrplay
 
-        DisplayMsg " "                      # Display Blank screen
+        /home/pi/portsdown/bin/msgbox -a blank    # Display Blank screen
         /home/pi/portsdown/scripts/single_screen_grab_for_web.sh &
 
         lsusb | grep -q '1df7:'             # check for SDRPlay
         if [ $? != 0 ]; then                # Not detected
-          DisplayMsg "Unable to detect SDRPlay\n\nResetting the USB Bus"
+          /home/pi/portsdown/bin/msgbox -a "Unable to detect SDRPlay" -b "Resetting the USB Bus"
           /home/pi/portsdown/scripts/single_screen_grab_for_web.sh &
           sudo uhubctl -R -a 2              # So reset USB bus
           sleep 1
 
           lsusb | grep -q '1df7:'           # Check again
           if [ $? != 0 ]; then              # Not detected
-            DisplayMsg "Unable to detect SDRPlay\n\nResetting the USB Bus"
+            /home/pi/portsdown/bin/msgbox -a "Still unable to detect SDRPlay" -b "Resetting the USB Bus again"
             /home/pi/portsdown/scripts/single_screen_grab_for_web.sh &
             sudo uhubctl -R -a 2            # Try reset USB bus again
             sleep 1
 
             lsusb | grep -q '1df7:'         # Has that worked?
             if [ $? != 0 ]; then            # No
-              DisplayMsg "Still Unable to detect SDRPlay\n\n\nCheck connections"
+              /home/pi/portsdown/bin/msgbox -a "Still unable to detect SDRPlay" -b "Check connections"
               /home/pi/portsdown/scripts/single_screen_grab_for_web.sh &
               sleep 2
-              DisplayMsg " "                # Display Blank screen
+              /home/pi/portsdown/bin/msgbox -a blank               # Display Blank screen
               /home/pi/portsdown/scripts/single_screen_grab_for_web.sh &
             else
               RPISTATE="Ready"     

@@ -1,3 +1,6 @@
+202510240
+Add progress reports during build stage 2
+
 202510223
 Correct SDRPlay API Install
 
