@@ -1,3 +1,8 @@
+202510260
+Improve receive reliability by replacing fbi
+Add snap viewer to Portsdown and SDRplay BandViewer
+
+
 202510250
 Correct default stream presets
 

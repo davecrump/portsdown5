@@ -42,6 +42,8 @@ void publish();
 void UpdateWeb();
 void moveCursor(int new_x, int new_y);
 void addCursor(int x, int y);
+void bmp2fb(char *bmpfile);
+void img2fb(char *imgfile);
 
 
 #endif /* __GRAPHICS_H__ */

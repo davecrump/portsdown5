@@ -33,7 +33,6 @@ pthread_t thbutton;
 pthread_t thwebclick;     //  Listens for mouse clicks from web interface
 pthread_t thtouchscreen;  //  listens to the touchscreen   
 pthread_t thmouse;        //  Listens to the mouse
-pthread_t thsnap;         //  kills fbi on screen touch to exit snapviewer
 
 int debug_level = 0;                   // 0 minimum, 1 medium, 2 max
 int fd = 0;
@@ -240,7 +239,6 @@ FFUNC touchscreenClick(ffunc_session_t * session);
 void take_snap();
 void snap_from_menu();
 int checkSnapIndex();
-void *WaitSnapButton(void * arg);
 void do_snapcheck();
 int IsImageToBeChanged();
 int CheckSDRPlay();
@@ -887,28 +885,13 @@ int checkSnapIndex()
 }
 
 
-void *WaitSnapButton(void * arg)
-{
-  while((getTouchSample(&rawX, &rawY) == 0))
-  {
-    usleep(10000);
-  }
-  system("sudo killall fbi >/dev/null 2>/dev/null");  // kill instance of fbi
-  return NULL;
-}
-
-
 void do_snapcheck()
 {
-  //FILE *fp;
   char SnapIndex[255];
   //int SnapNumber;
   int Snap;
   int LastDisplayedSnap = -1;
   int TCDisplay = -1;
-
-  char fbicmd[255];
-  char rotatecmd[255];
   char labelcmd[255];
 
   clearScreen(0, 0, 0);
@@ -917,49 +900,25 @@ void do_snapcheck()
 
   while (((TCDisplay == 1) || (TCDisplay == -1)) && (SnapNumber != 0))
   {
-    // Create thread to kill fbi
-    pthread_create (&thsnap, NULL, &WaitSnapButton, NULL);
+
 
     if(LastDisplayedSnap != Snap)  // only redraw if not already there
     {
       sprintf(SnapIndex, "%d", Snap);
 
-      if (FBOrientation == 180)
-      {
-        system("rm /home/pi/tmp/snapinverted.jpg >/dev/null 2>/dev/null");
-        system("rm /home/pi/tmp/labelledsnap.jpg >/dev/null 2>/dev/null");
+      system("rm /home/pi/tmp/labelledsnap.jpg >/dev/null 2>/dev/null");
 
-        // Label the snap before inverting it
-        strcpy(labelcmd, "convert /home/pi/snaps/snap");
-        strcat(labelcmd, SnapIndex);
-        strcat(labelcmd, ".jpg -pointsize 20 -fill white -draw 'text 5,460 \"Snap ");
-        strcat(labelcmd, SnapIndex);
-        strcat(labelcmd, "\"' /home/pi/tmp/labelledsnap.jpg");
-        system(labelcmd);
+      // Label the snap
+      strcpy(labelcmd, "convert /home/pi/snaps/snap");
+      strcat(labelcmd, SnapIndex);
+      strcat(labelcmd, ".jpg -pointsize 20 -fill white -draw 'text 5,460 \"Snap ");
+      strcat(labelcmd, SnapIndex);
+      strcat(labelcmd, "\"' /home/pi/tmp/labelledsnap.jpg");
+      system(labelcmd);
 
-        // Invert the labelled snap
-        strcpy(rotatecmd, "convert /home/pi/tmp/labelledsnap");
-        strcat(rotatecmd, ".jpg -rotate 180 /home/pi/tmp/snapinverted.jpg");
-        system(rotatecmd);
+      // Display it
+      img2fb("/home/pi/tmp/labelledsnap.jpg");
 
-        // Display it
-        strcpy(fbicmd, "sudo fbi -T 1 -noverbose -a /home/pi/tmp/snapinverted.jpg >/dev/null 2>/dev/null");
-        system(fbicmd);
-      }
-      else
-      {
-        // Label the snap
-        strcpy(labelcmd, "convert /home/pi/snaps/snap");
-        strcat(labelcmd, SnapIndex);
-        strcat(labelcmd, ".jpg -pointsize 20 -fill white -draw 'text 5,460 \"Snap ");
-        strcat(labelcmd, SnapIndex);
-        strcat(labelcmd, "\"' /home/pi/tmp/labelledsnap.jpg");
-        system(labelcmd);
-
-        // Display it
-        strcpy(fbicmd, "sudo fbi -T 1 -noverbose -a /home/pi/tmp/labelledsnap.jpg >/dev/null 2>/dev/null");
-        system(fbicmd);
-      }
       LastDisplayedSnap = Snap;
       UpdateWeb();
     }
@@ -979,12 +938,9 @@ void do_snapcheck()
         Snap = SnapNumber - 1;
       }
     }
-
-    pthread_join(thsnap, NULL);
   }
 
   // Tidy up and display touch menu
-  system("sudo killall fbi >/dev/null 2>/dev/null");  // kill any instance of fbi
   clearScreen(0, 0, 0);
 }
 
@@ -992,6 +948,11 @@ void do_snapcheck()
 int IsImageToBeChanged()
 {
   // Returns -1 for LHS touch, 0 for centre and 1 for RHS
+
+  while((getTouchSample(&rawX, &rawY) == 0))
+  {
+    usleep(10000);
+  }
 
   if (scaledX <= wscreen/8)
   {
@@ -3409,13 +3370,11 @@ void *WaitButtonEvent(void * arg)
             usleep(10);
           }
           do_snapcheck();           // Call the snapcheck
-
-          initScreen();             // Start the screen again
           DrawEmptyScreen();        // Required to set A value, which is not set in DrawTrace
           DrawYaxisLabels();        // dB calibration on LHS
           DrawTickMarks();          // tick marks on X axis
           DrawSettings();           // Start, Stop RBW, Ref level and Title
-          redrawMenu();           // Draw the buttons
+          redrawMenu();             // Draw the buttons
           freeze = false;           // Restart the scan
           break;
         case 3:                                            // Restart
