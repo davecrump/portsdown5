@@ -624,6 +624,17 @@ make -j 4 -O
 mv /home/pi/portsdown/src/fb2png/fb2png /home/pi/portsdown/bin/fb2png
 
 
+# Compile the image display utility
+echo
+echo "-----------------------------------------------"
+echo "----- Compiling the Image Display Utility -----"
+echo "-----------------------------------------------"
+cd /home/pi/portsdown/src/img2fb
+make -j 4 -O
+  SUCCESS=$?; BuildLogMsg $SUCCESS "img2fb compile"
+mv /home/pi/portsdown/src/img2fb/img2fb /home/pi/portsdown/bin/img2fb
+
+
 # Compile the MsgBox utility
 echo
 echo "----------------------------------------"

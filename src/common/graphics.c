@@ -350,7 +350,6 @@ int font_width_string(const font_t *font_ptr, char *string)
  * @return the character width
  * 
 *******************************************************************************/
-
 int displayChar(const font_t *font_ptr, char c, uint8_t backColourR, uint8_t backColourG, uint8_t backColourB, uint8_t foreColourR, uint8_t foreColourG, uint8_t foreColourB, int currentX, int currentY)
 {
   // Draws the character based on currentX and currentY at the bottom line (descenders below)
@@ -1175,7 +1174,7 @@ int initScreen(void)
 
   screenYsize = vinfo.yres;
 
-  printf("Screen %d x %d\n", screenXsize, screenYsize);
+  //printf("Screen %d x %d\n", screenXsize, screenYsize);
   
   screenSize = finfo.smem_len;
   fbp = (char*)mmap(0, screenSize, PROT_READ | PROT_WRITE, MAP_SHARED, fbfd, 0);
@@ -1794,5 +1793,124 @@ void UpdateWeb()
   {
     system("/home/pi/portsdown/scripts/single_screen_grab_for_web.sh &");
   }
+}
+
+
+/***************************************************************************//**
+ * @brief Takes an 800x480 24 bit bmp and displays it on the framebuffer
+ *        Note: it ignores any metadata and assumes the file format is correct
+ *
+ * @param *bmpfile  .bmp File to display
+ *
+ * @return void
+ * 
+*******************************************************************************/
+void bmp2fb(char *bmpfile)
+{
+
+  char r = 64;
+  char g = 64;
+  char b = 64;
+  
+  int p;    // Pixel Memory offset
+  int x;    // x pixel count, 0 - 799
+  int y;    // y pixel count, 0 - 479
+
+  char gb;  // gggBBBbb RGB565 byte 2 (written first)
+  char rg;  // RRRrrGGG RGB565 byte 1 (written second)
+
+  FILE *fp = fopen(bmpfile, "rb");
+  if (fp == NULL)
+  {
+    fprintf(stderr, "cannot open %s: %s\n", bmpfile, strerror(errno));
+    return;
+  }
+
+  long size;
+    
+  if (fseek(fp, 0, SEEK_END) < 0 || (size = ftell(fp)) < 0)
+  {
+    fprintf(stderr, "cannot determine file size %s: %s\n", bmpfile, strerror(errno));
+    // should read the file and reallocate the buffer as needed
+    fclose(fp);
+    return;
+  }
+
+  char *dict = malloc(size + 1);
+  if (dict == NULL)
+  {
+    fprintf(stderr, "cannot allocate memory: %s\n", strerror(errno));
+    fclose(fp);
+    return;
+  }
+
+  rewind(fp);
+  size_t nread = fread(dict, 1, size, fp);
+
+  if (nread != size)
+   {
+    fprintf(stderr, "only read %zu/%zu bytes\n", nread, size);
+  }
+  dict[nread] = '\0';
+
+  fclose(fp);
+
+  uint32_t index;
+
+  for(y = 0; y < screenYsize; y++)
+  {
+    for(x = 0; x < screenXsize; x++)
+    {
+      // Check touchscreen orientation
+      if (FBOrientation == 0)
+      {
+        index = 138 + (x + (screenYsize - y) * screenXsize) * 3;
+      }
+
+      else //if (FBOrientation == 180)
+      {
+        index = 138 + ((screenXsize - x) + y * screenXsize) * 3;
+      }
+
+      b = dict[index];
+      g =  dict[1 + index];
+      r =  dict[2 + index];
+
+      gb = ((g & 0x1C) << 3) | (b  >> 3); // Take middle 3 Bits of G component and top 5 bits of Blue component
+      rg = (r & 0xF8) | (g >> 5);         // Take top 5 bits of Red component and top 3 bits of G component
+
+      p = (x + screenXsize * y) * 2;
+
+      memset(back_fbp + p,     gb, 1); 
+      memset(back_fbp + p + 1, rg, 1);
+    }
+  }
+
+  free(dict);
+
+  publish();
+}
+
+
+/***************************************************************************//**
+ * @brief Takes any image file and converts it to an 800x480 24 bit bmp and
+ *        stores it on the ~/tmp drive before displaying it using bmp2fb
+ *
+ * @param *imgfile  File to display
+ *
+ * @return void
+ * 
+*******************************************************************************/
+void img2fb(char *imgfile)
+{
+  char convert_command[127];
+
+  system("rm /home/pi/tmp/bmpfile.bmp  >/dev/null 2>/dev/null");
+  snprintf(convert_command, 126, "convert %s -type truecolor -resize 800x480 /home/pi/tmp/bmpfile.bmp", imgfile);
+
+  // printf("%s\n", convert_command);
+  system(convert_command);
+
+  bmp2fb("/home/pi/tmp/bmpfile.bmp");
 }
 

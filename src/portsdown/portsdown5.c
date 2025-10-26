@@ -151,6 +151,7 @@ bool boot_to_rx = false;
 
 bool test20 = false;
 bool test21 = false;
+int SnapNumber;                        // Number for next snap
 
 // Lime gain calibration for 0 to -21 dB
 int limeGainSet[25] = {100, 99, 97, 96, 95,
@@ -405,6 +406,10 @@ void ToggleAmendStreamerPreset();
 void InfoScreen();
 void checkTunerSettings();
 void SeparateStreamKey(char streamkey[127], char streamname[63], char key[63]);
+void take_snap();
+int checkSnapIndex();
+void do_snapcheck();
+int IsImageToBeChanged();
 
 // Make things happen
 void waitForScreenAction();
@@ -1501,7 +1506,6 @@ void LMRX(int NoButton)
   int SR;
   char Value[63];
   bool Overlay_displayed = false;
-  char LinuxCommand[255];
 
   // To be Global Paramaters:
 
@@ -1565,56 +1569,18 @@ void LMRX(int NoButton)
   }
   else if ((NoButton == 1) || (NoButton == 5))   // diagnostics, LNB autoset and hdmi modes
   {
-    switch (FBOrientation)
-    {
-    case 0:
-      strcpy(LinuxCommand, "sudo fbi -T 1 -noverbose -a /home/pi/portsdown/images/RX_Black.png ");
-      break;
-    case 90:
-      strcpy(LinuxCommand, "sudo fbi -T 1 -noverbose -a /home/pi/portsdown/images/RX_Black90.png ");
-      break;
-    case 180:
-      strcpy(LinuxCommand, "sudo fbi -T 1 -noverbose -a /home/pi/portsdown/images/RX_Black180.png ");
-      break;
-    case 270:
-      strcpy(LinuxCommand, "sudo fbi -T 1 -noverbose -a /home/pi/portsdown/images/RX_Black270.png ");
-      break;
-    }
-    //strcpy(LinuxCommand, "sudo fbi -T 1 -noverbose -a /home/pi/portsdown/images/RX_Black.png ");
-    strcat(LinuxCommand, ">/dev/null 2>/dev/null");
-    system(LinuxCommand);
-    strcpy(LinuxCommand, "(sleep 1; sudo killall -9 fbi >/dev/null 2>/dev/null) &");
-    system(LinuxCommand);
+    img2fb("/home/pi/portsdown/images/RX_Black.png");
   }
   else if ((NoButton == 0) || (NoButton == 2))   // VLC modes
   {
-    switch (FBOrientation)
-    {
-    case 0:
-      strcpy(LinuxCommand, "sudo fbi -T 1 -noverbose -a /home/pi/portsdown/images/RX_overlay.png ");
-      break;
-    case 90:
-      strcpy(LinuxCommand, "sudo fbi -T 1 -noverbose -a /home/pi/portsdown/images/RX_overlay90.png ");
-      break;
-    case 180:
-      strcpy(LinuxCommand, "sudo fbi -T 1 -noverbose -a /home/pi/portsdown/images/RX_overlay180.png ");
-      break;
-    case 270:
-      strcpy(LinuxCommand, "sudo fbi -T 1 -noverbose -a /home/pi/portsdown/images/RX_overlay270.png ");
-      break;
-    }
-
+    img2fb("/home/pi/portsdown/images/RX_overlay.png");
     Overlay_displayed = true;
-    strcat(LinuxCommand, ">/dev/null 2>/dev/null");
-    system(LinuxCommand);
-    strcpy(LinuxCommand, "(sleep 1; sudo killall -9 fbi >/dev/null 2>/dev/null) &");
-    system(LinuxCommand);
-    UpdateWeb();
   }
   else // MER display modes
   {
     clearScreen(0, 0, 0);
   }
+  UpdateWeb();
 
   // Initialise and calculate the text display
   const font_t *font_ptr = &font_dejavu_sans_28;
@@ -1656,8 +1622,8 @@ void LMRX(int NoButton)
     if (NoButton == 2)
     {
       fp=popen(PATH_SCRIPT_LMRXVLCUDP2, "r");
-   }
-    
+    }
+
     if(fp==NULL) printf("Process error\n");
 
     printf("STARTING VLC with FFMPEG RX\n");
@@ -3853,6 +3819,7 @@ void Define_Menu4()
 
   AddButtonStatus(4, 4, "Return to^Main Menu", &Blue);
 
+  AddButtonStatus(4, 9, "Check Snap", &Blue);
 
 }
 
@@ -8417,6 +8384,144 @@ void SeparateStreamKey(char streamkey[127], char streamname[63], char key[63])
 }
 
 
+void take_snap()
+{
+  char mvcmd[255];
+  char echocmd[255];
+  char SnapIndexText[255];
+
+  SnapNumber = checkSnapIndex();  // this is the next snap number to be saved.  Needs incrementing before exit
+
+  //printf("pre-fb2png\n");
+  fb2png(); // saves snap to /home/pi/tmp/snapshot.png
+  //printf("post-fb2png\n");
+
+  usleep(1000);
+
+  system("convert /home/pi/tmp/snapshot.png /home/pi/tmp/screen.jpg");
+
+  sprintf(SnapIndexText, "%d", SnapNumber);
+  strcpy(mvcmd, "cp /home/pi/tmp/screen.jpg /home/pi/snaps/snap");
+  strcat(mvcmd, SnapIndexText);
+  strcat(mvcmd, ".jpg >/dev/null 2>/dev/null");
+  system(mvcmd);
+
+  snprintf(echocmd, 50, "echo %d > /home/pi/snaps/snap_index.txt", SnapNumber + 1);
+  system (echocmd);
+  SnapNumber++;
+}
+
+
+int checkSnapIndex()
+{
+  char SnapIndex[255];
+  FILE *fp;
+
+  // Fetch the Next Snap serial number
+  fp = popen("cat /home/pi/snaps/snap_index.txt", "r");
+  if (fp == NULL) 
+  {
+    printf("Failed to run command\n" );
+    exit(1);
+  }
+  // Read the output a line at a time - output it. 
+  while (fgets(SnapIndex, 20, fp) != NULL)
+  {
+    //printf("%s", SnapIndex);
+  }
+
+  pclose(fp);
+
+  SnapNumber = atoi(SnapIndex);
+  return SnapNumber;
+}
+
+
+void do_snapcheck()
+{
+  char SnapIndex[255];
+  int Snap;
+  int LastDisplayedSnap = -1;
+  int TCDisplay = -1;
+  char labelcmd[255];
+
+  clearScreen(0, 0, 0);
+
+  Snap = checkSnapIndex() - 1;
+
+  while (((TCDisplay == 1) || (TCDisplay == -1)) && (SnapNumber != 0))
+  {
+
+
+    if(LastDisplayedSnap != Snap)  // only redraw if not already there
+    {
+      sprintf(SnapIndex, "%d", Snap);
+
+      system("rm /home/pi/tmp/labelledsnap.jpg >/dev/null 2>/dev/null");
+
+      // Label the snap
+      strcpy(labelcmd, "convert /home/pi/snaps/snap");
+      strcat(labelcmd, SnapIndex);
+      strcat(labelcmd, ".jpg -pointsize 20 -fill white -draw 'text 5,460 \"Snap ");
+      strcat(labelcmd, SnapIndex);
+      strcat(labelcmd, "\"' /home/pi/tmp/labelledsnap.jpg");
+      system(labelcmd);
+
+      // Display it
+      img2fb("/home/pi/tmp/labelledsnap.jpg");
+
+      LastDisplayedSnap = Snap;
+      UpdateWeb();
+    }
+
+
+    TCDisplay = IsImageToBeChanged();  // check if touch was previous snap, next snap or exit
+
+    if (TCDisplay != 0)
+    {
+      Snap = Snap + TCDisplay;
+      if (Snap >= SnapNumber)
+      {
+        Snap = 0;
+      }
+      if (Snap < 0)
+      {
+        Snap = SnapNumber - 1;
+      }
+    }
+  }
+
+  // Tidy up and display touch menu
+  clearScreen(0, 0, 0);
+}
+
+
+int IsImageToBeChanged()
+{
+  // Returns -1 for LHS touch, 0 for centre and 1 for RHS
+  int rawX = 0;
+  int rawY = 0;
+
+  while((getTouchSample(&rawX, &rawY) == 0))
+  {
+    usleep(10000);
+  }
+
+  if (scaledX <= wscreen/8)
+  {
+    return -1;
+  }
+  else if (scaledX >= 7 * wscreen/8)
+  {
+    return 1;
+  }
+  else
+  {
+    return 0;
+  }
+}
+
+
 void waitForScreenAction()
 {
   int i;
@@ -8727,6 +8832,10 @@ void waitForScreenAction()
         case 4:                        // Back to Main Menu
           printf("MENU 1 \n");
           CurrentMenu = 1;
+          redrawMenu();
+          break;
+        case 9:                       // Snap Check
+          do_snapcheck();
           redrawMenu();
           break;
         }
@@ -9639,6 +9748,7 @@ int main(int argc, char **argv)
   CreateButtons();
   Define_Menus();
   ReadSavedParams();
+  checkSnapIndex();
   redrawMenu();
   usleep(1000000);
   redrawMenu();  // Second time over-writes system message
