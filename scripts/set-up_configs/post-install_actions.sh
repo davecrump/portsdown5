@@ -10,6 +10,11 @@ BuildLogMsg() {
 }
 
 echo $(date -u) "Build Stage 2 Started" | sudo tee -a /home/pi/p5_initial_build_log.txt  > /dev/null
+/home/pi/portsdown/bin/msgbox -a "Portsdown 5" -b "Starting" -c "Build Stage 2"
+sleep 1
+
+# Delete the trigger file (so even if the script fails, user can reboot to Portsdown)
+rm /home/pi/portsdown/.post-install_actions >/dev/null 2>/dev/null
 
 BUILD_STATUS="Success"
 
@@ -68,15 +73,23 @@ echo
 echo "-------------------------------------"
 echo "----- Installing SDRPlay driver -----"
 echo "-------------------------------------"
-
 /home/pi/portsdown/bin/msgbox -a "Build stage 2" -b "Step 3" -c "Installing SDRPlay driver"
+
 cd /home/pi
 if [ ! -f  SDRplay_RSP_API-Linux-3.15.2.run ]; then
   wget https://www.sdrplay.com/software/SDRplay_RSP_API-Linux-3.15.2.run
+  if [ ! -f  SDRplay_RSP_API-Linux-3.15.2.run ]; then
+    echo $(date -u) "Failed to download SDRPlay API" | sudo tee -a /home/pi/p5_initial_build_log.txt  > /dev/null
+    /home/pi/portsdown/bin/msgbox -a "Build stage 2" -b "Failed to download SDRPlay driver" -c "Exiting to Portsdown"
+    sleep 10
+    echo $(date -u) "Build Stage 2 Fail" | sudo tee -a /home/pi/p5_initial_build_log.txt  > /dev/null
+    exit
+  fi
 fi
 chmod +x SDRplay_RSP_API-Linux-3.15.2.run
 
-/home/pi/portsdown/scripts/set-up_configs/sdrplay_api_install.exp
+( /home/pi/portsdown/scripts/set-up_configs/sdrplay_api_install.exp ) & sleep 15 ; kill $!
+#/home/pi/portsdown/scripts/set-up_configs/sdrplay_api_install.exp
   SUCCESS=$?; BuildLogMsg $SUCCESS "sdrplay api install"
 
 cd /home/pi
@@ -128,8 +141,5 @@ else
 fi
 
 cd /home/pi
-
-# Delete the trigger file
-rm /home/pi/portsdown/.post-install_actions >/dev/null 2>/dev/null
 
 exit

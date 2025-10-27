@@ -1903,10 +1903,10 @@ void bmp2fb(char *bmpfile)
 *******************************************************************************/
 void img2fb(char *imgfile)
 {
-  char convert_command[127];
+  char convert_command[255];
 
   system("rm /home/pi/tmp/bmpfile.bmp  >/dev/null 2>/dev/null");
-  snprintf(convert_command, 126, "convert %s -type truecolor -resize 800x480 /home/pi/tmp/bmpfile.bmp", imgfile);
+  snprintf(convert_command, 254, "convert %s -type truecolor -resize 800x480 -background black -gravity center -extent 800x480 /home/pi/tmp/bmpfile.bmp", imgfile);
 
   // printf("%s\n", convert_command);
   system(convert_command);
