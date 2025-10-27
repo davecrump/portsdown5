@@ -17,6 +17,7 @@
 # sweeper.c
 # wav2lime.c
 # fb2png.c
+# img2fb.c
 # msgbox.c
 # picoview.c
 # sdrplayview.c
@@ -218,6 +219,25 @@ else
   echo "Successful fb2png compile"
   echo
   mv /home/pi/portsdown/src/fb2png/fb2png /home/pi/portsdown/bin/fb2png
+fi
+cd /home/pi
+
+
+# Compile the img2fb utility
+cd /home/pi/portsdown/src/img2fb
+touch img2fb.c
+make -j 4 -O
+if [ $? != "0" ]; then
+  echo
+  echo "The img2fb utility failed to compile"
+  echo "/home/pi/portsdown/src/img2fb/img2fb.c"
+  cd /home/pi
+  exit
+else
+  echo
+  echo "Successful img2fb compile"
+  echo
+  mv /home/pi/portsdown/src/img2fb/img2fb /home/pi/portsdown/bin/img2fb
 fi
 cd /home/pi
 

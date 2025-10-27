@@ -1,3 +1,11 @@
+202510271
+Increase fault-tolerance of post-install script
+Better handle image display
+
+202510261
+Improve receive reliability by replacing fbi
+Add snap viewer to Portsdown and SDRplay BandViewer
+
 202510250
 Correct default stream presets
 

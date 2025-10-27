@@ -24,25 +24,10 @@ EOF
 
 cd /home/pi
 
-FBORIENTATION=$(get_config_var fborientation $SCONFIGFILE)
+#FBORIENTATION=$(get_config_var fborientation $SCONFIGFILE)
 
-# Display logo to indicate receive has stopped
-case "$FBORIENTATION" in
-  0)
-    sudo fbi -T 1 -noverbose -a /home/pi/portsdown/images/RX_Black.png >/dev/null 2>/dev/null
-  ;;
-  90)
-    sudo fbi -T 1 -noverbose -a /home/pi/portsdown/images/RX_Black90.png >/dev/null 2>/dev/null
-  ;;
-  180)
-    sudo fbi -T 1 -noverbose -a /home/pi/portsdown/images/RX_Black180.png >/dev/null 2>/dev/null
-  ;;
-  270)
-    sudo fbi -T 1 -noverbose -a /home/pi/portsdown/images/RX_Black270.png >/dev/null 2>/dev/null
-  ;;
-esac
 
-(sleep 1; sudo killall -9 fbi >/dev/null 2>/dev/null) &  ## kill fbi once it has done its work
+/home/pi/portsdown/bin/img2fb -f /home/pi/portsdown/images/RX_Black.png
 
 sudo killall ffplay >/dev/null 2>/dev/null
 
