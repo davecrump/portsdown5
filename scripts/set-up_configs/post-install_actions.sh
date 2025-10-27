@@ -90,7 +90,7 @@ chmod +x SDRplay_RSP_API-Linux-3.15.2.run
 
 ( /home/pi/portsdown/scripts/set-up_configs/sdrplay_api_install.exp ) & sleep 15 ; kill $!
 #/home/pi/portsdown/scripts/set-up_configs/sdrplay_api_install.exp
-  SUCCESS=$?; BuildLogMsg $SUCCESS "sdrplay api install"
+#  SUCCESS=$?; BuildLogMsg $SUCCESS "sdrplay api install"
 
 cd /home/pi
 rm SDRplay_RSP_API-Linux-3.15.2.run
