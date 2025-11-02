@@ -957,8 +957,6 @@ int CheckLimeConnect()
   char response[255];
   int responseint = 1;
 
-return 0;
-
   /* Open the command for reading. */
   fp = popen("LimeUtil --make | grep -q 'LimeSDR' ; echo $?", "r");
   if (fp == NULL) {
