@@ -1,16 +1,19 @@
-# The Portsdown 5 Project
+![portsdown banner](/docs/portsdown5.jpg)
+# The Portsdown 5 Digital ATV Transceiver with Test Equipment
 
-It is hoped that the Portsdown 5, when finished, will have similar functionality to the Portsdown 4, but will run on the Raspberry Pi 4 or the Raspberry Pi 5.  It uses the 64 bit version of the trixie operating system.  Development is slow because of the magnitude of the changes between 32 bit buster and 64 bit trixie.
+The Portsdown 4 was a Digital ATV transceiver and test equipment suite which used the buster operating system on a Raspberry Pi 4 with touchscreen control.  This follow-on project, the Portsdown 5, is intended to run on a Raspberry Pi 5 (or a Raspberry Pi 4 with some limitations) and use a 64 bit operating system such as trixie or its successors.  The functionality of the Portsdown 4 is slowly being ported to the Portsdown 5, but there are limitations because it is not possible to access the hardware H264 video encoder used in the Portsdown 4 from the 64-bit operating system of the Portsdown 5.  At the current stage of development, new builders are still recommended to build the Portsdown 4.
 
-There are 3 target hardware configurations:
+There are 3 target hardware configurations for the Portsdown 5:
 
--	Raspberry Pi Foundation 7 inch touchscreen (no mouse or HDMI display)
--	Web control
+-	Raspberry Pi Foundation 7 inch touchscreen Version 1 (800x480)
 -	HDMI display (480, 720 or 1080) with a mouse.
+-	Web control (with or without touchscreen or HDMI display)
 
-Web control is available alongside either of the other configurations, but the HDMI display (with mouse) and touchscreen are mutually exclusive 
+Web control is available alongside either of the other configurations, but the HDMI display (with mouse) and touchscreen are mutually exclusive.
 
-# Installation for Portsdown 5
+Full information of the Portsdown 5 will be maintained on the BATC Wiki at https://wiki.batc.org.uk/Portsdown_5_Introduction
+
+# Software Installation for Portsdown 5
 
 The preferred installation method only needs a Windows PC connected to the same (internet-connected) network as your Raspberry Pi.  Do not connect a keyboard or HDMI display directly to your Raspberry Pi.
 
@@ -39,7 +42,7 @@ chmod +x install_p5.sh
 ./install_p5.sh
 ```
 
-The initial build can take between 45 minutes and one hour, however it does not need any user input, so go and make a cup of coffee and keep an eye on the touchscreen.  When the build is finished the Pi will reboot (twice) and start-up with the touchscreen menu.
+The initial build can take between 45 minutes and one hour, however it does not need any user input, so go and make a cup of coffee and keep an eye on the touchscreen.  When the build is finished the Pi will reboot and after a few more installation steps display the touchscreen menu.
 
 - If your ISP is Virgin Media and you receive an error after entering the wget line: 'GnuTLS: A TLS fatal alert has been received.', it may be that your ISP is blocking access to GitHub.  If (only if) you get this error with Virgin Media, paste the following command in, and press return.
 ```sh
@@ -48,8 +51,6 @@ sudo sed -i 's/^#name_servers.*/name_servers=8.8.8.8/' /etc/resolvconf.conf
 Then reboot, and try again.  The command asks your RPi to use Google's DNS, not your ISP's DNS.
 
 - If your ISP is BT, you will need to make sure that "BT Web Protect" is disabled so that you are able to download the software.
-
-- When it has finished, the installation will reboot and the touchscreen should be activated.  You will need to log in to the console to set up any other displays or advanced options.
 
 
 # Advanced notes

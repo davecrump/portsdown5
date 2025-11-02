@@ -1,3 +1,7 @@
+202511020
+Change recommended display orientation
+Improve LimeSDR BandViewer Screenshot functionality
+
 202510271
 Increase fault-tolerance of post-install script
 Better handle image display

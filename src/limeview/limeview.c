@@ -91,6 +91,7 @@ float gain;
 int scaledX, scaledY;
 
 int FBOrientation = 0;                 // 0, 90, 180 or 270
+int SnapNumber;                        // Number for next snap
 
 int wbuttonsize = 100;
 int hbuttonsize = 50;
@@ -190,6 +191,7 @@ char DisplayType[31];
 bool rotate_display = true;
 bool touchscreen_present = false;
 
+
 // ******************* External functions for reference *********************
 
 // *************** hardware.c: ***************
@@ -211,8 +213,9 @@ void parseClickQuerystring(char *query_string, int *x_ptr, int *y_ptr);
 FFUNC touchscreenClick(ffunc_session_t * session);
 void take_snap();
 void snap_from_menu();
+int checkSnapIndex();
 void do_snapcheck();
-int IsImageToBeChanged(int x,int y);
+int IsImageToBeChanged();
 int CheckLimeConnect();
 void Keyboard(char RequestText[63], char InitText[63], int MaxLength);
 int openTouchScreen(int NoDevice);
@@ -735,32 +738,18 @@ FFUNC touchscreenClick(ffunc_session_t * session)
 
 void take_snap()
 {
-  FILE *fp;
-  char SnapIndex[255];
   int SnapNumber;
   char mvcmd[255];
   char echocmd[255];
   char SnapIndexText[255];
 
-  // Fetch the Next Snap serial number
-  fp = popen("cat /home/pi/snaps/snap_index.txt", "r");
-  if (fp == NULL) 
-  {
-    printf("Failed to run command\n" );
-    exit(1);
-  }
-  // Read the output a line at a time - output it. 
-  while (fgets(SnapIndex, 20, fp) != NULL)
-  {
-    //printf("%s", SnapIndex);
-  }
+  SnapNumber = checkSnapIndex();  // this is the next snap number to be saved.  Needs incrementing before exit
 
-  pclose(fp);
-
-  SnapNumber=atoi(SnapIndex);  // this is the next snap number to be saved.  Needs incrementing before exit
 printf("pre-fb2png\n");
   fb2png(); // saves snap to /home/pi/tmp/snapshot.png
 printf("post-fb2png\n");
+
+  usleep(1000);
 
   system("convert /home/pi/tmp/snapshot.png /home/pi/tmp/screen.jpg");
 
@@ -771,7 +760,9 @@ printf("post-fb2png\n");
   system(mvcmd);
 
   snprintf(echocmd, 50, "echo %d > /home/pi/snaps/snap_index.txt", SnapNumber + 1);
-  system (echocmd); 
+  system (echocmd);
+  SnapNumber++;
+
 }
 
 
@@ -794,19 +785,10 @@ void snap_from_menu()
 }
 
 
-void do_snapcheck()
+int checkSnapIndex()
 {
-  FILE *fp;
   char SnapIndex[255];
-  int SnapNumber;
-  int Snap;
-  int LastDisplayedSnap = -1;
-  int rawX, rawY, rawPressure;
-  int TCDisplay = -1;
-
-  char fbicmd[255];
-  char rotatecmd[255];
-  char labelcmd[255];
+  FILE *fp;
 
   // Fetch the Next Snap serial number
   fp = popen("cat /home/pi/snaps/snap_index.txt", "r");
@@ -818,65 +800,56 @@ void do_snapcheck()
   // Read the output a line at a time - output it. 
   while (fgets(SnapIndex, 20, fp) != NULL)
   {
-    printf("%s", SnapIndex);
+    //printf("%s", SnapIndex);
   }
 
   pclose(fp);
 
-  SnapNumber=atoi(SnapIndex);
-  Snap = SnapNumber - 1;
+  SnapNumber = atoi(SnapIndex);
+  return SnapNumber;
+}
+
+
+void do_snapcheck()
+{
+  char SnapIndex[255];
+  int Snap;
+  int LastDisplayedSnap = -1;
+  int TCDisplay = -1;
+  char labelcmd[255];
+
+  clearScreen(0, 0, 0);
+
+  Snap = checkSnapIndex() - 1;
 
   while (((TCDisplay == 1) || (TCDisplay == -1)) && (SnapNumber != 0))
   {
+
+
     if(LastDisplayedSnap != Snap)  // only redraw if not already there
     {
       sprintf(SnapIndex, "%d", Snap);
 
-      if (FBOrientation == 180)
-      {
-        system("rm /home/pi/tmp/snapinverted.jpg >/dev/null 2>/dev/null");
-        system("rm /home/pi/tmp/labelledsnap.jpg >/dev/null 2>/dev/null");
+      system("rm /home/pi/tmp/labelledsnap.jpg >/dev/null 2>/dev/null");
 
-        // Label the snap before inverting it
-        strcpy(labelcmd, "convert /home/pi/snaps/snap");
-        strcat(labelcmd, SnapIndex);
-        strcat(labelcmd, ".jpg -pointsize 20 -fill white -draw 'text 5,460 \"Snap ");
-        strcat(labelcmd, SnapIndex);
-        strcat(labelcmd, "\"' /home/pi/tmp/labelledsnap.jpg");
-        system(labelcmd);
+      // Label the snap
+      strcpy(labelcmd, "convert /home/pi/snaps/snap");
+      strcat(labelcmd, SnapIndex);
+      strcat(labelcmd, ".jpg -pointsize 20 -fill white -draw 'text 5,460 \"Snap ");
+      strcat(labelcmd, SnapIndex);
+      strcat(labelcmd, "\"' /home/pi/tmp/labelledsnap.jpg");
+      system(labelcmd);
 
-        // Invert the labelled snap
-        strcpy(rotatecmd, "convert /home/pi/tmp/labelledsnap");
-        strcat(rotatecmd, ".jpg -rotate 180 /home/pi/tmp/snapinverted.jpg");
-        system(rotatecmd);
+      // Display it
+      img2fb("/home/pi/tmp/labelledsnap.jpg");
 
-        // Display it
-        strcpy(fbicmd, "sudo fbi -T 1 -noverbose -a /home/pi/tmp/snapinverted.jpg >/dev/null 2>/dev/null");
-        system(fbicmd);
-      }
-      else
-      {
-        // Label the snap
-        strcpy(labelcmd, "convert /home/pi/snaps/snap");
-        strcat(labelcmd, SnapIndex);
-        strcat(labelcmd, ".jpg -pointsize 20 -fill white -draw 'text 5,460 \"Snap ");
-        strcat(labelcmd, SnapIndex);
-        strcat(labelcmd, "\"' /home/pi/tmp/labelledsnap.jpg");
-        system(labelcmd);
-
-        // Display it
-        strcpy(fbicmd, "sudo fbi -T 1 -noverbose -a /home/pi/tmp/labelledsnap.jpg >/dev/null 2>/dev/null");
-        system(fbicmd);
-      }
       LastDisplayedSnap = Snap;
       UpdateWeb();
     }
 
-    if (getTouchSample(&rawX, &rawY, &rawPressure) == 0) continue;
 
-    system("sudo killall fbi >/dev/null 2>/dev/null");  // kill instance of fbi
+    TCDisplay = IsImageToBeChanged();  // check if touch was previous snap, next snap or exit
 
-    TCDisplay = IsImageToBeChanged(rawX, rawY);  // check if touch was previous snap, next snap or exit
     if (TCDisplay != 0)
     {
       Snap = Snap + TCDisplay;
@@ -892,15 +865,21 @@ void do_snapcheck()
   }
 
   // Tidy up and display touch menu
-  system("sudo killall fbi >/dev/null 2>/dev/null");  // kill any instance of fbi
+  clearScreen(0, 0, 0);
 }
 
 
-int IsImageToBeChanged(int x,int y)
+int IsImageToBeChanged()
 {
   // Returns -1 for LHS touch, 0 for centre and 1 for RHS
+  int rawPressure;
 
-  TransformTouchMap(x,y);       // Sorts out orientation and approx scaling of the touch map
+  while((getTouchSample(&rawX, &rawY, &rawPressure) == 0))
+  {
+    usleep(10000);
+  }
+
+  TransformTouchMap(rawX, rawY);
 
   if (scaledX <= wscreen/8)
   {
@@ -930,8 +909,6 @@ int CheckLimeConnect()
   FILE *fp;
   char response[255];
   int responseint = 1;
-
-return 0;
 
   /* Open the command for reading. */
   fp = popen("LimeUtil --make | grep -q 'LimeSDR' ; echo $?", "r");
@@ -3233,7 +3210,6 @@ void *WaitButtonEvent(void * arg)
           }
           do_snapcheck();           // Call the snapcheck
 
-          initScreen();             // Start the screen again
           DrawEmptyScreen();        // Required to set A value, which is not set in DrawTrace
           DrawYaxisLabels();        // dB calibration on LHS
           DrawSettings();           // Start, Stop RBW, Ref level and Title
@@ -3756,6 +3732,11 @@ void Define_Menu1()                                  // Main Menu
 
 void Start_Highlights_Menu1()
 {
+  char SnapText[31];
+
+  snprintf(SnapText, 30, "Capture^Snap %d", SnapNumber);
+  AmendButtonStatus(ButtonNumber(CurrentMenu, 0), 0, SnapText, &DGrey);
+
   if (PortsdownExitRequested)
   {
     SetButtonStatus(ButtonNumber(1, 8), 1);
@@ -3812,6 +3793,11 @@ void Define_Menu2()                                         // Marker Menu
 
 void Start_Highlights_Menu2()
 {
+  char SnapText[31];
+
+  snprintf(SnapText, 30, "Capture^Snap %d", SnapNumber);
+  AmendButtonStatus(ButtonNumber(CurrentMenu, 0), 0, SnapText, &DGrey);
+
   if ((markeron == true) && (markermode == 4))  // Manual Markers
   {
     SetButtonStatus(ButtonNumber(2, 5), 0);
@@ -3947,6 +3933,11 @@ void Define_Menu5()                                          // Mode Menu
 
 void Start_Highlights_Menu5()
 {
+  char SnapText[31];
+
+  snprintf(SnapText, 30, "Capture^Snap %d", SnapNumber);
+  AmendButtonStatus(ButtonNumber(CurrentMenu, 0), 0, SnapText, &DGrey);
+
   if (BaselineShift == 0)
   {
     SetButtonStatus(ButtonNumber(CurrentMenu, 6), 0);
@@ -4011,6 +4002,11 @@ void Define_Menu6()                                           // Span Menu
 
 void Start_Highlights_Menu6()
 {
+  char SnapText[31];
+
+  snprintf(SnapText, 30, "Capture^Snap %d", SnapNumber);
+  AmendButtonStatus(ButtonNumber(CurrentMenu, 0), 0, SnapText, &DGrey);
+
   if (span == 102)
   {
     SetButtonStatus(ButtonNumber(CurrentMenu, 2), 1);
@@ -4120,6 +4116,11 @@ void Define_Menu7()                                            //Presets Menu
 void Start_Highlights_Menu7()
 {
   char ButtText[15];
+  char SnapText[31];
+
+  snprintf(SnapText, 30, "Capture^Snap %d", SnapNumber);
+  AmendButtonStatus(ButtonNumber(CurrentMenu, 0), 0, SnapText, &DGrey);
+
   snprintf(ButtText, 14, "%0.1f MHz", ((float)pfreq1) / 1000);
   AmendButtonStatus(ButtonNumber(CurrentMenu, 2), 0, ButtText, &Blue);
   AmendButtonStatus(ButtonNumber(CurrentMenu, 2), 1, ButtText, &Green);
@@ -4226,6 +4227,11 @@ void Define_Menu8()                                    // Lime Gain Menu
 
 void Start_Highlights_Menu8()
 {
+  char SnapText[31];
+
+  snprintf(SnapText, 30, "Capture^Snap %d", SnapNumber);
+  AmendButtonStatus(ButtonNumber(CurrentMenu, 0), 0, SnapText, &DGrey);
+
   if (limegain == 100)
   {
     SetButtonStatus(ButtonNumber(CurrentMenu, 2), 1);
@@ -4307,6 +4313,11 @@ void Define_Menu9()                                          // Config Menu
 
 void Start_Highlights_Menu9()
 {
+  char SnapText[31];
+
+  snprintf(SnapText, 30, "Capture^Snap %d", SnapNumber);
+  AmendButtonStatus(ButtonNumber(CurrentMenu, 0), 0, SnapText, &DGrey);
+
   if (freqoffset == 0)
   {
     SetButtonStatus(ButtonNumber(9, 3), 0);
@@ -4356,6 +4367,11 @@ void Define_Menu10()                                          // Set Freq Preset
 void Start_Highlights_Menu10()
 {
   char ButtText[31];
+  char SnapText[31];
+
+  snprintf(SnapText, 30, "Capture^Snap %d", SnapNumber);
+  AmendButtonStatus(ButtonNumber(CurrentMenu, 0), 0, SnapText, &DGrey);
+
   snprintf(ButtText, 30, "Preset 1^%0.1f MHz", ((float)pfreq1) / 1000);
   AmendButtonStatus(ButtonNumber(CurrentMenu, 2), 0, ButtText, &Blue);
 
@@ -4445,6 +4461,11 @@ void Define_Menu12()                                          // Waterfall Confi
 
 void Start_Highlights_Menu12()
 {
+  char SnapText[31];
+
+  snprintf(SnapText, 30, "Capture^Snap %d", SnapNumber);
+  AmendButtonStatus(ButtonNumber(CurrentMenu, 0), 0, SnapText, &DGrey);
+
   if (strcmp(TraceType, "average") == 0)
   {
     SetButtonStatus(ButtonNumber(CurrentMenu, 5), 0);
@@ -5361,6 +5382,7 @@ int main(void)
 
   CheckConfigFile();
   ReadSavedParams();
+  checkSnapIndex();
   CalcSpan();
 
   // Create Wait Button thread
@@ -5417,10 +5439,11 @@ int main(void)
     y[i] = 1;
   }
 
-  DrawEmptyScreen();  // Required to set A value, which is not set in DrawTrace
-  DrawYaxisLabels();  // dB calibration on LHS
-  DrawSettings();     // Start, Stop RBW, Ref level and Title
-  UpdateWindow();     // Draw the buttons
+  DrawEmptyScreen();         // Required to set A value, which is not set in DrawTrace
+  DrawYaxisLabels();         // dB calibration on LHS
+  DrawSettings();            // Start, Stop RBW, Ref level and Title
+  Start_Highlights_Menu1();  // Look up snap number
+  UpdateWindow();            // Draw the buttons
 
   while(app_exit == false)                                                  // Start of main display loop
   {
