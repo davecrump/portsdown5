@@ -343,7 +343,7 @@ if [ "$UPDATE" == "false" ]; then
 
   # Rotate the touchscreen display to the normal orientation 
   if !(grep video=DSI-1 /boot/firmware/cmdline.txt) then
-    sudo sed -i '1s,$, video=DSI-1:800x480M-16@60\,rotate=180,' /boot/firmware/cmdline.txt
+    sudo sed -i '1s,$, video=DSI-1:800x480M-16@60,' /boot/firmware/cmdline.txt
   fi
 
   # Rotate the touchscreen 2 display to the normal orientation 
@@ -860,6 +860,9 @@ if [ "$UPDATE" == "false" ]; then
     echo "-----                                  -----"
     echo "-----           Rebooting now          -----"
     echo "--------------------------------------------"
+
+    # Run script to check display parameters.  May reboot anyway
+    /home/pi/portsdown/scripts/display_check_on_boot.sh
 
     sudo reboot now
   fi

@@ -1,3 +1,7 @@
+202511022
+Correct display orientation in cmdline.txt
+Add display check in install part 1
+
 202511020
 Change recommended display orientation
 Improve LimeSDR BandViewer Screenshot functionality
