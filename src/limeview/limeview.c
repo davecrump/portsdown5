@@ -75,12 +75,15 @@ color_t Black = {.r = 0  , .g = 0  , .b = 0  };
 #define PATH_CONFIG "/home/pi/portsdown/configs/limeview_config.txt"
 
 #define MAX_BUTTON 675
-int IndexButtonInArray=0;
+#define MAX_BUTTON_ON_MENU 50
+#define MAX_MENUS 50
+
+int IndexButtonInArray = 0;
 button_t ButtonArray[MAX_BUTTON];
 
 int CurrentMenu = 1;
 int CallingMenu = 1;
-char KeyboardReturn[64];
+char KeyboardReturn[63];
 
 bool NewFreq = false;
 bool NewGain = false;
@@ -233,7 +236,6 @@ void DrawButton(int ButtonIndex);
 void SetButtonStatus(int ButtonIndex,int Status);
 int getTouchSampleThread(int *rawX, int *rawY, int *rawPressure);
 int getTouchSample(int *rawX, int *rawY, int *rawPressure);
-void UpdateWindow();
 void wait_touch();
 void CalculateMarkers();
 void SetSpanWidth(int button);
@@ -247,27 +249,31 @@ uint32_t ConstrainFreq(uint32_t CheckFreq);
 void ChangeLabel(int button);
 void RedrawDisplay();
 void *WaitButtonEvent(void * arg);
+void redrawMenu();
 void Define_Menu1();
-void Start_Highlights_Menu1();
+void Highlight_Menu1();
 void Define_Menu2();
-void Start_Highlights_Menu2();
+void Highlight_Menu2();
 void Define_Menu3();
+void Highlight_Menu3();
 void Define_Menu4();
+void Highlight_Menu4();
 void Define_Menu5();
-void Start_Highlights_Menu5();
+void Highlight_Menu5();
 void Define_Menu6();
-void Start_Highlights_Menu6();
+void Highlight_Menu6();
 void Define_Menu7();
-void Start_Highlights_Menu7();
+void Highlight_Menu7();
 void Define_Menu8();
-void Start_Highlights_Menu8();
+void Highlight_Menu8();
 void Define_Menu9();
-void Start_Highlights_Menu9();
+void Highlight_Menu9();
 void Define_Menu10();
-void Start_Highlights_Menu10();
+void Highlight_Menu10();
 void Define_Menu11();
+void Highlight_Menu11();
 void Define_Menu12();
-void Start_Highlights_Menu12();
+void Highlight_Menu12();
 void Define_Menu41();
 void DrawEmptyScreen();
 void DrawTickMarks();
@@ -762,7 +768,6 @@ printf("post-fb2png\n");
   snprintf(echocmd, 50, "echo %d > /home/pi/snaps/snap_index.txt", SnapNumber + 1);
   system (echocmd);
   SnapNumber++;
-
 }
 
 
@@ -770,7 +775,7 @@ void snap_from_menu()
 {
   freeze = true; 
   SetButtonStatus(ButtonNumber(CurrentMenu, 0), 1);  // hide the capture button 
-  UpdateWindow();                                    // paint the hide
+  redrawMenu();                                    // paint the hide
 
   while(! frozen)                                    // wait till the end of the scan
   {
@@ -780,7 +785,7 @@ void snap_from_menu()
   take_snap();
 
   SetButtonStatus(ButtonNumber(CurrentMenu, 0), 0);  // unhide the button
-  UpdateWindow();                                    // paint the un-hide
+  redrawMenu();                                    // paint the un-hide
   freeze = false;
 }
 
@@ -985,7 +990,7 @@ void Keyboard(char RequestText[63], char InitText[63], int MaxLength)
       }  
 
       // Display the keyboard here as it would overwrite the text later
-      UpdateWindow();
+      redrawMenu();
 
       // Display Instruction Text
       Text(10, 420 , RequestText, font_ptr, 0, 0, 0, 255, 255, 255);
@@ -1028,11 +1033,11 @@ void Keyboard(char RequestText[63], char InitText[63], int MaxLength)
     {
       SetButtonStatus(ButtonNumber(41, token), 1);
       DrawButton(ButtonNumber(41, token));
-      UpdateWindow();
+      redrawMenu();
       usleep(300000);
       SetButtonStatus(ButtonNumber(41, token), 0);
       DrawButton(ButtonNumber(41, token));
-      UpdateWindow();
+      redrawMenu();
     }
 
     if (token == 8)  // Enter pressed
@@ -1221,13 +1226,11 @@ void Keyboard(char RequestText[63], char InitText[63], int MaxLength)
         SetButtonStatus(ButtonNumber(41, token), ShiftStatus);
         DrawButton(ButtonNumber(41, token));
         publish();
-        //UpdateWindow();
         usleep(300000);
         ShiftStatus = 2 - (2 * KeyboardShift); // 0 = Upper, 2 = lower
         SetButtonStatus(ButtonNumber(41, token), ShiftStatus);
         DrawButton(ButtonNumber(41, token));
         publish();
-        //UpdateWindow();
 
         if (strlen(EditText) < 23) // Don't let it overflow
         {
@@ -1976,64 +1979,6 @@ int getTouchSample(int *rawX, int *rawY, int *rawPressure)
 }
 
 
-void UpdateWindow()    // Paint each defined button
-{
-  int i;
-  int first;
-  int last;
-
-  if (markeron == false)
-  {
-    // Draw a black rectangle where the buttons are to erase them
-    rectangle(620, 0, 160, 480, 0, 0, 0);
-  }
-  else   // But don't erase the marker text
-  {
-    rectangle(620, 0, 160, 420, 0, 0, 0);
-  }
-
-  // Don't draw buttons if the Markers are being refreshed.  Wait here
-
-  // Draw each button in turn
-  first = ButtonNumber(CurrentMenu, 0);
-  last = ButtonNumber(CurrentMenu + 1 , 0) - 1;
-  if ((markeron == false) || (CurrentMenu == 41))
-  {
-    for(i = first; i <= last; i++)
-    {
-      if (ButtonArray[i].IndexStatus > 0)  // If button needs to be drawn
-      {
-        DrawButton(i);                     // Draw the button
-      }
-    }
-  }
-  else
-  {
-    if (ButtonArray[first].IndexStatus > 0)  // If button needs to be drawn
-    {
-      while (MarkerRefresh == true)          // Wait for marker refresh to prevent conflict
-      {
-        usleep(10);
-      }
-      DrawButton(first);                     // Draw button 0, but not button 1
-    }
-    for(i = (first + 2); i <= last; i++)
-    {
-      if (ButtonArray[i].IndexStatus > 0)  // If button needs to be drawn
-      {
-        while (MarkerRefresh == true)      // Wait for marker refresh to prevent conflict
-        {
-          usleep(10);
-        }
-        DrawButton(i);                     // Draw the button
-      }
-    }
-  }
-  publish();
-  UpdateWeb();
-}
-
-
 void wait_touch()
 // Wait for Screen touch, ignore position, but then move on
 // Used to let user acknowledge displayed text
@@ -2049,6 +1994,7 @@ void wait_touch()
   // Screen has been touched
   printf("wait_touch exit\n");
 }
+
 
 void CalculateMarkers()
 {
@@ -2924,13 +2870,12 @@ void *WaitButtonEvent(void * arg)
         case 2:                                            // Select Settings
           printf("Settings Menu 3 Requested\n");
           CurrentMenu=3;
-          UpdateWindow();
+          redrawMenu();
           break;
         case 3:                                            // Markers
           printf("Markers Menu 2 Requested\n");
-          CurrentMenu=2;
-          Start_Highlights_Menu2();
-          UpdateWindow();
+          CurrentMenu = 2;
+          redrawMenu();
           break;
         case 4:                                            // Mode
           if (Range20dB == false)
@@ -2943,19 +2888,18 @@ void *WaitButtonEvent(void * arg)
             printf("20dB Menu Requested\n");
             CurrentMenu = 11;
           }
-          UpdateWindow();
+          redrawMenu();
           break;
         case 5:                                            // Left Arrow
         case 6:                                            // Right Arrow
           printf("Shift Frequency Requested\n");
           ShiftFrequency(i);
-          //UpdateWindow();
           RequestPeakValueZero = true;
           break;
         case 7:                                            // System
           printf("System Menu 4 Requested\n");
           CurrentMenu=4;
-          UpdateWindow();
+          redrawMenu();
           break;
         case 8:                                            // Exit to Portsdown
           if(PortsdownExitRequested)
@@ -2971,8 +2915,7 @@ void *WaitButtonEvent(void * arg)
           else
           {
             PortsdownExitRequested = true;
-            Start_Highlights_Menu1();
-            UpdateWindow();
+            redrawMenu();
           }
           break;
         case 9:
@@ -2986,7 +2929,7 @@ void *WaitButtonEvent(void * arg)
             SetButtonStatus(ButtonNumber(CurrentMenu, 8), 1);
             freeze = true;
           }
-          UpdateWindow();
+          redrawMenu();
           break;
         default:
           printf("Menu 1 Error\n");
@@ -2994,8 +2937,7 @@ void *WaitButtonEvent(void * arg)
       if(i != 8)
       {
         PortsdownExitRequested = false;
-        Start_Highlights_Menu1();
-        UpdateWindow();
+        redrawMenu();
       }
       continue;  // Completed Menu 1 action, go and wait for touch
     }
@@ -3030,7 +2972,7 @@ void *WaitButtonEvent(void * arg)
             SetButtonStatus(ButtonNumber(CurrentMenu, 2), 0);
             SetButtonStatus(ButtonNumber(CurrentMenu, 4), 0);
           }
-          UpdateWindow();
+          redrawMenu();
           freeze = false;
           break;
         case 3:                                            // Peak Hold
@@ -3051,7 +2993,7 @@ void *WaitButtonEvent(void * arg)
             RequestPeakValueZero = true;
             SetButtonStatus(ButtonNumber(CurrentMenu, 3), 0);
           }
-          UpdateWindow();
+          redrawMenu();
           freeze = false;
           break;
         case 4:                                            // Manual
@@ -3075,8 +3017,7 @@ void *WaitButtonEvent(void * arg)
             SetButtonStatus(ButtonNumber(CurrentMenu, 2), 0);
             SetButtonStatus(ButtonNumber(CurrentMenu, 4), 0);
           }
-          Start_Highlights_Menu2();
-          UpdateWindow();
+          redrawMenu();
           freeze = false;
           break;
         case 5:                                            // Left Arrow
@@ -3099,13 +3040,12 @@ void *WaitButtonEvent(void * arg)
           SetButtonStatus(ButtonNumber(CurrentMenu, 2), 0);
           SetButtonStatus(ButtonNumber(CurrentMenu, 3), 0);
           SetButtonStatus(ButtonNumber(CurrentMenu, 4), 0);
-          UpdateWindow();
+          redrawMenu();
           break;
         case 8:                                            // Return to Main Menu
           printf("Main Menu 1 Requested\n");
           CurrentMenu=1;
-          Start_Highlights_Menu1();
-          UpdateWindow();
+          redrawMenu();
           break;
         case 9:
           if (freeze)
@@ -3118,7 +3058,7 @@ void *WaitButtonEvent(void * arg)
             SetButtonStatus(ButtonNumber(CurrentMenu, 9), 1);
             freeze = true;
           }
-          UpdateWindow();
+          redrawMenu();
           break;
         default:
           printf("Menu 2 Error\n");
@@ -3138,41 +3078,37 @@ void *WaitButtonEvent(void * arg)
         case 2:                                            // Centre Freq
           ChangeLabel(i);
           CurrentMenu = 3;
-          UpdateWindow();          
+          redrawMenu();          
           RequestPeakValueZero = true;
           break;
         case 3:                                            // Frequency Presets
           printf("Frequency Preset Menu 7 Requested\n");
           CurrentMenu = 7;
-          Start_Highlights_Menu7();
-          UpdateWindow();
+          redrawMenu();
           RequestPeakValueZero = true;
           break;
         case 4:                                            // Span Width
           printf("Span Width Menu 6 Requested\n");
           CurrentMenu = 6;
-          Start_Highlights_Menu6();
-          UpdateWindow();
+          redrawMenu();
           RequestPeakValueZero = true;
           break;
         case 5:                                            // Lime Gain
           printf("Lime Gain Menu 8 Requested\n");
           CurrentMenu = 8;
-          Start_Highlights_Menu8();
-          UpdateWindow();
+          redrawMenu();
           RequestPeakValueZero = true;
           break;
         case 6:                                            // Waterfall Config
           printf("Waterfall Config Menu 12 Requested\n");
           CurrentMenu = 12;
-          UpdateWindow();
+          redrawMenu();
           RequestPeakValueZero = true;
           break;
         case 7:                                            // Return to Main Menu
           printf("Main Menu 1 Requested\n");
-          Start_Highlights_Menu1();
-          CurrentMenu=1;
-          UpdateWindow();
+          CurrentMenu = 1;
+          redrawMenu();
           break;
         case 8:
           if (freeze)
@@ -3185,7 +3121,7 @@ void *WaitButtonEvent(void * arg)
             SetButtonStatus(ButtonNumber(CurrentMenu, 8), 1);
             freeze = true;
           }
-          UpdateWindow();
+          redrawMenu();
           break;
         default:
           printf("Menu 3 Error\n");
@@ -3213,14 +3149,13 @@ void *WaitButtonEvent(void * arg)
           DrawEmptyScreen();        // Required to set A value, which is not set in DrawTrace
           DrawYaxisLabels();        // dB calibration on LHS
           DrawSettings();           // Start, Stop RBW, Ref level and Title
-          UpdateWindow();           // Draw the buttons
+          redrawMenu();           // Draw the buttons
           freeze = false;           // Restart the scan
           break;
         case 3:                                            // Config Menu
           printf("Config Menu 9 Requested\n");
           CurrentMenu = 9;
-          Start_Highlights_Menu9();
-          UpdateWindow();
+          redrawMenu();
           break;
         case 4:                                            // ReCal Lime
           NewCal = true;
@@ -3239,8 +3174,7 @@ void *WaitButtonEvent(void * arg)
         case 7:                                            // Return to Main Menu
           printf("Main Menu 1 Requested\n");
           CurrentMenu=1;
-          Start_Highlights_Menu1();
-          UpdateWindow();
+          redrawMenu();
           break;
         case 8:
           if (freeze)
@@ -3253,7 +3187,7 @@ void *WaitButtonEvent(void * arg)
             SetButtonStatus(ButtonNumber(CurrentMenu, 8), 1);
             freeze = true;
           }
-          UpdateWindow();
+          redrawMenu();
           break;
         default:
           printf("Menu 4 Error\n");
@@ -3272,7 +3206,6 @@ void *WaitButtonEvent(void * arg)
           break;
         case 2:                                            // Classic SA Mode
           SetMode(i);
-          Start_Highlights_Menu5();
           //CalcSpan();
           //RedrawDisplay();
           break;
@@ -3283,14 +3216,13 @@ void *WaitButtonEvent(void * arg)
           RedrawDisplay();
           printf("20dB Menu 11 Requested\n");
           CurrentMenu = 11;
-          UpdateWindow();
+          redrawMenu();
           break;
         case 4:                                            // Waterfall
         case 5:                                            // Mix
           //Range20dB = false;
           SetMode(i);
-          Start_Highlights_Menu5();
-          UpdateWindow();
+          redrawMenu();
           break;
         case 6:                                            // Show 20 dB lower
           printf("20 dB lower requested\n");
@@ -3305,14 +3237,12 @@ void *WaitButtonEvent(void * arg)
           snprintf(ValueToSave, 8, "%d", BaselineShift);
           SetConfigParam(PATH_CONFIG, "baselineshift", ValueToSave);
           DrawYaxisLabels();
-          Start_Highlights_Menu5();
-          UpdateWindow();
+          redrawMenu();
           break;
         case 7:                                            // Return to Main Menu
           printf("Main Menu 1 Requested\n");
-          CurrentMenu=1;
-          Start_Highlights_Menu1();
-          UpdateWindow();
+          CurrentMenu = 1;
+          redrawMenu();
           break;
         case 8:
           if (freeze)
@@ -3325,7 +3255,7 @@ void *WaitButtonEvent(void * arg)
             SetButtonStatus(ButtonNumber(CurrentMenu, 8), 1);
             freeze = true;
           }
-          UpdateWindow();
+          redrawMenu();
           break;
         default:
           printf("Menu 5 Error\n");
@@ -3352,12 +3282,11 @@ void *WaitButtonEvent(void * arg)
         case 9:                                            // 20
           SetSpanWidth(i);
           CurrentMenu = 6;
-          Start_Highlights_Menu6();
-          UpdateWindow();
+          redrawMenu();
           break;
         case 10:                                            // Return to Settings Menu
           CurrentMenu=3;
-          UpdateWindow();
+          redrawMenu();
           break;
         case 11:
           if (freeze)
@@ -3370,8 +3299,7 @@ void *WaitButtonEvent(void * arg)
             SetButtonStatus(ButtonNumber(CurrentMenu, 9), 1);
             freeze = true;
           }
-          Start_Highlights_Menu6();
-          UpdateWindow();
+          redrawMenu();
           break;
         default:
           printf("Menu 6 Error\n");
@@ -3395,12 +3323,12 @@ void *WaitButtonEvent(void * arg)
         case 6:                                            // pfreq5
           SetFreqPreset(i);
           CurrentMenu = 3;
-          UpdateWindow();
+          redrawMenu();
           break;
         case 7:                                            // Return to Settings Menu
           printf("Settings Menu 3 requested\n");
           CurrentMenu=3;
-          UpdateWindow();
+          redrawMenu();
           break;
         case 8:
           if (freeze)
@@ -3413,7 +3341,7 @@ void *WaitButtonEvent(void * arg)
             SetButtonStatus(ButtonNumber(CurrentMenu, 8), 1);
             freeze = true;
           }
-          UpdateWindow();
+          redrawMenu();
           break;
         default:
           printf("Menu 5 Error\n");
@@ -3436,14 +3364,13 @@ void *WaitButtonEvent(void * arg)
         case 5:                                            // 50%
         case 6:                                            // 30%
           SetLimeGain(i);
-          Start_Highlights_Menu8();
           CurrentMenu = 8;
-          UpdateWindow();
+          redrawMenu();
           break;
         case 7:                                            // Return to Settings Menu
           printf("Settings Menu 3 requested\n");
           CurrentMenu=3;
-          UpdateWindow();
+          redrawMenu();
           break;
         case 8:
           if (freeze)
@@ -3456,8 +3383,7 @@ void *WaitButtonEvent(void * arg)
             SetButtonStatus(ButtonNumber(CurrentMenu, 8), 1);
             freeze = true;
           }
-          Start_Highlights_Menu8();
-          UpdateWindow();
+          redrawMenu();
           break;
         default:
           printf("Menu 8 Error\n");
@@ -3477,17 +3403,15 @@ void *WaitButtonEvent(void * arg)
         case 2:                                            // Freq Presets
           printf("Freq Presets Menu 10 Requested\n");
           CurrentMenu = 10;
-          Start_Highlights_Menu10();
-          UpdateWindow();
+          redrawMenu();
           break;
         case 3:                                            // Freq Offset
           ChangeLabel(16);
-          Start_Highlights_Menu9();
-          UpdateWindow();
+          redrawMenu();
           break;
         case 4:                                            // Edit Title
           ChangeLabel(6);
-          UpdateWindow();          
+          redrawMenu();          
           break;
         case 5:                                            // 
           break;
@@ -3496,7 +3420,7 @@ void *WaitButtonEvent(void * arg)
         case 7:                                            // Return to Main Menu
           printf("Main Menu 1 Requested\n");
           CurrentMenu=1;
-          UpdateWindow();
+          redrawMenu();
           break;
         case 8:
           if (freeze)
@@ -3509,7 +3433,7 @@ void *WaitButtonEvent(void * arg)
             SetButtonStatus(ButtonNumber(CurrentMenu, 8), 1);
             freeze = true;
           }
-          UpdateWindow();
+          redrawMenu();
           break;
         default:
           printf("Menu 9 Error\n");
@@ -3533,13 +3457,12 @@ void *WaitButtonEvent(void * arg)
         case 6:                                            // pfreq5
           SetFreqPreset(i);
           CurrentMenu = 10;
-          Start_Highlights_Menu10();
-          UpdateWindow();
+          redrawMenu();
           break;
         case 7:                                            // Return to Main Menu
           printf("Settings Menu 1 requested\n");
           CurrentMenu=1;
-          UpdateWindow();
+          redrawMenu();
           break;
         case 8:
           if (freeze)
@@ -3552,7 +3475,7 @@ void *WaitButtonEvent(void * arg)
             SetButtonStatus(ButtonNumber(CurrentMenu, 8), 1);
             freeze = true;
           }
-          UpdateWindow();
+          redrawMenu();
           break;
         default:
           printf("Menu 10 Error\n");
@@ -3574,7 +3497,7 @@ void *WaitButtonEvent(void * arg)
           CalcSpan();
           RedrawDisplay();
           CurrentMenu=1;
-          UpdateWindow();
+          redrawMenu();
           break;
         case 5:                                            // up
           if (BaseLine20dB <= -25)
@@ -3584,7 +3507,7 @@ void *WaitButtonEvent(void * arg)
             snprintf(ValueToSave, 8, "%d", BaseLine20dB);
             SetConfigParam(PATH_CONFIG, "baseline20db", ValueToSave);
           }
-          UpdateWindow();
+          redrawMenu();
           break;
         case 6:                                            // down
           if (BaseLine20dB >= -75)
@@ -3594,12 +3517,12 @@ void *WaitButtonEvent(void * arg)
             snprintf(ValueToSave, 8, "%d", BaseLine20dB);
             SetConfigParam(PATH_CONFIG, "baseline20db", ValueToSave);
           }
-          UpdateWindow();
+          redrawMenu();
           break;
         case 7:                                            // Return to Main Menu
           printf("Settings Menu 1 requested\n");
           CurrentMenu=1;
-          UpdateWindow();
+          redrawMenu();
           break;
         case 8:
           if (freeze)
@@ -3612,7 +3535,7 @@ void *WaitButtonEvent(void * arg)
             SetButtonStatus(ButtonNumber(CurrentMenu, 8), 1);
             freeze = true;
           }
-          UpdateWindow();
+          redrawMenu();
           break;
         default:
           printf("Menu 11 Error\n");
@@ -3631,11 +3554,11 @@ void *WaitButtonEvent(void * arg)
         case 2:                                            // Set Waterfall Base
         case 3:                                            // Set waterfall range
           SetWfall(i);
-          UpdateWindow();
+          redrawMenu();
           break;
         case 4:                                            // Set Waterfall TimeSpan
           SetWfall(12);
-          UpdateWindow();
+          redrawMenu();
           break;
         case 5:                                            // Set Waterfall trace type 
           if (strcmp(TraceType, "single") == 0)
@@ -3651,13 +3574,12 @@ void *WaitButtonEvent(void * arg)
             strcpy(TraceType, "single");
           }
           SetConfigParam(PATH_CONFIG, "tracetype", TraceType);
-          Start_Highlights_Menu12();
-          UpdateWindow();
+          redrawMenu();
           break;
         case 7:                                            // Return to Main Menu
           printf("Main Menu 1 Requested\n");
           CurrentMenu=1;
-          UpdateWindow();
+          redrawMenu();
           break;
         case 8:
           if (freeze)
@@ -3670,7 +3592,7 @@ void *WaitButtonEvent(void * arg)
             SetButtonStatus(ButtonNumber(CurrentMenu, 8), 1);
             freeze = true;
           }
-          UpdateWindow();
+          redrawMenu();
           break;
         default:
           printf("Menu 12 Error\n");
@@ -3682,10 +3604,85 @@ void *WaitButtonEvent(void * arg)
 }
 
 
+void redrawMenu()
+// Paint each defined button and the title on the current Menu
+{
+  int i;
+  int first;
+  int last;
+
+  if (markeron == false)
+  {
+    // Draw a black rectangle where the buttons are to erase them
+    rectangle(620, 0, 160, 480, 0, 0, 0);
+  }
+  else   // But don't erase the marker text
+  {
+    rectangle(620, 0, 160, 420, 0, 0, 0);
+  }
+
+  switch(CurrentMenu)
+  {
+    case 1:
+      Highlight_Menu1();
+      break;
+    case 2:
+      Highlight_Menu2();
+      break;
+    case 3:
+      Highlight_Menu3();
+      break;
+    case 4:
+      Highlight_Menu4();
+      break;
+    case 5:
+      Highlight_Menu5();
+      break;
+    case 6:
+      Highlight_Menu6();
+      break;
+    case 7:
+      Highlight_Menu7();
+      break;
+    case 8:
+      Highlight_Menu8();
+      break;
+    case 9:
+      Highlight_Menu9();
+      break;
+    case 10:
+      Highlight_Menu10();
+      break;
+    case 11:
+      Highlight_Menu11();
+      break;
+    case 12:
+      Highlight_Menu12();
+      break;
+  }
+
+  // Draw each button in turn
+  first = ButtonNumber(CurrentMenu, 0);
+  last = ButtonNumber(CurrentMenu + 1 , 0) - 1;
+
+  {
+    for(i = first; i <= last; i++)
+    {
+      if (ButtonArray[i].IndexStatus > 0)  // If button needs to be drawn
+      {
+        DrawButton(i);                     // Draw the button
+      }
+    }
+  }
+
+  UpdateWeb();
+  publish();
+}
+
+
 /////////////////////////////////////////////// DEFINE THE BUTTONS ///////////////////////////////
 
 void Define_Menu1()                                  // Main Menu
-
 {
   int button = 0;
 
@@ -3730,7 +3727,8 @@ void Define_Menu1()                                  // Main Menu
   AddButtonStatus(button, "Unfreeze", &Green);
 }
 
-void Start_Highlights_Menu1()
+
+void Highlight_Menu1()
 {
   char SnapText[31];
 
@@ -3791,7 +3789,7 @@ void Define_Menu2()                                         // Marker Menu
   AddButtonStatus(button, "Unfreeze", &Green);
 }
 
-void Start_Highlights_Menu2()
+void Highlight_Menu2()
 {
   char SnapText[31];
 
@@ -3851,6 +3849,16 @@ void Define_Menu3()                                           // Settings Menu
   AddButtonStatus(button, "Unfreeze", &Green);
 }
 
+
+void Highlight_Menu3()
+{
+  char SnapText[31];
+
+  snprintf(SnapText, 30, "Capture^Snap %d", SnapNumber);
+  AmendButtonStatus(ButtonNumber(CurrentMenu, 0), 0, SnapText, &DGrey);
+}
+
+
 void Define_Menu4()                                         // System Menu
 {
   int button = 0;
@@ -3890,6 +3898,16 @@ void Define_Menu4()                                         // System Menu
   AddButtonStatus(button, "Freeze", &Blue);
   AddButtonStatus(button, "Unfreeze", &Green);
 }
+
+
+void Highlight_Menu4()
+{
+  char SnapText[31];
+
+  snprintf(SnapText, 30, "Capture^Snap %d", SnapNumber);
+  AmendButtonStatus(ButtonNumber(CurrentMenu, 0), 0, SnapText, &DGrey);
+}
+
 
 void Define_Menu5()                                          // Mode Menu
 {
@@ -3931,7 +3949,7 @@ void Define_Menu5()                                          // Mode Menu
   AddButtonStatus(button, "Unfreeze", &Green);
 }
 
-void Start_Highlights_Menu5()
+void Highlight_Menu5()
 {
   char SnapText[31];
 
@@ -4000,7 +4018,7 @@ void Define_Menu6()                                           // Span Menu
   AddButtonStatus(button, "Unfreeze", &Green);
 }
 
-void Start_Highlights_Menu6()
+void Highlight_Menu6()
 {
   char SnapText[31];
 
@@ -4113,7 +4131,7 @@ void Define_Menu7()                                            //Presets Menu
   AddButtonStatus(button, "Unfreeze", &Green);
 }
 
-void Start_Highlights_Menu7()
+void Highlight_Menu7()
 {
   char ButtText[15];
   char SnapText[31];
@@ -4225,7 +4243,7 @@ void Define_Menu8()                                    // Lime Gain Menu
   AddButtonStatus(button, "Unfreeze", &Green);
 }
 
-void Start_Highlights_Menu8()
+void Highlight_Menu8()
 {
   char SnapText[31];
 
@@ -4311,7 +4329,7 @@ void Define_Menu9()                                          // Config Menu
 }
 
 
-void Start_Highlights_Menu9()
+void Highlight_Menu9()
 {
   char SnapText[31];
 
@@ -4327,7 +4345,6 @@ void Start_Highlights_Menu9()
     SetButtonStatus(ButtonNumber(9, 3), 1);
   }
 }
-
 
 
 void Define_Menu10()                                          // Set Freq Presets Menu
@@ -4364,7 +4381,8 @@ void Define_Menu10()                                          // Set Freq Preset
   AddButtonStatus(button, "Unfreeze", &Green);
 }
 
-void Start_Highlights_Menu10()
+
+void Highlight_Menu10()
 {
   char ButtText[31];
   char SnapText[31];
@@ -4387,6 +4405,7 @@ void Start_Highlights_Menu10()
   snprintf(ButtText, 30, "Preset 5^%0.1f MHz", ((float)pfreq5) / 1000);
   AmendButtonStatus(ButtonNumber(CurrentMenu, 6), 0, ButtText, &Blue);
 }
+
 
 void Define_Menu11()                                          // 20db Range Menu
 {
@@ -4421,6 +4440,16 @@ void Define_Menu11()                                          // 20db Range Menu
   AddButtonStatus(button, "Freeze", &Blue);
   AddButtonStatus(button, "Unfreeze", &Green);
 }
+
+
+void Highlight_Menu11()
+{
+  char SnapText[31];
+
+  snprintf(SnapText, 30, "Capture^Snap %d", SnapNumber);
+  AmendButtonStatus(ButtonNumber(CurrentMenu, 0), 0, SnapText, &DGrey);
+}
+
 
 void Define_Menu12()                                          // Waterfall Config Menu
 {
@@ -4459,7 +4488,7 @@ void Define_Menu12()                                          // Waterfall Confi
 }
 
 
-void Start_Highlights_Menu12()
+void Highlight_Menu12()
 {
   char SnapText[31];
 
@@ -5442,8 +5471,7 @@ int main(void)
   DrawEmptyScreen();         // Required to set A value, which is not set in DrawTrace
   DrawYaxisLabels();         // dB calibration on LHS
   DrawSettings();            // Start, Stop RBW, Ref level and Title
-  Start_Highlights_Menu1();  // Look up snap number
-  UpdateWindow();            // Draw the buttons
+  redrawMenu();              // Draw the buttons
 
   while(app_exit == false)                                                  // Start of main display loop
   {
