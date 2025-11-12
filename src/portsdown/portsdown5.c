@@ -184,6 +184,7 @@ char player[63];            // vlc or ffplay
 // LongMynd RX Received Parameters for display
 bool timeOverlay = false;    // Display time overlay on received metadata and snaps
 time_t t;                    // current time
+char customAudioOut[127];    // Custom Audio Out device name
 
 // Stream Player
 bool amendStreamPreset = false;        // Set to amend a stream preset
@@ -395,6 +396,7 @@ void CycleLMRXaudio();
 void AdjustVLCVolume(int adjustment);
 void ChangeStreamPreset(int NoButton);
 void ToggleAmendStreamPreset();
+void ChangeCustomAudioOut();
 void CheckforUpdate();
 void SelectStreamerAction(int NoButton);
 void AmendStreamerPreset(int NoButton);
@@ -573,21 +575,20 @@ void SetConfigParam(char *PathConfigFile, char *Param, char *Value)
 
 void CheckConfigFile()
 {
-  // Template for future use
+  char shell_command[255];
+  FILE *fp;
+  int r;
 
-  //char shell_command[255];
-  //FILE *fp;
-  //int r;
-
-  //sprintf(shell_command, "grep -q 'wfallbase=' %s", PATH_CONFIG);
-  //fp = popen(shell_command, "r");
-  //r = pclose(fp);
-  //if (WEXITSTATUS(r) != 0)
-  //{
-  //  printf("Updating Config File with <new entry>\n");
-  //  sprintf(shell_command, "echo wfallbase=-70 >> %s", PATH_CONFIG);
-  //  system(shell_command); 
-  //}
+  // Add customaudioout to System Config file
+  sprintf(shell_command, "grep -q 'customaudioout=' %s", PATH_SCONFIG);
+  fp = popen(shell_command, "r");
+  r = pclose(fp);
+  if (WEXITSTATUS(r) != 0)
+  {
+    printf("Updating Config File with customaudioout\n");
+    sprintf(shell_command, "echo customaudioout=not_set >> %s", PATH_SCONFIG);
+    system(shell_command); 
+  }
 }
 
 
@@ -706,7 +707,12 @@ void ReadSavedParams()
     KeyLimePiEnabled = false;
   }
 
+  strcpy(response, "not_set");  // highlight null responses
+  GetConfigParam(PATH_SCONFIG, "customaudioout", response);
+  strcpy(customAudioOut, response);
+
   // Read the LongMynd RX presets
+
   ReadLMRXPresets();
 
   // Read the Stream presets
@@ -3796,6 +3802,7 @@ void Define_Menu3()
 
   AddButtonStatus(3, 20, "Set Stream^Outputs", &Blue);
 
+  AddButtonStatus(3, 21, "Custom Audio^Out Device", &Blue);
 }
 
 
@@ -5193,6 +5200,7 @@ void Define_Menu23()
   AddButtonStatus(23, 9, "Audio out^RPi Jack", &Blue);
   AddButtonStatus(23, 9, "Audio out^USB Dongle", &Blue);
   AddButtonStatus(23, 9, "Audio out^HDMI", &Grey);
+  AddButtonStatus(23, 9, "Audio out^Custom", &Grey);
 
   // 3rd Row, Menu 23
 
@@ -5215,6 +5223,8 @@ void Define_Menu23()
 void Highlight_Menu23()
 {
   char LMBtext[63];
+  char audioText[63];
+  char shortaudioText[40];
 
   if (strcmp(player, "ffplay") == 0)
   {
@@ -5263,10 +5273,18 @@ void Highlight_Menu23()
   {
     SetButtonStatus(23, 9, 1);
   }
-  else
+  else if (strcmp(LMRXaudio, "hdmi") == 0)
   {
     SetButtonStatus(23, 9, 2);
   }
+  else
+  {
+    strcpyn(shortaudioText, customAudioOut, 30);
+    snprintf(audioText, 63, "Audio out^%s", shortaudioText);
+    AmendButtonStatus(23, 9, 3, audioText, &Blue);
+    SetButtonStatus(23, 9, 3);
+  }
+
 
   if (strcmp(RXmod, "DVB-S") == 0)
   {
@@ -7766,15 +7784,21 @@ void CycleLNBVolts()
 
 void CycleLMRXaudio()
 {
-  if (strcmp(LMRXaudio, "rpi") == 0)
+  // Cycle through: rpi - usb - hdmi - custom
+
+  if (strcmp(LMRXaudio, "rpi") == 0)            // rpi, so select usb
   {
     strcpy(LMRXaudio, "usb");
   }
-  else if (strcmp(LMRXaudio, "usb") == 0)
+  else if (strcmp(LMRXaudio, "usb") == 0)       // usb, so select hdmi
   {
     strcpy(LMRXaudio, "hdmi");
   }
-  else
+  else if (strcmp(LMRXaudio, "hdmi") == 0)      // hdmi, so select custom
+  {
+    strcpy(LMRXaudio, customAudioOut);
+  }
+  else                                          // custom, so select rpi
   {
     strcpy(LMRXaudio, "rpi");
   }
@@ -7840,9 +7864,6 @@ void AdjustVLCVolume(int adjustment)
   // Clear the volume caption after 1 second
   system("(sleep 1; echo " " > /home/pi/tmp/vlc_overlay.txt) &");
 }
-
-
-
 
 
 void ChangeStreamPreset(int NoButton)
@@ -7937,6 +7958,36 @@ void ToggleAmendStreamPreset()
 }
 
 
+void ChangeCustomAudioOut()
+{
+  bool valid = false;
+  char KeyboardReturn[63];
+
+  // Ask for the Custom audio device name
+  while (valid == false)
+  {
+    Keyboard("Enter the Audio Out Custom Device Name", customAudioOut, 60, KeyboardReturn, true);
+    if (strlen(KeyboardReturn) > 3)
+    {
+      valid = true;
+    }
+  }
+
+  if (strcmp(customAudioOut, KeyboardReturn) != 0)   //  Entry has been changed
+  {
+    strcpy(customAudioOut, KeyboardReturn);
+
+    // Save the new device
+    SetConfigParam(PATH_SCONFIG, "customaudioout", customAudioOut);
+    printf ("new Custom Audio Out Device = %s\n", customAudioOut);
+
+    // Select the new device
+    strcpy(LMRXaudio, customAudioOut);
+    SetConfigParam(PATH_LMCONFIG, "audio", LMRXaudio);
+  }
+}
+
+
 void CheckforUpdate()
 {
   int choice;
@@ -8021,8 +8072,8 @@ void CheckforUpdate()
   }
   else if ((update == 0) || (dev == 0))       // No internet
   {
-    strcpy(Button1, " ");
-    strcpy(Button2, " ");
+    strcpy(Button1, "Don't Update");
+    strcpy(Button2, "Don't Update");
     sprintf(Banner, "Unable to contact GitHub.  Check Internet");
   }
   else if (current > update)                  // Probably Dev Version in use
@@ -8796,6 +8847,10 @@ void waitForScreenAction()
         case 20:                        // Set Stream Output Menu
           printf("MENU 26 \n");
           CurrentMenu = 26;
+          redrawMenu();
+          break;
+        case 21:                        // Set Custom Audio Device
+          ChangeCustomAudioOut();
           redrawMenu();
           break;
         }
@@ -9747,6 +9802,7 @@ int main(int argc, char **argv)
   initScreen();
   CreateButtons();
   Define_Menus();
+  CheckConfigFile();
   ReadSavedParams();
   checkSnapIndex();
   redrawMenu();

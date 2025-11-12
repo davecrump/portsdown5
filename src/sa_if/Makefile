@@ -10,6 +10,7 @@ LIBFLAGS2=-L/opt/vc/lib -lpthread  -ljpeg -lpng16 -lrt -lm -ldl  -lLimeSuite -lf
 sa_if: sa_if.c 
 	gcc -Wall $(INCLUDEFLAGS2) -o  sa_if \
 		lime.c \
+        atod.c \
 		../common/graphics.c \
 		../common/timing.c \
 		../common/ffunc.c \
@@ -30,3 +31,5 @@ sa_if: sa_if.c
 
 install:
 	cp sa_if ../../bin/
+
+# -lbcm_host 

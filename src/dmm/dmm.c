@@ -5201,6 +5201,9 @@ int main(int argc, char **argv)
   // Set serial pin to input
   pinMode(SerialInGPIO, INPUT);
 
+  // Enable pull-up on input
+  pullUpDnControl(SerialInGPIO, PUD_UP);
+
   // Sort out display and control.  If touchscreen detected, use that (and set config) with optional web control.
   // Allow for mouse if touchscreen detected
   // If no touchscreen, check for mouse.  If mouse detected, use that and set hdmi720 if hdmi mode not selected
