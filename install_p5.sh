@@ -424,6 +424,8 @@ fi
 
 if [ "$UPDATE" == "true" ]; then
 
+  DisplayUpdateMsg "Downloading new Software"  # Display it here before folder deleted
+
   echo
   echo "-------------------------------"
   echo "----- Preserving Configs ------"
@@ -436,7 +438,6 @@ if [ "$UPDATE" == "true" ]; then
   # Delete previous Portsdown files
   rm -rf /home/pi/portsdown
 
-  DisplayUpdateMsg "Downloading new Software"
 fi
 
 # Download the previously selected version of Portsdown 5

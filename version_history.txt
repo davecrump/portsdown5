@@ -1,3 +1,6 @@
+202511132
+Move img2fb call in install script
+
 202511131
 Preserve img2fb during update
 
