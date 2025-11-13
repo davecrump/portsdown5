@@ -46,7 +46,7 @@ DisplayUpdateMsg() {
   convert /home/pi/tmp/update.jpg -rotate "$FBORIENTATION" /home/pi/tmp/update.jpg
 
   # Display the update message on the desktop - note only works for update!
-  /home/pi/portsdown/bin/img2fb -f /home/pi/tmp/update.jpg
+  /home/pi/tmp/img2fb -f /home/pi/tmp/update.jpg
 
   # Display for web
   /home/pi/portsdown/scripts/single_screen_grab_for_web.sh &
@@ -151,8 +151,13 @@ if [ "$UPDATE" == "true" ]; then
   # Stop the existing Portsdown process
   /home/pi/portsdown/utils/stop.sh &
 
-  # Check orienttation and display update message
+  # Check orienttation
   FBORIENTATION=$(get_config_var fborientation $SCONFIGFILE)
+
+  # Copy img2fb executable to tmp directory as it gets deleted in the update process
+  cp /home/pi/portsdown/bin/img2fb /home/pi/tmp/img2fb
+
+  # Display update message
   DisplayUpdateMsg "Starting Software Update"
 fi
 

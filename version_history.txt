@@ -1,3 +1,6 @@
+202511131
+Preserve img2fb during update
+
 202511130
 Correct install script to not use fbi
 
