@@ -1,3 +1,6 @@
+202511150
+Correct update script
+
 202511132
 Move img2fb call in install script
 
