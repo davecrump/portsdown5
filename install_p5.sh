@@ -148,9 +148,6 @@ if [ "$UPDATE" == "true" ]; then
   echo "-------------------------------------------------------"
   echo $(date -u) "Updating - NOT new install" | sudo tee -a /home/pi/p5_initial_build_log.txt  > /dev/null
 
-  # Stop the existing Portsdown process
-  #/home/pi/portsdown/utils/stop.sh &
-
   # Check orienttation
   FBORIENTATION=$(get_config_var fborientation $SCONFIGFILE)
 
@@ -158,7 +155,11 @@ if [ "$UPDATE" == "true" ]; then
   cp /home/pi/portsdown/bin/img2fb /home/pi/tmp/img2fb
 
   # Display update message
-  DisplayUpdateMsg "Starting Software Update"
+  if [ "$GIT_SRC" == "davecrump" ]; then
+    DisplayUpdateMsg "Starting Dev Software Update"
+  else
+    DisplayUpdateMsg "Starting Software Update"
+  fi
 fi
 
 echo
@@ -212,7 +213,16 @@ sudo apt-get -y remove apt-listchanges
 if [[ "$SUCCESS" != "0" ]]; then
   echo
   echo "Early error (probably a locked file).  Nothing changed on card, so please try again"
+
+  if [ "$UPDATE" == "true" ]; then
+    DisplayUpdateMsg "Error during Update. Please Reboot"
+  fi
+
   exit
+fi
+
+if [ "$UPDATE" == "true" ]; then
+  DisplayUpdateMsg "Updating 3rd-party Software Packages"
 fi
 
 # Upgrade the distribution
@@ -424,7 +434,7 @@ fi
 
 if [ "$UPDATE" == "true" ]; then
 
-  DisplayUpdateMsg "Downloading new Software"  # Display it here before folder deleted
+  DisplayUpdateMsg "Updating Portsdown Software"  # Display it here before folder deleted
 
   echo
   echo "-------------------------------"
@@ -467,7 +477,7 @@ if [ "$UPDATE" == "true" ]; then
 
   # Remove the old directory
   rm -rf /home/pi/configs/
-  DisplayUpdateMsg "Compiling new Software"
+  DisplayUpdateMsg "Compiling new Portsdown Software"
 fi
 
 # Compile the main Portsdown 5 application
