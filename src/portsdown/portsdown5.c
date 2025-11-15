@@ -353,6 +353,8 @@ void Define_Menu25();
 void Highlight_Menu25();
 void Define_Menu26();
 void Highlight_Menu26();
+void Define_Menu31();
+void Highlight_Menu31();
 void Define_Menu32();
 void Highlight_Menu32();
 void Define_Menu33();
@@ -360,6 +362,7 @@ void Highlight_Menu33();
 void Define_Menu41();
 void Define_Menus();
 void Keyboard(char *RequestText, char *InitText, int MaxLength, char *KeyboardReturn, bool UpperCase);
+int Decision1(char *TitleText, char *QText, char *Button1Text, bool CancelButton);
 int Decision2(char *TitleText, char *QText, char *Button1Text, char *Button2Text, bool CancelButton);
 int Decision3(char *TitleText, char *QText, char *Button1Text, char *Button2Text, char *Button3Text, bool CancelButton);
 
@@ -5690,6 +5693,23 @@ void Highlight_Menu26()
 }
 
 
+void Define_Menu31()                          // Decision 1 Menu
+{
+  AddButtonStatus(31, 4, " ", &Black);
+
+  // 2nd Row, Menu 31.  
+
+  AddButtonStatus(31, 12, " ", &Blue);
+  AddButtonStatus(31, 12, " ", &Green);
+}
+
+
+void Highlight_Menu31()
+{
+//
+}
+
+
 void Define_Menu32()                          // Decision 2 Menu
 {
   AddButtonStatus(32, 4, " ", &Black);
@@ -5948,7 +5968,6 @@ void Define_Menu41()
 }
 
 
-
 void Define_Menus()
 {
   Define_Menu1();
@@ -5976,6 +5995,7 @@ void Define_Menus()
   Define_Menu24();
   Define_Menu25();
   Define_Menu26();
+  Define_Menu31();
   Define_Menu32();
   Define_Menu33();
 
@@ -6467,6 +6487,73 @@ void Keyboard(char *RequestText, char *InitText, int MaxLength, char *KeyboardRe
       }
     }
   }
+}
+
+
+/***************************************************************************//**
+ * @brief Displays a banner and a single button
+ *
+ * @param TitleText (str) Title for the page
+ * @param QText (str) Question Text
+ * @param Button1Text (str) Text for button 1
+ * @param CancelButton (bool) show cancel button if true 
+ *
+ * @return (int) 1 for button 1, 0 for Cancel
+*******************************************************************************/
+int Decision1(char *TitleText, char *QText, char *Button1Text, bool CancelButton)
+{
+  const font_t *font_ptr = &font_dejavu_sans_22;
+  int i;
+  int response = - 1;
+  int rawX;
+  int rawY;
+
+  strcpy(MenuTitle[31], TitleText);
+  AmendButtonStatus(31, 12, 0, Button1Text, &Blue);
+  AmendButtonStatus(31, 12, 1, Button1Text, &Green);
+  SetButtonStatus(32, 12, 0);
+
+  if (CancelButton == true)
+  {
+    AmendButtonStatus(31, 4, 0, "Cancel", &DBlue);
+  }
+  else
+  {
+    AmendButtonStatus(31, 4, 0, " ", &Black);
+  }
+
+  CurrentMenu = 31;
+  redrawMenu();
+  
+  TextMid(400, 350, QText, font_ptr, 0, 0, 0, 255, 255, 255);
+  publish();
+
+  while(response < 0)
+  {
+    if (getTouchSample(&rawX, &rawY) == 0) continue;
+
+    i = IsMenuButtonPushed();
+
+    switch(i)
+    {
+      case 4:                                   // cancel
+        if (CancelButton == true)
+        {
+          response = 0;
+        }
+        break;
+      case 12:
+        response = 1;
+        SetButtonStatus(32, 12, 1);
+        redrawButton(32, 12);
+        usleep(250000);
+        break;
+    }
+  }
+
+  CurrentMenu = CallingMenu;
+
+  return response;
 }
 
 
@@ -7998,8 +8085,9 @@ void CheckforUpdate()
   int update = 0;
   int dev = 0;
   char Banner [255];
-  char Button1 [63] = "Update Now";
-  char Button2 [63] = "Development^Update";
+  char Button1 [63];
+  char Button2 [63];
+  char Button3 [63];
   char * line = NULL;
   size_t len = 0;
   bool complete = false;
@@ -8065,79 +8153,76 @@ void CheckforUpdate()
   dev = atoi(DevVersion);
   // printf ("Dev Version -%s-\n", DevVersion);
 
-  if (current == update)                      // Up to date
+  if ((update == 0) || (dev == 0))            // No internet
   {
-    strcpy(Button1, "Force^Update");
-    sprintf(Banner, "Latest version: %s is already in use", CurrentVersion);
-  }
-  else if ((update == 0) || (dev == 0))       // No internet
-  {
-    strcpy(Button1, "Don't Update");
-    strcpy(Button2, "Don't Update");
     sprintf(Banner, "Unable to contact GitHub.  Check Internet");
-  }
-  else if (current > update)                  // Probably Dev Version in use
-  {
-    strcpy(Button1, "Development^Update");
-    strcpy(Button2, "Development^Update");
-    sprintf(Banner, "Current version: %s, ahead of production version", CurrentVersion);
-  }
-  else                                        // Normal update available
-  {
-    sprintf(Banner, "Current version: %s, Update version: %s", CurrentVersion, UpdateVersion);
+    strcpy(Button1, "Exit");
+    choice = Decision1 ("Software Update Menu", Banner, Button1, false);
+    return;
   }
 
-  choice = Decision3 ("Software Update Menu", Banner, Button1, Button2, "Don't Update", false);
-  switch (choice)
+  if (current < update)                      // Update newer than current
   {
-    case 1:
-      if (current == update)                      // Up to date, but force update
-      {
+    sprintf(Banner, "Current version %s Latest version: %s", CurrentVersion, UpdateVersion);
+    strcpy(Button1, "Update");
+    strcpy(Button2, "Don't Update");
+    choice = Decision2 ("Software Update Menu", Banner, Button1, Button2, false);
+
+    switch (choice)
+    {
+      case 1:                                 // Update requested
         system("wget -q https://github.com/BritishAmateurTelevisionClub/portsdown5/raw/main/install_p5.sh -O /home/pi/install_p5.sh");
         system("chmod +x /home/pi/install_p5.sh");
+        clearScreen(0 ,0, 0);
         system("/home/pi/install_p5.sh --update &");
-        // printf("/home/pi/install_p5.sh --update &\n");
-      }
-      else if ((update == 0) || (dev == 0))       // No internet
-      {
-        CurrentMenu = 3;
+        break;
+      case 2:                                 // No update requested
         return;
-      }
-      else if (current > update)                  // Probably Dev Version in use, so show dev menu
-      {
-        show_dev_menu = true;
-      }
-      else                                        // Do a Normal update 
-      {
+        break;
+    } 
+  }
+
+  if (current == update)                      // Up to date
+  {
+    sprintf(Banner, "Latest version: %s is already in use", CurrentVersion);
+    strcpy(Button1, "Force^Update");
+    strcpy(Button2, "Development^Update");
+    strcpy(Button3, "Don't Update");
+    choice = Decision3 ("Software Update Menu", Banner, Button1, Button2, Button3, false);
+
+    switch (choice)
+    {
+      case 1:                                 // Up to date, force update requested
         system("wget -q https://github.com/BritishAmateurTelevisionClub/portsdown5/raw/main/install_p5.sh -O /home/pi/install_p5.sh");
         system("chmod +x /home/pi/install_p5.sh");
+        clearScreen(0 ,0, 0);
         system("/home/pi/install_p5.sh --update &");
-        // printf("/home/pi/install_p5.sh --update &\n");
-      }
-      break;
-    case 2:
-      if (current == update)                      // Up to date
-      {
+        break;
+      case 2:                                 // Up to date, dev update requested
         show_dev_menu = true;
-      }
-      else if ((update == 0) || (dev == 0))       // No internet
-      {
-        CurrentMenu = 3;
+        break;
+      case 3:                                 // Up to date, no update requested
         return;
-      }
-      else if (current > update)                  // Probably Dev Version in use, so show dev menu
-      {
+        break;
+    } 
+  }
+
+  if (current > update)                       // Dev Version already in use
+  {
+    sprintf(Banner, "Current version: %s, ahead of production version", CurrentVersion);
+    strcpy(Button1, "Development^Update");
+    strcpy(Button2, "Don't Update");
+    choice = Decision2 ("Software Update Menu", Banner, Button1, Button2, false);
+
+    switch (choice)
+    {
+      case 1:                                 // Dev version in use, dev update requested
         show_dev_menu = true;
-      }
-      else                                        // show dev Menu
-      {
-        show_dev_menu = true;
-      }
-      break;
-    case 3:
-      CurrentMenu = 3;
-      return;
-      break;
+        break;
+      case 2:                                 // Up to date, no update requested
+        return;
+        break;
+    } 
   }
 
   // If flow gets to here, show_dev_menu should be true
@@ -8148,48 +8233,46 @@ void CheckforUpdate()
     return;
   }
 
-  // Show dev update menu
-  if (current == dev)                      // Up to date
+  if (current >= dev)                        // Up to date with (or beyond?) development version
   {
+    sprintf(Banner, "Current version: %s Dev version: %s", CurrentVersion, DevVersion);
     strcpy(Button1, "Force Dev^Update");
-    sprintf(Banner, "Latest Dev version: %s is already in use", DevVersion);
-  }
-  else if (current > dev)                  // Unusual error
-  {
-    strcpy(Button1, "Force Dev^Update");
-    sprintf(Banner, "Current version: %s, ahead of Dev version", CurrentVersion);
-  }
-  else                                        // Dev update available
-  {
-    sprintf(Banner, "Current version: %s, Dev version: %s", CurrentVersion, DevVersion);
+    strcpy(Button2, "Don't Update");
+    choice = Decision2 ("Development Software Update Menu", Banner, Button1, Button2, false);
+
+    switch (choice)
+    {
+      case 1:                                 // Dev version in use, dev update requested
+        system("wget -q https://github.com/davecrump/portsdown5/raw/main/install_p5.sh -O /home/pi/install_p5.sh");
+        system("chmod +x /home/pi/install_p5.sh");
+        clearScreen(0 ,0, 0);
+        system("/home/pi/install_p5.sh --update --development &");
+        break;
+      case 2:                                 // No update requested
+        return;
+        break;
+    } 
   }
 
-  choice = Decision2 ("Development Software Update Menu", Banner, Button1, "Don't Update", false);
-  switch (choice)
+  if (current < dev)                        // Development version update available
   {
-    case 1:
-      system("wget -q https://github.com/davecrump/portsdown5/raw/main/install_p5.sh -O /home/pi/install_p5.sh");
-      system("chmod +x /home/pi/install_p5.sh");
-      if (current == dev)                      // Up to date with dev, so force dev update
-      {
+    sprintf(Banner, "Current version: %s Dev version: %s", CurrentVersion, DevVersion);
+    strcpy(Button1, "Dev^Update");
+    strcpy(Button2, "Don't Update");
+    choice = Decision2 ("Development Software Update Menu", Banner, Button1, Button2, false);
+
+    switch (choice)
+    {
+      case 1:                                 // Dev version in use, dev update requested
+        system("wget -q https://github.com/davecrump/portsdown5/raw/main/install_p5.sh -O /home/pi/install_p5.sh");
+        system("chmod +x /home/pi/install_p5.sh");
+        clearScreen(0 ,0, 0);
         system("/home/pi/install_p5.sh --update --development &");
-        // printf("/home/pi/install_p5.sh --update --development &\n");
-      }
-      else if (current > dev)                  // Unusual error
-      {
-        system("/home/pi/install_p5.sh --update --development &");
-        // printf("/home/pi/install_p5.sh --update --development &\n");
-      }
-      else                                        // Dev update available
-      {
-        system("/home/pi/install_p5.sh --update --development &");
-         // printf("/home/pi/install_p5.sh --update --development &\n");
-      }
-      break;
-    case 2:
-      CurrentMenu = 3;
-      return;
-      break;
+        break;
+      case 2:                                 // No update requested
+        return;
+        break;
+    } 
   }
 }
 
