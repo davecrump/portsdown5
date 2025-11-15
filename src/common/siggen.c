@@ -166,7 +166,8 @@ int StartExpressServer()
 
     // Start the server
     strcpy(BashText, "cd /home/pi/express_server; ");
-    strcat(BashText, "sudo nice -n -40 /home/pi/express_server/express_server  >/dev/null 2>/dev/null &");
+    // strcat(BashText, "sudo nice -n -40 /home/pi/express_server/express_server  >/dev/null 2>/dev/null &");
+    strcat(BashText, "sudo nice -n -40 /home/pi/express_server/express_server & >/dev/null 2>/dev/null");
     system(BashText);
     strcpy(BashText, "cd /home/pi");
     system(BashText);
@@ -210,7 +211,7 @@ int CalcOPLevel(uint64_t DisplayFreq, int level, bool ModOn)
   int      CalLevel[12];        // Output level in tenths of a dBm at level 0
 
   CalFreq [1] = 70000000;
-  CalLevel[1] = 320;
+  CalLevel[1] = -320;
   CalFreq [2] = 120000000;
   CalLevel[2] = -304;
   CalFreq [3] = 230000000;

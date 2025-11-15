@@ -2,7 +2,9 @@
 
 # Portsdown 5 Install/Update script by davecrump
 
-# Define Function to Read from Config File
+################################## FUNCTIONS ####################################
+
+# Define Function to Read from Config File ######################################
 get_config_var() {
 lua - "$1" "$2" <<EOF
 local key=assert(arg[1])
@@ -18,7 +20,8 @@ end
 EOF
 }
 
-# Define function to write messages to build log
+
+# Define function to write messages to build log ################################
 BuildLogMsg() {
   if [[ "$1" != "0" ]]; then
     echo $(date -u) "Build Fail    " "$2" | sudo tee -a /home/pi/p5_initial_build_log.txt  > /dev/null
@@ -26,7 +29,8 @@ BuildLogMsg() {
   fi
 }
 
-# Define function to write messages to screen during update
+
+# Define function to write messages to screen during update #####################
 DisplayUpdateMsg() {
   # Delete any old update message image
   rm /home/pi/tmp/update.jpg >/dev/null 2>/dev/null
@@ -41,11 +45,13 @@ DisplayUpdateMsg() {
   # Rotate for screen orientation
   convert /home/pi/tmp/update.jpg -rotate "$FBORIENTATION" /home/pi/tmp/update.jpg
 
-  # Display the update message on the desktop
-  sudo fbi -T 1 -noverbose /home/pi/tmp/update.jpg >/dev/null 2>/dev/null
-  (sleep 1; sudo killall -9 fbi >/dev/null 2>/dev/null) &  ## kill fbi once it has done its work
+  # Display the update message on the desktop - note only works for update!
+  /home/pi/tmp/img2fb -f /home/pi/tmp/update.jpg
+
+  # Display for web
   /home/pi/portsdown/scripts/single_screen_grab_for_web.sh &
 }
+
 
 ################################## START HERE #####################################
 
@@ -54,7 +60,7 @@ SCONFIGFILE="/home/pi/portsdown/configs/system_config.txt"
 FBORIENTATION="0"
 
 # Create first entry for the build error log
-echo $(date -u) "New Build started" | sudo tee -a /home/pi/p5_initial_build_log.txt  > /dev/null
+echo $(date -u) "New Build or Update started" | sudo tee -a /home/pi/p5_initial_build_log.txt  > /dev/null
 sudo chown pi:pi /home/pi/p5_initial_build_log.txt
 
 # Check current user
@@ -142,12 +148,18 @@ if [ "$UPDATE" == "true" ]; then
   echo "-------------------------------------------------------"
   echo $(date -u) "Updating - NOT new install" | sudo tee -a /home/pi/p5_initial_build_log.txt  > /dev/null
 
-  # Stop the existing Portsdown process
-  /home/pi/portsdown/utils/stop.sh &
-
-  # Check orienttation and display update message
+  # Check orienttation
   FBORIENTATION=$(get_config_var fborientation $SCONFIGFILE)
-  DisplayUpdateMsg "Starting Software Update"
+
+  # Copy img2fb executable to tmp directory as it gets deleted in the update process
+  cp /home/pi/portsdown/bin/img2fb /home/pi/tmp/img2fb
+
+  # Display update message
+  if [ "$GIT_SRC" == "davecrump" ]; then
+    DisplayUpdateMsg "Starting Dev Software Update"
+  else
+    DisplayUpdateMsg "Starting Software Update"
+  fi
 fi
 
 echo
@@ -201,7 +213,16 @@ sudo apt-get -y remove apt-listchanges
 if [[ "$SUCCESS" != "0" ]]; then
   echo
   echo "Early error (probably a locked file).  Nothing changed on card, so please try again"
+
+  if [ "$UPDATE" == "true" ]; then
+    DisplayUpdateMsg "Error during Update. Please Reboot"
+  fi
+
   exit
+fi
+
+if [ "$UPDATE" == "true" ]; then
+  DisplayUpdateMsg "Updating 3rd-party Software Packages"
 fi
 
 # Upgrade the distribution
@@ -405,14 +426,15 @@ if [ "$UPDATE" == "false" ]; then
   vMin=`cut -d. -f2 VERSION`
 
   mv debian-template/wiringpi_"$vMaj"."$vMin"_arm64.deb .
-    SUCCESS=$?; BuildLogMsg $SUCCESS "Moved wiringpi_3.16_arm64.deb"
+    SUCCESS=$?; BuildLogMsg $SUCCESS "Moved wiringpi_x.xx_arm64.deb"
   sudo apt install ./wiringpi_"$vMaj"."$vMin"_arm64.deb
     SUCCESS=$?; BuildLogMsg $SUCCESS "Installed Wiring Pi"
   cd /home/pi
-
 fi
 
 if [ "$UPDATE" == "true" ]; then
+
+  DisplayUpdateMsg "Updating Portsdown Software"  # Display it here before folder deleted
 
   echo
   echo "-------------------------------"
@@ -426,7 +448,6 @@ if [ "$UPDATE" == "true" ]; then
   # Delete previous Portsdown files
   rm -rf /home/pi/portsdown
 
-  DisplayUpdateMsg "Downloading new Software"
 fi
 
 # Download the previously selected version of Portsdown 5
@@ -456,7 +477,7 @@ if [ "$UPDATE" == "true" ]; then
 
   # Remove the old directory
   rm -rf /home/pi/configs/
-  DisplayUpdateMsg "Compiling new Software"
+  DisplayUpdateMsg "Compiling new Portsdown Software"
 fi
 
 # Compile the main Portsdown 5 application

@@ -2,7 +2,7 @@
 
 # Called by streamrx to start the stream receiver
 
-set -x
+#set -x
 
 PCONFIGFILE="/home/pi/portsdown/configs/portsdown_config.txt"
 RCONFIGFILE="/home/pi/portsdown/configs/longmynd_config.txt"
@@ -39,21 +39,20 @@ STREAMREF=stream"$STREAMNUMBER"
 STREAMURL=$(get_config_var $STREAMREF $PRESETFILE)
 
 # Send audio to the correct port
-if [ "$AUDIO_OUT" == "rpi" ]; then
+if [ "$AUDIO_OUT" == "rpi" ]; then                  # Portsdown 4 3.5mm jack
   # Check for Raspberry Pi 4
   aplay -l | grep -q 'bcm2835 Headphones'
   if [ $? == 0 ]; then
     AUDIO_DEVICE="hw:CARD=Headphones,DEV=0"
-  else # Raspberry Pi 5
+  else # Raspberry Pi 5                             # No audio out on RPi 5
     AUDIO_DEVICE=" "
   fi
-else # USB Dongle
+elif [ "$AUDIO_OUT" == "usb" ]; then                # USB Dongle
   AUDIO_DEVICE="hw:CARD=Device,DEV=0"
-fi
-AUDIO_OUT=hdmi       #########################
-if [ "$AUDIO_OUT" == "hdmi" ]; then
-  # Overide for HDMI
+elif [ "$AUDIO_OUT" == "hdmi" ]; then               # HDMI, but doesn't work
   AUDIO_DEVICE="sysdefault:CARD=vc4hdmi0"
+else                                                # Custom
+  AUDIO_DEVICE=hw:CARD="$AUDIO_OUT",DEV=0
 fi
 
 # Error check volume

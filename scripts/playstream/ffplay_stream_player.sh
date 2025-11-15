@@ -49,14 +49,20 @@ STREAMURL=$(get_config_var $STREAMREF $PRESETFILE)
 #STREAMURL=rtmp://rtmp.batc.org.uk/live/gb3ey
 
 # Send audio to the correct port
-if [ "$AUDIO_OUT" == "rpi" ]; then             # RPi (non) jack
-  AUDIO_DEVICE="hw:CARD=Headphones,DEV=0"
-else                                           # USB Dongle
-  AUDIO_DEVICE="hw:CARD=Device,DEV=0" 
-fi
-if [ "$AUDIO_OUT" == "hdmi" ]; then            # HDMI (not working)
-  # Overide for HDMI
-   AUDIO_DEVICE="hw:CARD=vc4hdmi0,DEV=0"
+if [ "$AUDIO_OUT" == "rpi" ]; then                  # Portsdown 4 3.5mm jack
+  # Check for Raspberry Pi 4
+  aplay -l | grep -q 'bcm2835 Headphones'
+  if [ $? == 0 ]; then
+    AUDIO_DEVICE="hw:CARD=Headphones,DEV=0"
+  else # Raspberry Pi 5                             # No audio out on RPi 5
+    AUDIO_DEVICE=" "
+  fi
+elif [ "$AUDIO_OUT" == "usb" ]; then                # USB Dongle
+  AUDIO_DEVICE="hw:CARD=Device,DEV=0"
+elif [ "$AUDIO_OUT" == "hdmi" ]; then               # HDMI, but doesn't work
+  AUDIO_DEVICE="sysdefault:CARD=vc4hdmi0"
+else                                                # Custom
+  AUDIO_DEVICE=hw:CARD="$AUDIO_OUT",DEV=0
 fi
 
 # Error check volume

@@ -26,3 +26,7 @@ webcontrol=enabled
 
 # Key Lime Pi Spectrum Analyser features: enabled, disabled
 keylimepi=disabled
+
+# Device name for custom audio out device.  Used in RX and Stream player
+customaudioout=not_set
+

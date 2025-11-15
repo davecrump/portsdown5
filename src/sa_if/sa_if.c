@@ -34,6 +34,7 @@
 #include "../common/utils.h"
 #include "../common/sa_cal.h"
 #include "sa_if.h"
+#include "atod.h"
 
 #define PI 3.14159265358979323846
 
@@ -42,6 +43,7 @@ pthread_t thwebclick;                  //  Listens for mouse clicks from web int
 pthread_t thtouchscreen;               //  listens to the touchscreen   
 pthread_t thmouse;                     //  Listens to the mouse
 static pthread_t lime_thread_obj;
+static pthread_t atod_thread_obj;
 pthread_t thPanelMonitor;  // ADC for set Frequency and reads panel switch positions
 pthread_t thPowerMeasure;  // Synchronises and measures power in Lime Samples
 
@@ -107,9 +109,11 @@ bool normalising = false;
 bool activescan = false;
 bool finishednormalising = false;
 int y[501];               // Actual displayed values on the chart
+int ya[501];              // Analog display values
 int norm[501];            // Normalisation corrections
 int scaledadresult[501];  // Sensed AD Result
 int normleveloffset = 300;
+bool yavalid[501];
 
 int DispFreq;
 int normlevel = -20;
@@ -233,6 +237,7 @@ char DisplayType[31];
 bool touchscreen_present = false;
 
 bool scanstart = false;
+bool analog = false;                  // Set true for external analog IF
 
 pixelvt_t pixelbuff[1023];
 uint64_t now;
@@ -276,6 +281,7 @@ void snap_from_menu();
 void do_snapcheck();
 int IsImageToBeChanged(int x, int y);
 int CheckLimeConnect();
+//void UpdateWeb();
 void Keyboard(char RequestText[63], char InitText[63], int MaxLength);
 int openTouchScreen(int);
 int getTouchScreenDetails(int *screenXmin, int *screenXmax,int *screenYmin,int *screenYmax);
@@ -299,6 +305,7 @@ void CheckForGainChange(int rawX, int rawY);
 void SetNormLevel(int button);
 void Normalise();
 float calcFreqGainCal(int pixelFreq);
+void toggleIF();
 void control_SigGen(int button);
 void ChangeLabel(int button);
 void *WaitButtonEvent(void * arg);
@@ -463,6 +470,16 @@ void ReadSavedParams()
   GetConfigParam(PATH_SAIFCONFIG, "limegain", response);
   limegain = atoi(response);
   gain = ((float)limegain) / 100.0;
+
+  GetConfigParam(PATH_SAIFCONFIG, "ifmode", response);
+  if (strcmp(response, "digital") == 0)
+  {
+    analog = false;
+  }
+  else if (strcmp(response, "analog") == 0)
+  {
+    analog = true;
+  }
 
   // System Config File
 
@@ -1006,6 +1023,17 @@ return 0;
   pclose(fp);
   return responseint;
 }
+
+
+//void UpdateWeb()
+//{
+  // Called after any screen update to update the web page if required.
+
+//  if(webcontrol == true)
+//  {
+//    system("/home/pi/portsdown/scripts/single_screen_grab_for_web.sh &");
+//  }
+//}
 
 
 void Keyboard(char RequestText[63], char InitText[63], int MaxLength)
@@ -2611,6 +2639,21 @@ float calcFreqGainCal(int pixelFreq)
 }
 
 
+void toggleIF()
+{
+  if (analog ==  true)
+  {
+    analog = false;
+    SetConfigParam(PATH_SAIFCONFIG, "ifmode", "digital");
+  }
+  else
+  {
+    analog = true;
+    SetConfigParam(PATH_SAIFCONFIG, "ifmode", "analog");
+  }
+}
+
+
 void control_SigGen(int button)
 {
   char RequestText[63];
@@ -3264,7 +3307,10 @@ void *WaitButtonEvent(void * arg)
         case 0:                                            // Capture Snap
           snap_from_menu();
           break;
-        case 2:                                            // Was Power Meter Mode
+        case 2:                                            // Toggle Analog/Digital IF
+          toggleIF();
+          Start_Highlights_Menu5();
+          UpdateWindow();
           break;
         case 3:                                            // XY Mode
           if (ContScan == true)
@@ -3666,9 +3712,9 @@ void Define_Menu5()  // Mode
   AddButtonStatus(button, "Mode^Menu", &Black);
   AddButtonStatus(button, " ", &Green);
 
-  //button = CreateButton(5, 2);
-  //AddButtonStatus(button, "Power^Meter", &Blue);
-  //AddButtonStatus(button, "Power^Meter", &Green);
+  button = CreateButton(5, 2);
+  AddButtonStatus(button, "Digital^IF", &Blue);
+  AddButtonStatus(button, "Analog^IF", &Blue);
 
   button = CreateButton(5, 7);
   AddButtonStatus(button, "Return to^Main Menu", &Blue);
@@ -3681,7 +3727,14 @@ void Define_Menu5()  // Mode
 
 void Start_Highlights_Menu5()
 {
-  // Nothing here
+  if (analog == true)
+  {
+    SetButtonStatus(ButtonNumber(5, 2), 1);
+  }
+  else
+  {
+    SetButtonStatus(ButtonNumber(5, 2), 0);
+  }
 }
 
 
@@ -5668,6 +5721,19 @@ int main(int argc, char **argv)
       return 1;
   }
 
+  // Declare all pixels in analog display invalid
+  for (i = 0; i < 501; i++)
+  {
+    yavalid[i] = false;
+  }
+
+  /* Analog reading Thread */
+  if(pthread_create(&atod_thread_obj, NULL, atod_thread, &app_exit))
+  {
+      fprintf(stderr, "Error creating %s pthread\n", "Analog to Digital");
+      return 1;
+  }
+
   /* Panel Monitor Thread */
   if(pthread_create(&thPanelMonitor, NULL, PanelMonitor_thread, &app_exit))
   {
@@ -5708,15 +5774,87 @@ int main(int argc, char **argv)
         ModeChanged = false;
       }
 
-      //do  // Wait here for first sample in buffer
-      //{
-      //  usleep(1);
-      //}
-      //while (pixelbuff[0].valid == false);
+      // Do analog display here
 
-      //pixelbuff[0].valid = false;
+      if (analog == true)
+      {
+        // Wait here for first displayed sample in buffer
+        do
+        {
+          usleep(1);
+        }
+        while ((yavalid[0] == false) && (app_exit == false));
+        yavalid[0] = false;
 
-//printf("waiting for first sample at %ld\n", monotonic_ns());
+        activescan = true;
+
+        if (normalised == false)
+        {
+          y[0] = constrainY(ya[0]);
+        }
+        else
+        {
+          y[0] = constrainY(ya[0] + norm[0]);
+        }
+
+        if (normalising == true)
+        {
+          norm[0] = normleveloffset - ya[0];
+        }
+
+        // Wait here for second displayed sample in buffer
+        do
+        {
+          usleep(1);
+        }
+        while ((yavalid[1] == false) && (app_exit == false));
+        yavalid[1] = false;
+
+        if (normalised == false)
+        {
+          y[1] = constrainY(ya[1]);
+        }
+        else
+        {
+          y[1] = constrainY(ya[1] + norm[1]);
+        }
+
+        if (normalising == true)
+        {
+          norm[1] = normleveloffset - ya[1];
+        }
+
+        // Wait for each subsequent sample
+        for (pixel = 2; pixel < 501; pixel++)
+        {
+          // Wait for valid pixel
+          do
+          {
+            usleep(1);
+          }
+          while ((yavalid[pixel] == false) && (app_exit == false));
+
+          // Constrain and draw trace
+          if (normalised == false)
+          {
+            y[pixel] = constrainY(ya[pixel]);
+          }
+          else
+          {
+            y[pixel] = constrainY(ya[pixel] + norm[pixel]);
+          }
+
+          if (normalising == true)
+          {
+              norm[pixel] = normleveloffset - ya[pixel];
+          }
+          DrawTrace(pixel, y[pixel - 2], y[pixel - 1], y[pixel]);
+          yavalid[pixel] = false;
+        }
+      }
+      else  // Digital (Lime) display
+      {
+      // should be indented!
 
       do  // Wait here for first displayed sample in buffer
       {
@@ -5810,14 +5948,14 @@ int main(int argc, char **argv)
 	    //printf("pixel=%d, prev2=%d, prev1=%d, current=%d\n", pixel, y[pixel - 2], y[pixel - 1], y[pixel]);
 
 
-if (pixel  == 444)
-{
-  now2 = monotonic_ns();
-  printf("last update at %ld\n", now2);
-}
-
+        if (pixel  == 444)
+        {
+          now2 = monotonic_ns();
+          printf("last update at %ld\n", now2);
+        }
       }
-
+      // end of digital display
+      }
       activescan = false;
 
       while (freeze)
@@ -5845,8 +5983,6 @@ if (pixel  == 444)
       }
 
       tracecount++;
-
-      //UpdateWeb();
 
       if (tracecount >= nextwebupdate)
       {
