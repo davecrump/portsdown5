@@ -149,7 +149,7 @@ if [ "$UPDATE" == "true" ]; then
   echo $(date -u) "Updating - NOT new install" | sudo tee -a /home/pi/p5_initial_build_log.txt  > /dev/null
 
   # Stop the existing Portsdown process
-  /home/pi/portsdown/utils/stop.sh &
+  #/home/pi/portsdown/utils/stop.sh &
 
   # Check orienttation
   FBORIENTATION=$(get_config_var fborientation $SCONFIGFILE)
