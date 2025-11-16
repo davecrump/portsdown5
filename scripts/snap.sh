@@ -30,7 +30,7 @@ EOF
 
 ###########################################################################
 
-PCONFIGFILE="/home/pi/rpidatv/scripts/portsdown_config.txt"
+PCONFIGFILE="/home/pi/portsdown/configs/portsdown_config.txt"
 
 # Make sure that there aren't any previous screengrabs
 sudo rm /home/pi/tmp/snapshot.png >/dev/null 2>/dev/null
@@ -58,13 +58,8 @@ let SNAP_SERIAL=$SNAP_SERIAL+1
 rm  /home/pi/snaps/snap_index.txt
 echo $SNAP_SERIAL  >  /home/pi/snaps/snap_index.txt
 
-exit
-
-# Code below not yet implemented in Portsdown 5
-
-
 # Blink the display to indicate a successful snap
-/home/pi/rpidatv/scripts/blink.sh &
+/home/pi/portsdown/scripts/receive/blink.sh &
 
 # Now write a second snap with a timestamp if required
 
