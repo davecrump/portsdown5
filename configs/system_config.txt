@@ -16,7 +16,7 @@ fborientation=0
 hdmiresolution=720
 
 # player: vlc or ffplay
-player=ffplay
+player=vlc
 
 # touch: normal, inverted (only for Element14_7 screen)
 touch=normal

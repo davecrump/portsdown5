@@ -405,6 +405,7 @@ void SelectStreamerAction(int NoButton);
 void AmendStreamerPreset(int NoButton);
 void SelectStreamer(int NoButton);
 void ToggleAmendStreamerPreset();
+void AdjustVLCVolume(int adjustment);
 
 // Useful stuff
 
@@ -1379,7 +1380,7 @@ void *WaitButtonLMRX(void * arg)
     if((scaledX <= 5 * wscreen / 40)  &&  (scaledY <= 2 * hscreen / 12) && (strcmp(DisplayType, "hdmi") != 0)) // Bottom left
     {
       printf("In snap zone, so take snap.\n");
-      system("/home/pi/portsdown/scripts/snap2.sh");
+      system("/home/pi/portsdown/scripts/receive/vlcsnap.sh");
     }
     else if((scaledX <= 5 * wscreen / 40)  && (scaledY >= 10 * hscreen / 12) && (strcmp(DisplayType, "hdmi") != 0))  // Top left
     {
@@ -8419,6 +8420,7 @@ void InfoScreen()
   // Wait for screen touch before exit
   wait_touch();
 }
+
 
 void checkTunerSettings()
 {
