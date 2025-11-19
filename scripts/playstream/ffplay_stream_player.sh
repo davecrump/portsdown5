@@ -59,8 +59,8 @@ if [ "$AUDIO_OUT" == "rpi" ]; then                  # Portsdown 4 3.5mm jack
   fi
 elif [ "$AUDIO_OUT" == "usb" ]; then                # USB Dongle
   AUDIO_DEVICE="hw:CARD=Device,DEV=0"
-elif [ "$AUDIO_OUT" == "hdmi" ]; then               # HDMI, but doesn't work
-  AUDIO_DEVICE="sysdefault:CARD=vc4hdmi0"
+elif [ "$AUDIO_OUT" == "hdmi" ]; then               # HDMI
+  AUDIO_DEVICE="default"
 else                                                # Custom
   AUDIO_DEVICE=hw:CARD="$AUDIO_OUT",DEV=0
 fi

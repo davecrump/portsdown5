@@ -30,3 +30,6 @@ keylimepi=disabled
 # Device name for custom audio out device.  Used in RX and Stream player
 customaudioout=not_set
 
+# Master audio playback volume in % (0 - 100)
+masteraudiovolume=50
+
