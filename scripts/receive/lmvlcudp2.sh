@@ -52,11 +52,6 @@ else
 fi
 
 if [ "$RX_MODE" == "sat" ]; then
-  # Use ffplay for the beacon
-  if [ "$FREQ_KHZ" == "10491500" ]; then
-    FFPLAY="yes"
-  fi
-
   # Correct for LNB LO Frequency
   let FREQ_KHZ=$FREQ_KHZ-$Q_OFFSET
 else
@@ -80,8 +75,8 @@ if [ "$AUDIO_OUT" == "rpi" ]; then                  # Portsdown 4 3.5mm jack
   fi
 elif [ "$AUDIO_OUT" == "usb" ]; then                # USB Dongle
   AUDIO_DEVICE="hw:CARD=Device,DEV=0"
-elif [ "$AUDIO_OUT" == "hdmi" ]; then               # HDMI, but doesn't work
-  AUDIO_DEVICE="sysdefault:CARD=vc4hdmi0"
+elif [ "$AUDIO_OUT" == "hdmi" ]; then               # HDMI
+  AUDIO_DEVICE="default"
 else                                                # Custom
   AUDIO_DEVICE=hw:CARD="$AUDIO_OUT",DEV=0
 fi
@@ -146,7 +141,7 @@ if [[ ! -f /home/pi/tmp/vlcprimed ]]; then
   cvlc -I rc --rc-host 127.0.0.1:1111 -f --codec ffmpeg --no-video-title-show \
     --width 800 --height 480 \
     --gain 3 --alsa-audio-device $AUDIO_DEVICE \
-    /home/pi/rpidatv/video/blank.ts vlc:quit >/dev/null 2>/dev/null &
+    /home/pi/portsdown/videos/blank.ts vlc:quit >/dev/null 2>/dev/null &
   sleep 1
   touch /home/pi/tmp/vlcprimed
   echo shutdown | nc 127.0.0.1 1111
@@ -197,13 +192,12 @@ elif [ "$VLCTRANSFORM" == "270" ]; then
 fi
 
 # Start VLC
-cvlc -I rc --rc-host 127.0.0.1:1111 $PROG  -f --no-video-title-show \
-  --gain 3 --alsa-audio-device $AUDIO_DEVICE \
+cvlc -I rc --rc-host 127.0.0.1:1111 $PROG -f --video-title-timeout=10 \
   $VLCROTATE \
+  --sub-filter marq --marq-x 25 --marq-file "/home/pi/tmp/vlc_overlay.txt" \
+  -A alsa --gain 3 --alsa-audio-device $AUDIO_DEVICE \
   udp://@127.0.0.1:1234 >/dev/null 2>/dev/null &
 
-# /home/pi/portsdown/videos/Big_Buck_Bunny_720_10s_10MB.mp4  &
-#  --sub-filter marq --marq-x 25 --marq-file "/home/pi/tmp/vlc_overlay.txt" \
 sleep 1
 
 # Set the start-up volume

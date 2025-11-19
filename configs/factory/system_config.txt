@@ -16,7 +16,7 @@ fborientation=0
 hdmiresolution=720
 
 # player: vlc or ffplay
-player=ffplay
+player=vlc
 
 # touch: normal, inverted (only for Element14_7 screen)
 touch=normal
@@ -29,4 +29,7 @@ keylimepi=disabled
 
 # Device name for custom audio out device.  Used in RX and Stream player
 customaudioout=not_set
+
+# Master audio playback volume in % (0 - 100)
+masteraudiovolume=50
 

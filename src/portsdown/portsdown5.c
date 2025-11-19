@@ -123,6 +123,7 @@ int TouchTrigger = 0;
 bool touchneedsinitialisation = true;
 bool VirtualTouch = false;             // used to simulate a screen touch if a monitored event finishes
 int FinishedButton = 0;                // Used to indicate screentouch during TX or RX
+int StreamFinishedButton = 0;          // Used to indicate screentouch during Stream RX
 int touch_response = 0;                // set to 1 on touch and used to reboot display if it locks up
 
 // Mouse control variables
@@ -179,12 +180,14 @@ char LMRXvolts[7];          // off, v or h
 char RXmod[7];              // DVB-S or DVB-T
 bool VLCResetRequest = false; // Set on touchsscreen request for VLC to be reset  
 int  CurrentVLCVolume = 256;  // Read from config file
-char player[63];            // vlc or ffplay                   
+char player[63];            // vlc or ffplay 
+bool RXdiagnostics = false; //  Set true to enable screenshot of RX diagnostics                  
 
 // LongMynd RX Received Parameters for display
 bool timeOverlay = false;    // Display time overlay on received metadata and snaps
 time_t t;                    // current time
 char customAudioOut[127];    // Custom Audio Out device name
+int masterAudioVolume;       // alsamixer audio volume
 
 // Stream Player
 bool amendStreamPreset = false;        // Set to amend a stream preset
@@ -199,6 +202,7 @@ pthread_t thtouchscreen;               //  listens to the touchscreen
 pthread_t thwebclick;                  //  Listens for clicks from web interface
 pthread_t thmouse;                     //  Listens to the mouse
 pthread_t thbutton;                    //  Listens during receive
+pthread_t thstream;                    //  Listens during streamer
 
 // ******************** Menus for Reference *********************************
 
@@ -271,6 +275,7 @@ void handle_mouse();
 void *WebClickListener(void * arg);
 void parseClickQuerystring(char *query_string, int *x_ptr, int *y_ptr);
 FFUNC touchscreenClick(ffunc_session_t * session);
+void *WaitButtonStream(void * arg);
 void *WaitButtonLMRX(void * arg);
 void wait_touch();
 
@@ -400,6 +405,9 @@ void AdjustVLCVolume(int adjustment);
 void ChangeStreamPreset(int NoButton);
 void ToggleAmendStreamPreset();
 void ChangeCustomAudioOut();
+void ChangeMasterVolume();
+void SetMasterVolume();
+void ChangeVLCVolume();
 void CheckforUpdate();
 void SelectStreamerAction(int NoButton);
 void AmendStreamerPreset(int NoButton);
@@ -582,7 +590,7 @@ void CheckConfigFile()
   FILE *fp;
   int r;
 
-  // Add customaudioout to System Config file
+  // Add customaudioout to System Config file if required
   sprintf(shell_command, "grep -q 'customaudioout=' %s", PATH_SCONFIG);
   fp = popen(shell_command, "r");
   r = pclose(fp);
@@ -590,6 +598,17 @@ void CheckConfigFile()
   {
     printf("Updating Config File with customaudioout\n");
     sprintf(shell_command, "echo customaudioout=not_set >> %s", PATH_SCONFIG);
+    system(shell_command); 
+  }
+
+  // Add masteraudiovolume to System Config file if required
+  sprintf(shell_command, "grep -q 'masteraudiovolume=' %s", PATH_SCONFIG);
+  fp = popen(shell_command, "r");
+  r = pclose(fp);
+  if (WEXITSTATUS(r) != 0)
+  {
+    printf("Updating Config File with masteraudiovolume\n");
+    sprintf(shell_command, "echo masteraudiovolume=50 >> %s", PATH_SCONFIG);
     system(shell_command); 
   }
 }
@@ -647,6 +666,10 @@ void ReadSavedParams()
   strcpy(response, "0");  // highlight null responses
   GetConfigParam(PATH_PCONFIG, "limegain", response);
   config.limegain = atoi(response);
+
+  strcpy(response, "256");  // default response
+  GetConfigParam(PATH_PCONFIG, "vlcvolume", response);
+  CurrentVLCVolume = atoi(response);
 
   // System Config File
 
@@ -713,6 +736,10 @@ void ReadSavedParams()
   strcpy(response, "not_set");  // highlight null responses
   GetConfigParam(PATH_SCONFIG, "customaudioout", response);
   strcpy(customAudioOut, response);
+
+  strcpy(response, "50");  // set default response
+  GetConfigParam(PATH_SCONFIG, "masteraudiovolume", response);
+  masterAudioVolume = atoi(response);
 
   // Read the LongMynd RX presets
 
@@ -1366,6 +1393,56 @@ FFUNC touchscreenClick(ffunc_session_t * session)
 }
 
 
+void *WaitButtonStream(void * arg)
+{
+  int rawX, rawY;
+  StreamFinishedButton = 1;   // No touch
+
+  while(StreamFinishedButton == 1)
+  {
+    while(getTouchSample(&rawX, &rawY) == 0);  // Wait here for touch
+
+    if((scaledX <= 5 * wscreen / 40)  &&  (scaledY <= 2 * hscreen / 12) && (strcmp(DisplayType, "hdmi") != 0)) // Bottom left
+    {
+      printf("In snap zone, so take snap.\n");
+      system("/home/pi/portsdown/scripts/receive/vlcsnap.sh");
+    }
+    else if((scaledX <= 5 * wscreen / 40)  && (scaledY >= 10 * hscreen / 12) && (strcmp(DisplayType, "hdmi") != 0))  // Top left
+    {
+      printf("In restart VLC zone, so set for reset.\n");
+      VLCResetRequest = true;
+    }
+    else if((scaledX >= 35 * wscreen / 40) && (scaledY >= 8 * hscreen / 12) && (strcmp(DisplayType, "hdmi") != 0))  // Top Right
+    {
+      printf("Volume Up.\n");
+      AdjustVLCVolume(51);
+    }
+    else if((scaledX >= 35 * wscreen / 40) && (scaledY >= 4 * hscreen / 12) && (scaledY < 8 * hscreen / 12) && (strcmp(DisplayType, "hdmi") != 0))  // mid Right
+    {
+      printf("Volume Mute.\n");
+      AdjustVLCVolume(-512);
+    }
+    else if((scaledX >= 35 * wscreen / 40) && (scaledY < 4 * hscreen / 12) && (strcmp(DisplayType, "hdmi") != 0))  // Bottom Right
+    {
+      printf("Volume Down.\n");
+      AdjustVLCVolume(-51);
+    }
+    else                                                         // Not on a button, so close VLC
+    {
+      printf("Touch away from buttons\n");
+
+      // Exit streaming
+      StreamFinishedButton = 0;
+
+      // Close VLC to reduce processor load first
+      system("/home/pi/portsdown/scripts/receive/lmvlcclose.sh");
+      printf("VLC closed\n");
+    }
+  }
+  return NULL;
+}
+
+
 void *WaitButtonLMRX(void * arg)
 {
   int rawX, rawY;
@@ -1379,7 +1456,15 @@ void *WaitButtonLMRX(void * arg)
     if((scaledX <= 5 * wscreen / 40)  &&  (scaledY <= 2 * hscreen / 12) && (strcmp(DisplayType, "hdmi") != 0)) // Bottom left
     {
       printf("In snap zone, so take snap.\n");
-      system("/home/pi/portsdown/scripts/snap2.sh");
+
+      if (RXdiagnostics == true)
+      {
+        system("/home/pi/portsdown/scripts/snap.sh");
+      }
+      else
+      {
+        system("/home/pi/portsdown/scripts/receive/vlcsnap.sh");
+      }
     }
     else if((scaledX <= 5 * wscreen / 40)  && (scaledY >= 10 * hscreen / 12) && (strcmp(DisplayType, "hdmi") != 0))  // Top left
     {
@@ -1970,6 +2055,7 @@ void LMRX(int NoButton)
 
   case 1:  // DVB-S/S2 Receive Diagnostics
     clearScreen(0, 0, 0);
+    RXdiagnostics = true;
 
     fp=popen(PATH_SCRIPT_LMRXUDP, "r");
     if(fp==NULL) printf("Process error\n");
@@ -2272,6 +2358,8 @@ void LMRX(int NoButton)
     } 
     close(fd_status_fifo); 
     usleep(1000);
+
+    RXdiagnostics = false;
 
     printf("Stopping receive process\n");
     pclose(fp);
@@ -2757,7 +2845,7 @@ void playStreamFFPlay()
   int rawX;
   int rawY;
 
-  MsgBox4(" ", " ", "Starting stream player", " ");
+  MsgBox4(" ", " ", "Starting ffplay stream player", " ");
 
   system("/home/pi/portsdown/scripts/playstream/ffplay_stream_player.sh >/dev/null 2>/dev/null &");
 
@@ -2772,19 +2860,27 @@ void playStreamFFPlay()
 
 void playStreamVLC()
 {
-  int rawX;
-  int rawY;
+  MsgBox4("Starting VLC stream player", " ", "Please wait", " ");
 
-  MsgBox4(" ", " ", "Starting stream player", " ");
-
+  // Start the stream display script
   system("/home/pi/portsdown/scripts/playstream/vlc_stream_player.sh >/dev/null 2>/dev/null &");
 
-  // Wait for touch
-  while(getTouchSample(&rawX, &rawY) == 0)
+  // Create screen touch thread
+  pthread_create (&thstream, NULL, &WaitButtonStream, NULL);
+
+  StreamFinishedButton = 1;
+
+  // Wait for the screen to be touched in the right place to stop the stream display
+  while (StreamFinishedButton != 0)
   {
     usleep(10000);
   }
+
+  // close VLC
   system("/home/pi/portsdown/scripts/playstream/vlc_stream_player_stop.sh >/dev/null 2>/dev/null &");
+
+  // Close the screen touch thread
+  pthread_join(thstream, NULL);
 }
 
 
@@ -3804,8 +3900,6 @@ void Define_Menu3()
   AddButtonStatus(3, 4, "Return to^Main Menu", &Blue);
 
   AddButtonStatus(3, 20, "Set Stream^Outputs", &Blue);
-
-  AddButtonStatus(3, 21, "Custom Audio^Out Device", &Blue);
 }
 
 
@@ -3846,8 +3940,6 @@ void Define_Menu5()
   AddButtonStatus(5, 5, "IPTS^Monitor", &Blue);
 
   AddButtonStatus(5, 4, "Return to^Main Menu", &Blue);
-
-
 }
 
 
@@ -3864,14 +3956,46 @@ void Define_Menu6()
   AddButtonStatus(6, 0, "Start-up^App", &Blue);
 
   AddButtonStatus(6, 4, "Return to^Main Menu", &Blue);
+
+  AddButtonStatus(6, 20, "Set Master^Volume", &Blue);
+
+  AddButtonStatus(6, 21, "Set VLC^Volume", &Blue);
+
+  AddButtonStatus(6, 22, "Custom Audio^Out Device", &Blue);
+
+  AddButtonStatus(6, 24, "Audio out^RPi Jack", &Blue);
+  AddButtonStatus(6, 24, "Audio out^USB Dongle", &Blue);
+  AddButtonStatus(6, 24, "Audio out^HDMI", &Blue);
+  AddButtonStatus(6, 24, "Audio out^Custom", &Grey);
 }
 
 
 void Highlight_Menu6()
 {
+  char audioText[63];
+  char shortaudioText[40];
+
+  if (strcmp(LMRXaudio, "rpi") == 0)
+  {
+    SetButtonStatus(6, 24, 0);
+  }
+  else if (strcmp(LMRXaudio, "usb") == 0)
+  {
+    SetButtonStatus(6, 24, 1);
+  }
+  else if (strcmp(LMRXaudio, "hdmi") == 0)
+  {
+    SetButtonStatus(6, 24, 2);
+  }
+  else
+  {
+    strcpyn(shortaudioText, customAudioOut, 30);
+    snprintf(audioText, 63, "Audio out^%s", shortaudioText);
+    AmendButtonStatus(6, 24, 3, audioText, &Blue);
+    SetButtonStatus(6, 24, 3);
+  }
 
 }
-
 
 
 void Define_Menu7()
@@ -4061,7 +4185,7 @@ void Define_Menu8()
   AddButtonStatus(8, 27, "EXIT", &Blue);
   AddButtonStatus(8, 27, "EXIT", &Red);
 
-  AddButtonStatus(8, 28, "Config", &Blue);
+  AddButtonStatus(8, 28, "Receive^Config Menu", &Blue);
   AddButtonStatus(8, 28, "Config", &Green);
 
   AddButtonStatus(8, 29, "DVB-S/S2", &Blue);
@@ -5202,7 +5326,7 @@ void Define_Menu23()
 
   AddButtonStatus(23, 9, "Audio out^RPi Jack", &Blue);
   AddButtonStatus(23, 9, "Audio out^USB Dongle", &Blue);
-  AddButtonStatus(23, 9, "Audio out^HDMI", &Grey);
+  AddButtonStatus(23, 9, "Audio out^HDMI", &Blue);
   AddButtonStatus(23, 9, "Audio out^Custom", &Grey);
 
   // 3rd Row, Menu 23
@@ -5216,7 +5340,7 @@ void Define_Menu23()
   AddButtonStatus(23, 13, "Modulation^DVB-S/S2", &Blue);
   AddButtonStatus(23, 13, "Modulation^DVB-T", &Grey);
 
-  //AddButtonStatus(23, 14, "Show Touch^Overlay", &Blue);
+  AddButtonStatus(23, 14, "Set VLC^Volume", &Blue);
 
   AddButtonStatus(23, 25, "QO-100", &Blue);
   AddButtonStatus(23, 25, "Terrestrial^ ", &Blue);
@@ -8075,6 +8199,85 @@ void ChangeCustomAudioOut()
 }
 
 
+void ChangeMasterVolume()
+{
+  bool valid = false;
+  char KeyboardReturn[63];
+  char oldVolume[63];
+  char feedbackMessage[255];
+
+  // Ask for the new master volume
+  snprintf(oldVolume, 62, "%d", masterAudioVolume);
+  while (valid == false)
+  {
+    Keyboard("Enter the new master volume as a percentage (0 - 100)", oldVolume, 3, KeyboardReturn, true);
+    if ((atoi(KeyboardReturn) >= 0) && (atoi(KeyboardReturn) <= 100))
+    {
+      valid = true;
+    }
+  }
+
+  if (atoi(KeyboardReturn) != masterAudioVolume)   //  Entry has been changed
+  {
+    masterAudioVolume = atoi(KeyboardReturn);
+
+    // Save the new value
+    SetConfigParam(PATH_SCONFIG, "masteraudiovolume", KeyboardReturn);
+    printf ("Master Volume set to %s percent\n", KeyboardReturn);
+  }
+
+  // Set (or reset) the value
+  SetMasterVolume();
+
+  snprintf(feedbackMessage, 250, "Master Volume set to %d%%", masterAudioVolume);
+  MsgBox4("", feedbackMessage, "", "");
+  usleep(1000000); 
+}
+
+
+void SetMasterVolume()
+{
+  char setMasterVolumeCommand[255];
+
+  snprintf(setMasterVolumeCommand, 250, "/home/pi/portsdown/scripts/receive/setmastervolume.sh %d &", masterAudioVolume); 
+  system(setMasterVolumeCommand);
+}
+
+
+void ChangeVLCVolume()
+{
+  bool valid = false;
+  char KeyboardReturn[63];
+  char oldVLCVolume[63];
+  char feedbackMessage[255];
+
+  // Ask for the new VLC volume
+  snprintf(oldVLCVolume, 62, "%d", CurrentVLCVolume);
+  while (valid == false)
+  {
+    Keyboard("Enter the new VLC volume in the range 0 - 512", oldVLCVolume, 3, KeyboardReturn, true);
+    if ((atoi(KeyboardReturn) >= 0) && (atoi(KeyboardReturn) <= 512))
+    {
+      valid = true;
+    }
+  }
+
+  if (atoi(KeyboardReturn) != CurrentVLCVolume)   //  Entry has been changed
+  {
+    CurrentVLCVolume = atoi(KeyboardReturn);
+
+    // Save the new value
+    SetConfigParam(PATH_PCONFIG, "vlcvolume", KeyboardReturn);
+    printf ("VLC Volume set to %s\n", KeyboardReturn);
+  }
+
+  snprintf(feedbackMessage, 250, "VLC Volume set to %d", CurrentVLCVolume);
+  MsgBox4("", feedbackMessage, "on a scale of 0 to 512", "");
+  usleep(1000000); 
+}
+
+
+
 void CheckforUpdate()
 {
   int choice;
@@ -8419,6 +8622,7 @@ void InfoScreen()
   // Wait for screen touch before exit
   wait_touch();
 }
+
 
 void checkTunerSettings()
 {
@@ -8932,10 +9136,6 @@ void waitForScreenAction()
           CurrentMenu = 26;
           redrawMenu();
           break;
-        case 21:                        // Set Custom Audio Device
-          ChangeCustomAudioOut();
-          redrawMenu();
-          break;
         }
         continue;
       }
@@ -9010,6 +9210,22 @@ void waitForScreenAction()
         case 4:                        // Back to Main Menu
           printf("MENU 1 \n");
           CurrentMenu = 1;
+          redrawMenu();
+          break;
+        case 20:                        // Set Custom Audio Device
+          ChangeMasterVolume();
+          redrawMenu();
+          break;
+        case 21:                        // Set VLC Volume 
+          ChangeVLCVolume();
+          redrawMenu();
+          break;
+        case 22:                        // Set Custom Audio Device
+          ChangeCustomAudioOut();
+          redrawMenu();
+          break;
+        case 24:                        // Change Audio out
+          CycleLMRXaudio();
           redrawMenu();
           break;
         }
@@ -9595,6 +9811,10 @@ void waitForScreenAction()
           ChangeLMChan();
           redrawMenu();
           break;
+        case 14:                                         // Set VLC Volume 
+          ChangeVLCVolume();
+          redrawMenu();
+          break;
         case 25:                        // Toggle QO-100/Terrestrial
           toggleLMRXmode();
           redrawMenu();
@@ -9888,6 +10108,7 @@ int main(int argc, char **argv)
   CheckConfigFile();
   ReadSavedParams();
   checkSnapIndex();
+  SetMasterVolume();
   redrawMenu();
   usleep(1000000);
   redrawMenu();  // Second time over-writes system message

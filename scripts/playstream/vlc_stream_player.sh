@@ -7,6 +7,7 @@
 PCONFIGFILE="/home/pi/portsdown/configs/portsdown_config.txt"
 RCONFIGFILE="/home/pi/portsdown/configs/longmynd_config.txt"
 PRESETFILE="/home/pi/portsdown/configs/stream_presets.txt"
+SCONFIGFILE="/home/pi/portsdown/configs/system_config.txt"
 
 ############ FUNCTION TO READ CONFIG FILE #############################
 
@@ -31,7 +32,8 @@ cd /home/pi
 # Read from receiver config file
 AUDIO_OUT=$(get_config_var audio $RCONFIGFILE)
 VLCVOLUME=$(get_config_var vlcvolume $PCONFIGFILE)
-VLCVOLUME=128
+VLCTRANSFORM=$(get_config_var vlctransform $SCONFIGFILE)
+
 
 # Read in URL
 STREAMNUMBER=$(get_config_var selectedstream $PRESETFILE)
@@ -49,8 +51,8 @@ if [ "$AUDIO_OUT" == "rpi" ]; then                  # Portsdown 4 3.5mm jack
   fi
 elif [ "$AUDIO_OUT" == "usb" ]; then                # USB Dongle
   AUDIO_DEVICE="hw:CARD=Device,DEV=0"
-elif [ "$AUDIO_OUT" == "hdmi" ]; then               # HDMI, but doesn't work
-  AUDIO_DEVICE="sysdefault:CARD=vc4hdmi0"
+elif [ "$AUDIO_OUT" == "hdmi" ]; then               # HDMI
+  AUDIO_DEVICE="default"
 else                                                # Custom
   AUDIO_DEVICE=hw:CARD="$AUDIO_OUT",DEV=0
 fi
@@ -63,12 +65,31 @@ if [ "$VLCVOLUME" -gt 512 ]; then
   VLCVOLUME=512
 fi
 
+# Sort display rotation for VLC
+if [ "$VLCTRANSFORM" == "0" ]; then
+  VLCROTATE=" "
+elif [ "$VLCTRANSFORM" == "90" ]; then
+  VLCROTATE=":vout-filter=transform --transform-type=90 --video-filter transform{true}"
+elif [ "$VLCTRANSFORM" == "180" ]; then
+  VLCROTATE=":vout-filter=transform --transform-type=180 --video-filter transform{true}"
+elif [ "$VLCTRANSFORM" == "270" ]; then
+  VLCROTATE=":vout-filter=transform --transform-type=270 --video-filter transform{true}"
+fi
+
+# Start VLC
+cvlc -I rc --rc-host 127.0.0.1:1111 $PROG -f --video-title-timeout=10 \
+  $VLCROTATE \
+  --sub-filter marq --marq-x 25 --marq-file "/home/pi/tmp/vlc_overlay.txt" \
+  -A alsa --gain 3 --alsa-audio-device $AUDIO_DEVICE \
+  udp://@127.0.0.1:1234 >/dev/null 2>/dev/null &
+
+
 sudo killall vlc >/dev/null 2>/dev/null
 
 # Play a very short dummy file if this is a first start for VLC since boot
 # This makes sure the RX works on first selection after boot
 if [[ ! -f /home/pi/tmp/vlcprimed ]]; then
-  cvlc -I rc --rc-host 127.0.0.1:1111 -f --codec ffmpeg --video-title-timeout=100 \
+  cvlc -I rc --rc-host 127.0.0.1:1111 -f --codec ffmpeg --video-title-timeout=10 \
     --width 800 --height 480 \
     --gain 3 --alsa-audio-device $AUDIO_DEVICE \
     /home/pi/portsdown/videos/blank.ts vlc:quit >/dev/null 2>/dev/null &
@@ -79,7 +100,8 @@ fi
 
 # Start VLC
 
-cvlc -I rc --rc-host 127.0.0.1:1111 -f --video-title-timeout=100 \
+cvlc -I rc --rc-host 127.0.0.1:1111 -f --video-title-timeout=10 \
+  --sub-filter marq --marq-x 25 --marq-file "/home/pi/tmp/vlc_overlay.txt" \
   -A alsa --gain 3 --alsa-audio-device $AUDIO_DEVICE \
   $STREAMURL >/dev/null 2>/dev/null &
 
@@ -92,6 +114,8 @@ sleep 1
 printf "volume "$VLCVOLUME"\nlogout\n" | nc 127.0.0.1 1111 >/dev/null 2>/dev/null
 
 STATE="NOT_RUNNING"
+
+sleep 5
 
   VLCRESPONSE=$(printf "stats\n" | nc -w 1 127.0.0.1 1111 | grep 'video')
 

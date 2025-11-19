@@ -1,3 +1,9 @@
+202511190
+Implement VLC snaps and volume control for streaming
+
+202511160
+Implement VLC snaps and volume control for receive
+
 202511151
 Improve update mechanisation
 
