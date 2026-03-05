@@ -1,3 +1,6 @@
+202603050
+Correct start-up display reconfig script
+
 202511190
 Implement VLC snaps and volume control for streaming
 

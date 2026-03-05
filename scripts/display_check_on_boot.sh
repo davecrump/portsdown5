@@ -5,7 +5,7 @@
 # This script is sourced from startup.sh and run on boot before the Portsdown scheduler
 # It checks the requested display parameters and the connected display
 # and sorts the cmdline.txt file and system_config.txt, rebooting if required
-# Dave Crump 20241218
+# Dave Crump 20260305
 
 ############ Set Environment Variables ###############
 
@@ -62,18 +62,25 @@ if [ "$?" == "0" ]; then   ## touchscreen connected
   echo "DETECTED_DISPLAY=touchscreen1"
   DETECTED_DISPLAY="touchscreen1"
 else
-  kmsprint -l | grep -q 'HDMI-A-1 (connected)'
-  if [ "$?" == "0" ]; then   ## hdmi connected
-    echo "DETECTED_DISPLAY=hdmi"
-    DETECTED_DISPLAY="hdmi"
+  kmsprint -l | grep -q 'DSI-2 (connected)'
+  if [ "$?" == "0" ]; then   ## touchscreen 2 connected
+    echo "DETECTED_DISPLAY=touchscreen2"
+    DETECTED_DISPLAY="touchscreen2"
   else
-    kmsprint -l | grep -q 'DSI-2 (connected)'
-    if [ "$?" == "0" ]; then   ## touchscreen 2 connected
-      echo "DETECTED_DISPLAY=touchscreen2"
-      DETECTED_DISPLAY="touchscreen2"
-    else
+    kmsprint -l | grep -q 'HDMI-A-1 (connected)'
+    if [ "$?" == "0" ]; then   ## hdmi connected or forced
+      kmsprint -m | grep -q '1920x1080'
+      if [ "$?" == "0" ]; then
+        echo "DETECTED_DISPLAY=hdmi"
+        DETECTED_DISPLAY="hdmi"
+      else
+        echo "DETECTED_DISPLAY=none"
+        DETECTED_DISPLAY="none"
+      fi
+    else  # No display detected so select none (web) and make sure we reboot
       echo "DETECTED_DISPLAY=none"
       DETECTED_DISPLAY="none"
+      REBOOT_REQUIRED="true"
     fi
   fi
 fi
@@ -103,24 +110,6 @@ echo "TOUCHSCREEN_ORIENTATION="$TOUCHSCREEN_ORIENTATION
 
 HDMI_RESOLUTION=$(get_config_var hdmiresolution $SCONFIGFILE)
 echo "HDMI_RESOLUTION="$HDMI_RESOLUTION
-
-# Check requested HDMI resolution against cmdline.txt.  Amend if required.
-
-if [ "$HDMI_RESOLUTION" == "720" ]; then
-  cat /boot/firmware/cmdline.txt | grep -q 'video=HDMI-A-1:1280x720M@60'
-  if [ "$?" != "0" ]; then  # needs correcting
-    sudo sed -i -e 's/video=HDMI-A-1:1920x1080M@60/video=HDMI-A-1:1280x720M@60/g' /boot/firmware/cmdline.txt
-    REBOOT_REQUIRED="true"
-  fi
-fi
-
-if [ "$HDMI_RESOLUTION" == "1080" ]; then
-  cat /boot/firmware/cmdline.txt | grep -q 'video=HDMI-A-1:1920x1080M@60'
-  if [ "$?" != "0" ]; then  # needs correcting
-    sudo sed -i -e 's/video=HDMI-A-1:1280x720M@60/video=HDMI-A-1:1920x1080M@60/g' /boot/firmware/cmdline.txt
-    REBOOT_REQUIRED="true"
-  fi
-fi
 
 # Read settings in config file
 
@@ -160,6 +149,14 @@ if [ "$PI_MODEL" == "5" ] && [ "$TOUCHSCREEN_ORIENTATION" == "inverted" ] && [ "
     sudo sed -i -e 's/video=DSI-1:800x480M-16@60/video=DSI-1:800x480M-16@60,rotate=180/g' /boot/firmware/cmdline.txt
     REBOOT_REQUIRED="true"
   fi
+
+  # Check that HDMI is not being forced
+
+  cat /boot/firmware/cmdline.txt | grep -q '@60D'
+  if [ "$?" == "0" ]; then  # needs correcting
+    sudo sed -i -e 's/@60D/@60/g' /boot/firmware/cmdline.txt
+    REBOOT_REQUIRED="true"
+  fi
 fi
 
 # 2. RPi 5 non-inverted touchscreen 1 (web control available)
@@ -190,6 +187,14 @@ if [ "$PI_MODEL" == "5" ] && [ "$TOUCHSCREEN_ORIENTATION" == "normal" ] && [ "$D
   cat /boot/firmware/cmdline.txt | grep -q 'video=DSI-1:800x480M-16@60,rotate=180'
   if [ "$?" == "0" ]; then  # needs correcting
     sudo sed -i -e 's/video=DSI-1:800x480M-16@60,rotate=180/video=DSI-1:800x480M-16@60/g' /boot/firmware/cmdline.txt
+    REBOOT_REQUIRED="true"
+  fi
+
+  # Check that HDMI is not being forced
+
+  cat /boot/firmware/cmdline.txt | grep -q '@60D'
+  if [ "$?" == "0" ]; then  # needs correcting
+    sudo sed -i -e 's/@60D/@60/g' /boot/firmware/cmdline.txt
     REBOOT_REQUIRED="true"
   fi
 fi
@@ -224,6 +229,14 @@ if [ "$PI_MODEL" == "4" ] && [ "$TOUCHSCREEN_ORIENTATION" == "inverted" ] && [ "
     sudo sed -i -e 's/video=DSI-1:800x480M-16@60/video=DSI-1:800x480M-16@60,rotate=180/g' /boot/firmware/cmdline.txt
     REBOOT_REQUIRED="true"
   fi
+
+  # Check that HDMI is not being forced
+
+  cat /boot/firmware/cmdline.txt | grep -q '@60D'
+  if [ "$?" == "0" ]; then  # needs correcting
+    sudo sed -i -e 's/@60D/@60/g' /boot/firmware/cmdline.txt
+    REBOOT_REQUIRED="true"
+  fi
 fi
 
 # 4. RPi 4 non-inverted touchscreen 1 (web control available)
@@ -256,34 +269,17 @@ if [ "$PI_MODEL" == "4" ] && [ "$TOUCHSCREEN_ORIENTATION" == "normal" ] && [ "$D
     sudo sed -i -e 's/video=DSI-1:800x480M-16@60,rotate=180/video=DSI-1:800x480M-16@60/g' /boot/firmware/cmdline.txt
     REBOOT_REQUIRED="true"
   fi
-fi
 
-# 5. RPi 4 or 5 with no display (web control)
+  # Check that HDMI is not being forced
 
-if [ "$DETECTED_DISPLAY" == "none" ]; then
-
-echo "RPi 4 or 5 with no display"
-
-  # Check display in config file.
-  if [ "$CONFIG_DISPLAY" != "web" ]; then  # needs changing
-    set_config_var display "web" $SCONFIGFILE
-    CONFIG_DISPLAY="Element14_7"
-  fi
-
-  # Check VLC Transform in config file.
-  if [ "$CONFIG_VLC_TRANSFORM" != "0" ]; then  # needs changing
-    set_config_var vlctransform "0" $SCONFIGFILE
-    CONFIG_VLC_TRANSFORM="0"
-  fi
-
-  # Check Frame Buffer invert in config file.
-  if [ "$CONFIG_FB_ORIENTATION" != "0" ]; then  # needs changing
-    set_config_var fborientation "0" $SCONFIGFILE
-    CONFIG_FB_ORIENTATION="0"
+  cat /boot/firmware/cmdline.txt | grep -q '@60D'
+  if [ "$?" == "0" ]; then  # needs correcting
+    sudo sed -i -e 's/@60D/@60/g' /boot/firmware/cmdline.txt
+    REBOOT_REQUIRED="true"
   fi
 fi
 
-# 6. RPi 4 or 5 with HDMI and mouse (web control available)
+# 5. RPi 4 or 5 with HDMI and mouse (web control available)
 
 if [ "$DETECTED_DISPLAY" == "hdmi" ]; then
 
@@ -305,6 +301,70 @@ echo "RPi 4 or 5 with HDMI and mouse"
   if [ "$CONFIG_FB_ORIENTATION" != "0" ]; then  # needs changing
     set_config_var fborientation "0" $SCONFIGFILE
     CONFIG_FB_ORIENTATION="0"
+  fi
+
+  # Check requested HDMI resolution against cmdline.txt.  Amend if required.
+
+  if [ "$HDMI_RESOLUTION" == "720" ]; then
+    cat /boot/firmware/cmdline.txt | grep -q 'video=HDMI-A-1:1280x720'
+    if [ "$?" != "0" ]; then  # needs correcting
+      sudo sed -i -e 's/video=HDMI-A-1:1920x1080/video=HDMI-A-1:1280x720/g' /boot/firmware/cmdline.txt
+      REBOOT_REQUIRED="true"
+    fi
+  fi
+  if [ "$HDMI_RESOLUTION" == "1080" ]; then
+    cat /boot/firmware/cmdline.txt | grep -q 'video=HDMI-A-1:1920x1080'
+    if [ "$?" != "0" ]; then  # needs correcting
+      sudo sed -i -e 's/video=HDMI-A-1:1280x720/video=HDMI-A-1:1920x1080/g' /boot/firmware/cmdline.txt
+      REBOOT_REQUIRED="true"
+    fi
+  fi
+
+  # Check that HDMI is not being forced
+
+  cat /boot/firmware/cmdline.txt | grep -q '@60D'
+  if [ "$?" == "0" ]; then  # needs correcting
+    sudo sed -i -e 's/@60D/@60/g' /boot/firmware/cmdline.txt
+    REBOOT_REQUIRED="true"
+  fi
+fi
+
+# 6. RPi 4 or 5 with no display (web control)
+
+if [ "$DETECTED_DISPLAY" == "none" ]; then
+
+echo "RPi 4 or 5 with no display"
+
+  # Check display in config file.
+  if [ "$CONFIG_DISPLAY" != "web" ]; then  # needs changing
+    set_config_var display "web" $SCONFIGFILE
+    CONFIG_DISPLAY="web"
+  fi
+
+  # Check VLC Transform in config file.
+  if [ "$CONFIG_VLC_TRANSFORM" != "0" ]; then  # needs changing
+    set_config_var vlctransform "0" $SCONFIGFILE
+    CONFIG_VLC_TRANSFORM="0"
+  fi
+
+  # Check Frame Buffer invert in config file.
+  if [ "$CONFIG_FB_ORIENTATION" != "0" ]; then  # needs changing
+    set_config_var fborientation "0" $SCONFIGFILE
+    CONFIG_FB_ORIENTATION="0"
+  fi
+
+  # Set 720p resolution:
+  cat /boot/firmware/cmdline.txt | grep -q 'video=HDMI-A-1:1280x720'
+  if [ "$?" != "0" ]; then  # needs correcting
+    sudo sed -i -e 's/video=HDMI-A-1:1920x1080/video=HDMI-A-1:1280x720/g' /boot/firmware/cmdline.txt
+    REBOOT_REQUIRED="true"
+  fi
+
+  # Force HDMI
+  cat /boot/firmware/cmdline.txt | grep -q '@60 vt'
+  if [ "$?" == "0" ]; then  # needs correcting
+    sudo sed -i -e 's/720@60 vt/720@60D vt/g' /boot/firmware/cmdline.txt
+    REBOOT_REQUIRED="true"
   fi
 fi
 
