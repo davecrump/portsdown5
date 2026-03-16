@@ -93,6 +93,7 @@ fi
 # Parse the arguments
 GIT_SRC="BritishAmateurTelevisionClub";  # default
 LMNDE="false"                            # don't load LimeSuiteNG and LimeNET Micro 2.0 DE specifics unless requested
+MICRO="false"                            # don't load LimeSuiteNG for LimeSDR Micro unless requested
 WAIT="false"                             # Go straight into reboot unless requested
 UPDATE="false"                           # set to true for an update
 POSITIONAL_ARGS=()
@@ -115,6 +116,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     -x|--xtrx)
       LMNDE="true" 
+      shift # past argument
+      ;;
+    -m|--micro)
+      MICRO="true" 
       shift # past argument
       ;;
     -g|--github)
@@ -186,6 +191,11 @@ if [ "$LMNDE" == "true" ]; then
   echo
   echo Installing extras for LimeNET Micro DE 2.0
   echo $(date -u) "Installing LimeNET Micro DE 2.0" | sudo tee -a /home/pi/p5_initial_build_log.txt  > /dev/null
+fi
+if [ "$MICRO" == "true" ]; then
+  echo
+  echo Installing extras for LimeSDR Micro
+  echo $(date -u) "Installing LimeSuiteNG for LimeSDR Micro" | sudo tee -a /home/pi/p5_initial_build_log.txt  > /dev/null
 fi
 if [ "$WAIT" == "true" ]; then
   echo
@@ -346,7 +356,9 @@ if [ "$UPDATE" == "false" ]; then
   sudo apt-get -y install --no-install-recommends libsoapysdr-dev # For LimeSuiteNG
     SUCCESS=$?; BuildLogMsg $SUCCESS "libsoapysdr-dev install"
   sudo apt-get -y install --no-install-recommends libwxgtk3.2-dev # For LimeSuiteNG
-    SUCCESS=$?; BuildLogMsg $SUCCESS "libwxgtk3.2-dev install" 
+    SUCCESS=$?; BuildLogMsg $SUCCESS "libwxgtk3.2-dev install"
+  sudo apt-get -y install linux-headers-$(uname -r)
+    SUCCESS=$?; BuildLogMsg $SUCCESS "linux-headers install"
 fi
 
 # Placeholder for New packages during update

@@ -72,5 +72,7 @@ chmod +x install_p5.sh
 
 To pause the installation at the first reboot, add the parameter -w (or --wait) like this ./install_p5.sh -w
 
-To install for a LimeNET Micro 2.0 DE, add the parameter -x (or --xtrx).
+To install LimeSuiteNG for a LimeNET Micro 2.0 DE, add the parameter -x (or --xtrx).
+
+To install LimeSuiteNG to use with a LimeSDR Micro, add the parameter -m (or --micro).
 
