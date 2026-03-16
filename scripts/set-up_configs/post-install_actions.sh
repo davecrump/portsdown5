@@ -29,23 +29,23 @@ if (grep 'Installing LimeNET Micro DE' /home/pi/p5_initial_build_log.txt) then
   echo "-----    Installing LimeSuiteNG    -----"
   echo "----------------------------------------"
 
-#  git clone https://github.com/myriadrf/LimeSuiteNG        # Download LimeSuiteNG
-#    SUCCESS=$?; BuildLogMsg $SUCCESS "git clone LimeSuiteNG"
+  git clone https://github.com/myriadrf/LimeSuiteNG        # Download LimeSuiteNG
+    SUCCESS=$?; BuildLogMsg $SUCCESS "git clone LimeSuiteNG"
 
-#  cd LimeSuiteNG
+  cd LimeSuiteNG
 
-#  cmake -B build
-#    SUCCESS=$?; BuildLogMsg $SUCCESS "LimeSuiteNG cmake"
+  cmake -B build
+    SUCCESS=$?; BuildLogMsg $SUCCESS "LimeSuiteNG cmake"
 
-#  cd build
+  cd build
 
-#  make -j 4 -O
-#    SUCCESS=$?; BuildLogMsg $SUCCESS "LimeSuiteNG make"
+  make -j 4 -O
+    SUCCESS=$?; BuildLogMsg $SUCCESS "LimeSuiteNG make"
 
-#  sudo make install
-#    SUCCESS=$?; BuildLogMsg $SUCCESS "LimeSuiteNG make install"
+  sudo make install
+    SUCCESS=$?; BuildLogMsg $SUCCESS "LimeSuiteNG make install"
 
-#  sudo ldconfig
+  sudo ldconfig
 #    SUCCESS=$?; BuildLogMsg $SUCCESS "LimeSuiteNG ldconfig"
 
   cd /home/pi
@@ -65,6 +65,56 @@ if (grep 'Installing LimeNET Micro DE' /home/pi/p5_initial_build_log.txt) then
   #SUCCESS=$?; BuildLogMsg $SUCCESS "Lime BandViewer NG compile"
 
   #mv /home/pi/portsdown/src/limeviewng/limeviewng /home/pi/portsdown/bin/limeviewng
+
+fi
+
+# Check if LimeSuiteNG for LimeSDR Micro needs to be installed (requires reboot after config.txt amendments in Stage 1)
+if (grep 'Installing LimeSuiteNG for LimeSDR Micro' /home/pi/p5_initial_build_log.txt) then
+
+  /home/pi/portsdown/bin/msgbox -a "Build stage 2a" -b "Step 1" -c "Installing LimeSuiteNG"
+
+  cd /home/pi
+  echo
+  echo "----------------------------------------------------------"
+  echo "-----    Installing LimeSuiteNG for LimeSDR Micro    -----"
+  echo "----------------------------------------------------------"
+
+  git clone -b limesdr-micro https://github.com/myriadrf/LimeSuiteNG        # Download LimeSuiteNG
+    SUCCESS=$?; BuildLogMsg $SUCCESS "git clone LimeSuiteNG"
+
+  cd LimeSuiteNG
+  sudo ./install_dependencies.sh
+  cmake -B build
+    SUCCESS=$?; BuildLogMsg $SUCCESS "LimeSuiteNG cmake"
+
+  cd build
+
+  make -j 4 -O
+    SUCCESS=$?; BuildLogMsg $SUCCESS "LimeSuiteNG make"
+
+  sudo make install
+    SUCCESS=$?; BuildLogMsg $SUCCESS "LimeSuiteNG make install"
+
+  sudo ldconfig
+#    SUCCESS=$?; BuildLogMsg $SUCCESS "LimeSuiteNG ldconfig"
+
+  cd /home/pi
+
+  export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/home/pi/LimeSuiteNG/build/lib/
+
+  # Compile NG Lime BandViewer for LimeSDR Micro
+  echo
+  echo "----------------------------------------"
+  echo "----- Compiling NG Lime BandViewer -----"
+  echo "----------------------------------------"
+
+  /home/pi/portsdown/bin/msgbox -a "Build stage 2a" -b "Step 2" -c "Compiling Lime BandViewerNG"
+
+  cd /home/pi/portsdown/src/limeviewngm
+  make -j 4 -O
+  SUCCESS=$?; BuildLogMsg $SUCCESS "Lime BandViewer NG compile"
+
+  mv /home/pi/portsdown/src/limeviewng/limeviewng /home/pi/portsdown/bin/limeviewng
 
 fi
 

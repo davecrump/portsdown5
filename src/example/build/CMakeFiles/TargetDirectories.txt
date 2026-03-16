@@ -1,0 +1,2 @@
+/home/pi/portsdown/src/example/build/CMakeFiles/edit_cache.dir
+/home/pi/portsdown/src/example/build/CMakeFiles/rebuild_cache.dir
