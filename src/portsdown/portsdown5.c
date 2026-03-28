@@ -197,6 +197,10 @@ char streamLabel[21][63];              // stream Button Label read from config f
 char StreamKey[9][63];                 // transmit stream name-key
 bool StreamerStoreTrigger = false;     // Set true to enable transmit stream to be changed
 
+// Test Card Variables
+char testcard[63] = "tcf";             // Name of test card selected             
+char caption[7] = "on";                // Caption on test card
+           
 // Threads
 pthread_t thtouchscreen;               //  listens to the touchscreen
 pthread_t thwebclick;                  //  Listens for clicks from web interface
@@ -234,6 +238,7 @@ pthread_t thstream;                    //  Listens during streamer
 // 26 Stream TX presets
 // 32 Decision of 2
 // 33 Decision of 3
+// 39 Select Test Card
 
 // 41 Alpha Keyboard
 
@@ -364,6 +369,8 @@ void Define_Menu32();
 void Highlight_Menu32();
 void Define_Menu33();
 void Highlight_Menu33();
+void Define_Menu39();
+void Highlight_Menu39();
 void Define_Menu41();
 void Define_Menus();
 void Keyboard(char *RequestText, char *InitText, int MaxLength, char *KeyboardReturn, bool UpperCase);
@@ -413,6 +420,7 @@ void SelectStreamerAction(int NoButton);
 void AmendStreamerPreset(int NoButton);
 void SelectStreamer(int NoButton);
 void ToggleAmendStreamerPreset();
+void SelectTestCardAction(int NoButton);
 
 // Useful stuff
 
@@ -587,14 +595,12 @@ void SetConfigParam(char *PathConfigFile, char *Param, char *Value)
 void CheckConfigFile()
 {
   char shell_command[255];
-  FILE *fp;
   int r;
 
   // Add customaudioout to System Config file if required
   sprintf(shell_command, "grep -q 'customaudioout=' %s", PATH_SCONFIG);
-  fp = popen(shell_command, "r");
-  r = pclose(fp);
-  if (WEXITSTATUS(r) != 0)
+  r = system(shell_command);
+  if (r != 0)
   {
     printf("Updating Config File with customaudioout\n");
     sprintf(shell_command, "echo customaudioout=not_set >> %s", PATH_SCONFIG);
@@ -603,12 +609,21 @@ void CheckConfigFile()
 
   // Add masteraudiovolume to System Config file if required
   sprintf(shell_command, "grep -q 'masteraudiovolume=' %s", PATH_SCONFIG);
-  fp = popen(shell_command, "r");
-  r = pclose(fp);
-  if (WEXITSTATUS(r) != 0)
+  r = system(shell_command);
+  if (r != 0)
   {
     printf("Updating Config File with masteraudiovolume\n");
     sprintf(shell_command, "echo masteraudiovolume=50 >> %s", PATH_SCONFIG);
+    system(shell_command); 
+  }
+
+  // Add testcard to Portsdown Config file if required
+  sprintf(shell_command, "grep -q 'testcard=' %s", PATH_PCONFIG);
+  r = system(shell_command);
+  if (r != 0)
+  {
+    printf("Updating Config File with testcard\n");
+    sprintf(shell_command, "echo testcard=tcf >> %s", PATH_PCONFIG);
     system(shell_command); 
   }
 }
@@ -660,6 +675,14 @@ void ReadSavedParams()
   strcpy(response, "0");  // highlight null responses
   GetConfigParam(PATH_PCONFIG, "fec", response);
   config.fec = atoi(response);
+
+  strcpy(response, "0");  // highlight null responses
+  GetConfigParam(PATH_PCONFIG, "testcard", response);
+  strcpy(testcard, response);
+
+  strcpy(response, "0");  // highlight null responses
+  GetConfigParam(PATH_PCONFIG, "caption", response);
+  strcpy(caption, response);
 
   // Band?
 
@@ -3097,7 +3120,6 @@ int AddButtonStatus(int menu, int button_number, char *Text, color_t *Color)
 }
 
 
-//void SetButtonStatus(int ButtonIndex,int Status)
 void SetButtonStatus(int menu, int button_number, int Status)
 {
   button_t *Button = &(ButtonArray[menu][button_number]);
@@ -3112,7 +3134,6 @@ int GetButtonStatus(int menu, int button_number)
 }
 
 
-//void SelectInGroupOnMenu(int Menu, int StartButton, int StopButton, int NumberButton, int Status)
 void SelectInGroupOnMenu(int menu, int firstButton, int lastButton, int NumberButton, int Status)
 {
   int i;
@@ -3470,6 +3491,9 @@ void redrawMenu()
     case 26:
       Highlight_Menu26();
       break;
+    case 39:
+      Highlight_Menu39();
+      break;
   }
   
   // Draw each button in turn
@@ -3721,6 +3745,12 @@ void Highlight_Menu1()
     AmendButtonStatus(1, 22, 1, "Output to^Express 32", &Green);
     isLime = false;
   }
+  if (strcmp(config.modeoutput, "LIBRESDR") == 0)
+  {
+    AmendButtonStatus(1, 22, 0, "Output to^LibreSDR", &Blue);
+    AmendButtonStatus(1, 22, 1, "Output to^LibreSDR", &Green);
+    isLime = false;
+  }
   if (strcmp(config.modeoutput, "LIMEMINI") == 0)
   {
     AmendButtonStatus(1, 22, 0, "Output to^Lime Mini", &Blue);
@@ -3898,6 +3928,8 @@ void Define_Menu3()
   AddButtonStatus(3, 2, "Disp/Ctrl^Config", &Blue);
 
   AddButtonStatus(3, 4, "Return to^Main Menu", &Blue);
+
+  AddButtonStatus(3, 15, "Select^Test Card", &Blue);
 
   AddButtonStatus(3, 20, "Set Stream^Outputs", &Blue);
 }
@@ -4441,7 +4473,7 @@ void Highlight_Menu8()
 
 void Define_Menu9()
 {
-  strcpy(MenuTitle[9], "Transmit Control Menu (9)");
+  strcpy(MenuTitle[9], "Transmit Monitoring Menu (9)");
 
   AddButtonStatus(9, 4, "Stop^Transmit", &DBlue);
 
@@ -4453,9 +4485,9 @@ void Define_Menu9()
   AddButtonStatus(9, 19, "Lime Gain^88",&Green);
   AddButtonStatus(9, 19, "Lime Gain^88",&Grey);
 
-  AddButtonStatus(9, 20, "DVB-S^QPSK", &Blue);
-  AddButtonStatus(9, 20, "DVB-S^QPSK", &Green);
   AddButtonStatus(9, 20, "DVB-S^QPSK", &Grey);
+
+  AddButtonStatus(9, 21, "Encoding^ ", &Grey);
 
   AddButtonStatus(9, 23, "Format^16:9", &Blue);
   AddButtonStatus(9, 23, "Format^16:9", &Green);
@@ -4471,8 +4503,6 @@ void Define_Menu9()
 
   AddButtonStatus(9, 27, "PTT On",&Red);
   AddButtonStatus(9, 27, "PTT Off",&Blue);
-
-  AddButtonStatus(9, 28, "Show^Video",&Blue);
 }
 
 
@@ -4494,110 +4524,97 @@ void Highlight_Menu9()
   AmendButtonStatus(9, 19, 2, limegainLabel, &Grey);
   SetButtonStatus(9, 19, 2);
 
+  // Display Correct Modulation on Button 20
+  if (strcmp(config.modulation, "DVBS") == 0)
+  {
+    AmendButtonStatus(9, 20, 0, "Modulation^DVB-S", &Grey);
+  }
+  if (strcmp(config.modulation, "S2QPSK") == 0)
+  {
+    AmendButtonStatus(9, 20, 0, "Modulation^DVB-S2 QPSK", &Grey);
+  }
+  if (strcmp(config.modulation, "8PSK") == 0)
+  {
+    AmendButtonStatus(9, 20, 0, "Modulation^DVB-S2 8PSK", &Grey);
+  }
+  if (strcmp(config.modulation, "16APSK") == 0)
+  {
+    AmendButtonStatus(9, 20, 0, "Modulation^S2 16APSK", &Grey);
+  }
+  if (strcmp(config.modulation, "32APSK") == 0)
+  {
+    AmendButtonStatus(9, 20, 0, "Modulation^S2 32APSK", &Grey);
+  }
+
   // Display Correct Encoding on Button 21
   if (strcmp(config.encoding, "IPTS in") == 0)
   {
-    AmendButtonStatus(9, 21, 0, "Encoding^IPTS in", &Blue);
-    AmendButtonStatus(9, 21, 1, "Encoding^IPTS in", &Green);
-    AmendButtonStatus(9, 21, 2, "Encoding^IPTS in", &Grey);
+    AmendButtonStatus(9, 21, 0, "Encoding^IPTS in", &Grey);
   }
   if (strcmp(config.encoding, "IPTS in H264") == 0)
   {
-    AmendButtonStatus(9, 21, 0, "Encoding^IPTS in H264", &Blue);
-    AmendButtonStatus(9, 21, 1, "Encoding^IPTS in H264", &Green);
-    AmendButtonStatus(9, 21, 2, "Encoding^IPTS in H264", &Grey);
+    AmendButtonStatus(9, 21, 0, "Encoding^IPTS in H264", &Grey);
   }
   if (strcmp(config.encoding, "IPTS in H265") == 0)
   {
-    AmendButtonStatus(9, 21, 0, "Encoding^IPTS in H265", &Blue);
-    AmendButtonStatus(9, 21, 1, "Encoding^IPTS in H265", &Green);
-    AmendButtonStatus(9, 21, 2, "Encoding^IPTS in H265", &Grey);
+    AmendButtonStatus(9, 21, 0, "Encoding^IPTS in H265", &Grey);
   }
   if (strcmp(config.encoding, "MPEG-2") == 0)
   {
-    AmendButtonStatus(9, 21, 0, "Encoding^MPEG-2", &Blue);
-    AmendButtonStatus(9, 21, 1, "Encoding^MPEG-2", &Green);
-    AmendButtonStatus(9, 21, 2, "Encoding^MPEG-2", &Grey);
+    AmendButtonStatus(9, 21, 0, "Encoding^MPEG-2", &Grey);
   }
   if (strcmp(config.encoding, "H264") == 0)
   {
-    AmendButtonStatus(9, 21, 0, "Encoding^H264", &Blue);
-    AmendButtonStatus(9, 21, 1, "Encoding^H264", &Green);
-    AmendButtonStatus(9, 21, 2, "Encoding^H264", &Grey);
+    AmendButtonStatus(9, 21, 0, "Encoding^H264",&Grey);
   }
   if (strcmp(config.encoding, "H265") == 0)
   {
-    AmendButtonStatus(9, 21, 0, "Encoding^H265", &Blue);
-    AmendButtonStatus(9, 21, 1, "Encoding^H265", &Green);
-    AmendButtonStatus(9, 21, 2, "Encoding^H265", &Grey);
+    AmendButtonStatus(9, 21, 0, "Encoding^H265",&Grey);
   }
   if (strcmp(config.encoding, "H266") == 0)
   {
-    AmendButtonStatus(9, 21, 0, "Encoding^H266", &Blue);
-    AmendButtonStatus(9, 21, 1, "Encoding^H266", &Green);
-    AmendButtonStatus(9, 21, 2, "Encoding^H266", &Grey);
+    AmendButtonStatus(9, 21, 0, "Encoding^H266", &Grey);
   }
   if (strcmp(config.encoding, "TS File") == 0)
   {
-    AmendButtonStatus(9, 21, 0, "Encoding^from TS File", &Blue);
-    AmendButtonStatus(9, 21, 1, "Encoding^from TS File", &Green);
-    AmendButtonStatus(9, 21, 2, "Encoding^from TS File", &Grey);
+    AmendButtonStatus(9, 21, 0, "Encoding^from TS File", &Grey);
   }
-  SetButtonStatus(9, 21, 2);
 
   // Display Correct Output Format on Button 23
   if (strcmp(config.format, "4:3") == 0)
   {
-    AmendButtonStatus(9, 23, 0, "Format^4:3", &Blue);
-    AmendButtonStatus(9, 23, 1, "Format^4:3", &Green);
-    AmendButtonStatus(9, 23, 2, "Format^4:3", &Grey);
+    AmendButtonStatus(9, 23, 0, "Format^4:3", &Grey);
   }
   if (strcmp(config.format, "16:9") == 0)
   {
-    AmendButtonStatus(9, 23, 0, "Format^16:9", &Blue);
-    AmendButtonStatus(9, 23, 1, "Format^16:9", &Green);
-    AmendButtonStatus(9, 23, 2, "Format^16:9", &Grey);
+    AmendButtonStatus(9, 23, 0, "Format^16:9", &Grey);
   }
   if (strcmp(config.format, "720p") == 0)
   {
-    AmendButtonStatus(9, 23, 0, "Format^720p", &Blue);
-    AmendButtonStatus(9, 23, 1, "Format^720p", &Green);
-    AmendButtonStatus(9, 23, 2, "Format^720p", &Grey);
+    AmendButtonStatus(9, 23, 0, "Format^720p", &Grey);
   }
   if (strcmp(config.format, "1080p") == 0)
   {
-    AmendButtonStatus(9, 23, 0, "Format^1080p", &Blue);
-    AmendButtonStatus(9, 23, 1, "Format^1080p", &Green);
-    AmendButtonStatus(9, 23, 2, "Format^1080p", &Grey);
+    AmendButtonStatus(9, 23, 0, "Format^1080p", &Grey);
   }
-  SetButtonStatus(9, 23, 2);
 
   // Display source on button 24
   if (strcmp(config.videosource, "PiCam") == 0)
   {
-    AmendButtonStatus(9, 24, 0, "Source^Pi Cam", &Blue);
-    AmendButtonStatus(9, 24, 1, "Source^Pi Cam", &Green);
-    AmendButtonStatus(9, 24, 2, "Source^Pi Cam", &Grey);
+    AmendButtonStatus(9, 24, 0, "Source^Pi Cam", &Grey);
   }
   if (strcmp(config.videosource, "WebCam") == 0)
   {
-    AmendButtonStatus(9, 24, 0, "Source^Web Cam", &Blue);
-    AmendButtonStatus(9, 24, 1, "Source^Web Cam", &Green);
-    AmendButtonStatus(9, 24, 2, "Source^Web Cam", &Grey);
+    AmendButtonStatus(9, 24, 0, "Source^Web Cam", &Grey);
   }
   if (strcmp(config.videosource, "ATEMUSB") == 0)
   {
-    AmendButtonStatus(9, 24, 0, "Source^ATEM USB", &Blue);
-    AmendButtonStatus(9, 24, 1, "Source^ATEM USB", &Green);
-    AmendButtonStatus(9, 24, 2, "Source^ATEM USB", &Grey);
+    AmendButtonStatus(9, 24, 0, "Source^ATEM USB", &Grey);
   }
   if (strcmp(config.videosource, "TestCard") == 0)
   {
-    AmendButtonStatus(9, 24, 0, "Source^Test Card", &Blue);
-    AmendButtonStatus(9, 24, 1, "Source^Test Card", &Green);
-    AmendButtonStatus(9, 24, 2, "Source^Test Card", &Grey);
+    AmendButtonStatus(9, 24, 0, "Source^Test Card", &Grey);
   }
-  SetButtonStatus(9, 24, 2);
 }
 
 
@@ -4704,6 +4721,9 @@ void Define_Menu13()
   AddButtonStatus(13, 13, "DATV Express^32 bit", &Blue);
   AddButtonStatus(13, 13, "DATV Express^32 bit", &Green);
 
+  AddButtonStatus(13, 14, "LibreSDR^ ", &Blue);
+  AddButtonStatus(13, 14, "LibreSDR^ ", &Green);
+
   AddButtonStatus(13, 15, "LimeSDR^Mini", &Blue);
   AddButtonStatus(13, 15, "LimeSDR^Mini", &Green);
 
@@ -4726,7 +4746,7 @@ void Define_Menu13()
 void Highlight_Menu13()
 {
   SelectFromGroupOnMenu3(13, 5, 1, config.modeoutput, "STREAMER", "IPTSOUT", "HDMI");
-  SelectFromGroupOnMenu4(13, 10, 1, config.modeoutput, "PLUTO", "PLUTOF5OEO", "EXPRESS16", "EXPRESS32");
+  SelectFromGroupOnMenu5(13, 10, 1, config.modeoutput, "PLUTO", "PLUTOF5OEO", "EXPRESS16", "EXPRESS32", "LIBRESDR");
   SelectFromGroupOnMenu5(13, 15, 1, config.modeoutput, "LIMEMINI", "LIMEDVB", "LIMEUSB", "LIMEXTRX", "LIMEMINING");
 }
 
@@ -5877,6 +5897,52 @@ void Highlight_Menu33()
 }
 
 
+void Define_Menu39()
+{
+  strcpy(MenuTitle[39], "Test Card Selection Menu (39)");
+
+  // Bottom Row, Menu 39
+
+  AddButtonStatus(39, 3, "Caption^On", &Green);
+  AddButtonStatus(39, 3, "Caption^Off", &Blue);
+
+  AddButtonStatus(39, 4, "Exit to^Main Menu", &DBlue);
+
+  // 4th Row, Menu 39
+
+  AddButtonStatus(39, 20, "Test Card^F", &Blue);
+  AddButtonStatus(39, 20, "Test Card^F", &Green);
+
+  AddButtonStatus(39, 21, "Test Card^C", &Blue);
+  AddButtonStatus(39, 21, "Test Card^C", &Green);
+
+  AddButtonStatus(39, 22, "PM5544^ ", &Blue);
+  AddButtonStatus(39, 22, "PM5544^ ", &Green);
+
+  AddButtonStatus(39, 23, "Colour Bars^ ", &Blue);
+  AddButtonStatus(39, 23, "Colour Bars^ ", &Green);
+
+  AddButtonStatus(39, 24, "Grey Scale^ ", &Blue);
+  AddButtonStatus(39, 24, "Grey Scale^ ", &Green);
+
+}
+
+
+void Highlight_Menu39()
+{
+  SelectFromGroupOnMenu5(39, 20, 1, testcard, "tcf", "tcc", "pm5544", "colourbars", "greyscale");
+
+  if (strcmp(caption, "on") == 0)
+  {
+    SetButtonStatus(39, 3, 0);
+  }
+  else
+  {
+    SetButtonStatus(39, 3, 1);
+  }
+}
+
+
 void Define_Menu41()
 {
 
@@ -6122,6 +6188,7 @@ void Define_Menus()
   Define_Menu31();
   Define_Menu32();
   Define_Menu33();
+  Define_Menu39();
 
   Define_Menu41();
 }
@@ -6991,6 +7058,9 @@ void selectOutput(int Button)          // Transmitter output device
       break;
     case 13:
       strcpy(config.modeoutput, "EXPRESS32");
+      break;
+    case 14:
+      strcpy(config.modeoutput, "LIBRESDR");
       break;
     case 15:
       strcpy(config.modeoutput, "LIMEMINI");
@@ -8574,6 +8644,47 @@ void ToggleAmendStreamerPreset()
 }
 
 
+void SelectTestCardAction(int NoButton)
+{
+  switch (NoButton)
+  {
+    case 3:                                 // Toggle caption
+      if (strcmp (caption, "on") == 0)
+      {
+        strcpy (caption, "off");
+        SetConfigParam(PATH_PCONFIG, "caption", "off");
+      }
+      else
+      {
+        strcpy (caption, "on");
+        SetConfigParam(PATH_PCONFIG, "caption", "on");
+      }
+      break;
+    case 20:                               // Test Card F
+      strcpy(testcard, "tcf");
+      SetConfigParam(PATH_PCONFIG, "testcard", testcard);
+      break;
+    case 21:                               // Test Card C
+      strcpy(testcard, "tcc");
+      SetConfigParam(PATH_PCONFIG, "testcard", testcard);
+      break;
+    case 22:                               // pm5544
+      strcpy(testcard, "pm5544");
+      SetConfigParam(PATH_PCONFIG, "testcard", testcard);
+      break;
+    case 23:                               // Colour Bars
+      strcpy(testcard, "colourbars");
+      SetConfigParam(PATH_PCONFIG, "testcard", testcard);
+      break;
+    case 24:                               // Greyscale
+      strcpy(testcard, "greyscale");
+      SetConfigParam(PATH_PCONFIG, "testcard", testcard);
+      break;
+  }
+  //printf("Testcard %s selected, caption %s\n", testcard, caption);
+}
+
+
 void InfoScreen()
 {
   char IPAddress[18] = "Not connected";
@@ -9131,6 +9242,11 @@ void waitForScreenAction()
           CurrentMenu = 1;
           redrawMenu();
           break;
+        case 15:                        // Select Test Card Menu
+          printf("MENU 39 \n");
+          CurrentMenu = 39;
+          redrawMenu();
+          break;
         case 20:                        // Set Stream Output Menu
           printf("MENU 26 \n");
           CurrentMenu = 26;
@@ -9445,6 +9561,7 @@ void waitForScreenAction()
         case 11:
         case 12:
         case 13:
+        case 14:
         case 15:
         case 16:
         case 17:
@@ -9942,6 +10059,29 @@ void waitForScreenAction()
           break;
         case 9:                                          //  Amend Preset
           ToggleAmendStreamerPreset();
+          redrawMenu();
+          break;
+        }
+        continue;
+      }
+      if (CurrentMenu == 39)           // Set Stream Outputs Menu
+      {
+        printf("Menu %d, Button %d\n", CallingMenu, i);
+        CallingMenu = 39;
+        switch (i)
+        {
+        case 4:                                          // Back to Main Menu
+          printf("MENU 1 \n");
+          CurrentMenu = 1;
+          redrawMenu();
+          break;
+        case 3:                                           // toggle caption on/off 
+        case 20:                                          // testcard f 
+        case 21:                                          // test card c 
+        case 22:                                          // pm5544 
+        case 23:                                          // colour bars 
+        case 24:                                          // grey scale 
+          SelectTestCardAction(i);                        // 
           redrawMenu();
           break;
         }

@@ -74,13 +74,18 @@ else
         echo "DETECTED_DISPLAY=hdmi"
         DETECTED_DISPLAY="hdmi"
       else
-        echo "DETECTED_DISPLAY=none"
-        DETECTED_DISPLAY="none"
+        kmsprint -m | grep -q '1280x720'
+        if [ "$?" == "0" ]; then
+          echo "DETECTED_DISPLAY=hdmi"
+          DETECTED_DISPLAY="hdmi"
+        else
+          echo "DETECTED_DISPLAY=none"
+          DETECTED_DISPLAY="none"
+        fi
       fi
-    else  # No display detected so select none (web) and make sure we reboot
+    else  # No display detected so select none (web)
       echo "DETECTED_DISPLAY=none"
       DETECTED_DISPLAY="none"
-      REBOOT_REQUIRED="true"
     fi
   fi
 fi

@@ -114,7 +114,7 @@ if (grep 'Installing LimeSuiteNG for LimeSDR Micro' /home/pi/p5_initial_build_lo
   make -j 4 -O
   SUCCESS=$?; BuildLogMsg $SUCCESS "Lime BandViewer NG compile"
 
-  mv /home/pi/portsdown/src/limeviewng/limeviewng /home/pi/portsdown/bin/limeviewng
+  mv /home/pi/portsdown/src/limeviewngm/limeviewng /home/pi/portsdown/bin/limeviewng
 
 fi
 

@@ -1,3 +1,6 @@
+202603280
+Try LimeSDR Mini TX with Test Card
+
 202603160
 Add LimeSDR Micro install option
 
