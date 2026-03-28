@@ -23,10 +23,7 @@ source /home/pi/portsdown/scripts/transmit/tx_functions.sh
 
 PATHBIN="/home/pi/portsdown/bin"
 PCONFIGFILE="/home/pi/portsdown/configs/portsdown_config.txt"
-
-IMAGEFILE="/home/pi/portsdown/images/tcf.jpg"
-
-echo $PCONFIGFILE
+IMAGEFILE="/home/pi/portsdown/tmp/testcard.jpg"
 
 MODULATION=$(get_config_var modulation $PCONFIGFILE)
 ENCODING=$(get_config_var encoding $PCONFIGFILE)
@@ -37,8 +34,9 @@ FREQOUTPUT=$(get_config_var freqoutput $PCONFIGFILE)
 SYMBOLRATE=$(get_config_var symbolrate $PCONFIGFILE)
 FEC=$(get_config_var fec $PCONFIGFILE)
 LIMEGAIN=$(get_config_var limegain $PCONFIGFILE)
-VIDEOSOURCE=$(get_config_var videosource $PCONFIGFILE)
 AUDIO_PREF=$(get_config_var audio $PCONFIGFILE)
+CALL=$(get_config_var call $PCONFIGFILE)
+CAPTIONON=$(get_config_var caption $PCONFIGFILE)
 
 STREAM_URL="rtmp://rtmp.batc.org.uk/live"
 STREAM_KEY=$(get_config_var streamkey $PCONFIGFILE)
@@ -174,8 +172,8 @@ if [ "$ENCODING" == "MPEG-2" ]; then
   fi
 fi
 
-#    let BITRATE_VIDEO=(BITRATE_TS*75)/100-10000
-    let BITRATE_VIDEO=(BITRATE_TS*60)/100-10000
+    let BITRATE_VIDEO=(BITRATE_TS*75)/100-10000
+#    let BITRATE_VIDEO=(BITRATE_TS*60)/100-10000
 #    let BITRATE_VIDEO=(BITRATE_TS*55)/100-10000
 echo BITRATE_TS:
 echo $BITRATE_TS
@@ -201,6 +199,10 @@ echo VID_WEBCAM:
 echo $VID_WEBCAM
 echo VIDEOSOURCE:
 echo $VIDEOSOURCE
+
+#if [ "$VIDEOSOURCE" == "TestCard"]; then
+  source /home/pi/portsdown/scripts/transmit/tx_card.sh
+#fi
 
 
 ############################## Code for BATC Streamer ######################################
@@ -291,11 +293,36 @@ fi
     # To Set the sound/video lipsync
     # If sound arrives first, decrease the value to delay it
     # like "-00:00:0.2" 
-
+echo Mode output $MODEOUTPUT
 
 if [ "$MODEOUTPUT" == "LIMEMINI" ]; then
+echo Video Source $VIDEOSOURCE
 
   case "$VIDEOSOURCE" in
+
+    "CAMLINK4K")
+
+        VIDEO_WIDTH=1920
+        VIDEO_HEIGHT=1080
+
+      ffmpeg \
+        -thread_queue_size 2048 \
+        -f v4l2 -video_size "$VIDEO_WIDTH"x"$VIDEO_HEIGHT" \
+        -i $VID_WEBCAM \
+        -f alsa -thread_queue_size 2048 -ac $AUDIO_CHANNELS -ar $AUDIO_SAMPLE \
+        -i plughw:$AUDIO_CARD_NUMBER,0 \
+        -c:v libx264 -b:v $BITRATE_VIDEO -minrate:v $BITRATE_VIDEO -maxrate:v  $BITRATE_VIDEO -max_delay 2500000 -r 12 -g 100 \
+        -c:a aac -ar 22050 -ac $AUDIO_CHANNELS -ab 64k \
+            -f mpegts  -blocksize 1880 \
+            -mpegts_original_network_id 1 -mpegts_transport_stream_id 1 \
+            -mpegts_service_id 1 \
+            -mpegts_pmt_start_pid 4095 -streamid 0:256 -streamid 1:257 \
+            -metadata service_provider="Portsdown 5" -metadata service_name=$CALL \
+            -muxrate $BITRATE_TS -y "udp://127.0.0.1:10000?pkt_size=1316&overrun_nonfatal=1" &
+
+       # -f v4l2 -input_format $INPUT_FORMAT -video_size "$VIDEO_WIDTH"x"$VIDEO_HEIGHT" \
+
+    ;;
 
     "WebCam")
 
@@ -316,6 +343,8 @@ if [ "$MODEOUTPUT" == "LIMEMINI" ]; then
       if [ "$WEBCAM_TYPE" == "OldC920" ]; then
         VIDEO_WIDTH=1920
         VIDEO_HEIGHT=1080
+        VIDEO_WIDTH=1280
+        VIDEO_HEIGHT=720
         INPUT_FORMAT="h264"
         ITS_OFFSET="-00:00:0.5"
       elif [ "$WEBCAM_TYPE" == "C170" ]; then
@@ -339,23 +368,20 @@ if [ "$MODEOUTPUT" == "LIMEMINI" ]; then
           --set-ctrl power_line_frequency=1
       fi
 
-
-
       ffmpeg \
         -thread_queue_size 2048 \
         -f v4l2 -input_format $INPUT_FORMAT -video_size "$VIDEO_WIDTH"x"$VIDEO_HEIGHT" \
         -i $VID_WEBCAM \
         -f alsa -thread_queue_size 2048 -ac $AUDIO_CHANNELS -ar $AUDIO_SAMPLE \
         -i plughw:$AUDIO_CARD_NUMBER,0 \
-        -c:v libx264 -b:v $BITRATE_VIDEO -minrate:v $BITRATE_VIDEO -maxrate:v  $BITRATE_VIDEO -r 15 -g 100 \
+        -c:v libx264 -b:v $BITRATE_VIDEO -minrate:v $BITRATE_VIDEO -maxrate:v  $BITRATE_VIDEO -max_delay 2500000 -r 15 -g 100 \
         -c:a aac -ar 22050 -ac $AUDIO_CHANNELS -ab 64k \
             -f mpegts  -blocksize 1880 \
             -mpegts_original_network_id 1 -mpegts_transport_stream_id 1 \
             -mpegts_service_id 1 \
             -mpegts_pmt_start_pid 4095 -streamid 0:256 -streamid 1:257 \
-            -metadata service_provider="Portsdown 5" -metadata service_name="G8GKQ" \
+            -metadata service_provider="Portsdown 5" -metadata service_name=$CALL \
             -muxrate $BITRATE_TS -y "udp://127.0.0.1:10000?pkt_size=1316&overrun_nonfatal=1" &
-
     ;;
   
     "EasyCap")
@@ -394,16 +420,34 @@ if [ "$MODEOUTPUT" == "LIMEMINI" ]; then
             -mpegts_original_network_id 1 -mpegts_transport_stream_id 1 \
             -mpegts_service_id 1 \
             -mpegts_pmt_start_pid 4095 -streamid 0:256 -streamid 1:257 \
-            -metadata service_provider="Portsdown 5" -metadata service_name="G8GKQ" \
+            -metadata service_provider="Portsdown 5" -metadata service_name=$CALL \
             -muxrate $BITRATE_TS -y "udp://127.0.0.1:10000?pkt_size=1316&overrun_nonfatal=1" &
 
           # Set the EasyCap contrast to prevent crushed whites
           sleep 1
           v4l2-ctl -d "$VID_USB" --set-ctrl "$ECCONTRAST" >/dev/null 2>/dev/null
     ;;
+
+  "TestCard")
+          ffmpeg \
+            -thread_queue_size 2048 \
+            -re -loop 1 \
+             \
+            -i /home/pi/tmp/testcard.jpg \
+            -framerate 15 -video_size "$VIDEO_WIDTH"x"$VIDEO_HEIGHT" \
+            -c:v libx264 -b:v $BITRATE_VIDEO -minrate:v $BITRATE_VIDEO -maxrate:v  $BITRATE_VIDEO -r 15 -g 100 \
+            -f mpegts  -blocksize 1880 \
+            -mpegts_original_network_id 1 -mpegts_transport_stream_id 1 \
+            -mpegts_service_id 1 \
+            -mpegts_pmt_start_pid 4095 -streamid 0:256 -streamid 1:257 \
+            -metadata service_provider="Portsdown 5" -metadata service_name=$CALL \
+            -muxrate $BITRATE_TS -y "udp://127.0.0.1:10000?pkt_size=1316&overrun_nonfatal=1" &
+  ;;
     esac
   fi
 exit
+
+#            -framerate 5 -video_size 704x576 \
 
 #-input_format $INPUT_FORMAT -video_size "$VIDEO_WIDTH"x"$VIDEO_HEIGHT"
 
@@ -440,7 +484,7 @@ ffmpeg -thread_queue_size 20480 -f v4l2 -i /dev/video0 -f alsa -thread_queue_siz
             -mpegts_original_network_id 1 -mpegts_transport_stream_id 1 \
             -mpegts_service_id 1 \
             -mpegts_pmt_start_pid 4095 -streamid 0:256 -streamid 1:257 \
-            -metadata service_provider="Portsdown 5" -metadata service_name="G8GKQ" \
+            -metadata service_provider="Portsdown 5" -metadata service_name=$CALL \
             -muxrate $BITRATE_TS -y "udp://127.0.0.1:10000?pkt_size=1316&overrun_nonfatal=1" &
   ;;
   "TestCard")
@@ -455,7 +499,7 @@ ffmpeg -thread_queue_size 20480 -f v4l2 -i /dev/video0 -f alsa -thread_queue_siz
             -mpegts_original_network_id 1 -mpegts_transport_stream_id 1 \
             -mpegts_service_id 1 \
             -mpegts_pmt_start_pid 4095 -streamid 0:256 -streamid 1:257 \
-            -metadata service_provider="Portsdown 5" -metadata service_name="G8GKQ" \
+            -metadata service_provider="Portsdown 5" -metadata service_name=$CALL \
             -muxrate $BITRATE_TS -y udp://127.0.0.1:10000 &
   ;;
 

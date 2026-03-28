@@ -181,8 +181,14 @@ esac
 
 while [ "$GUI_RETURN_CODE" -gt 127 ] || [ "$GUI_RETURN_CODE" -eq 0 ];  do
 
-echo "Calling App "$GUI_RETURN_CODE" from scheduler"
-echo
+  # Kill any process blocking port 2005
+  lsof -ti:2005
+  if [ $? == 0 ] ; then
+    lsof -ti:2005 | xargs kill -9
+  fi
+
+  echo "Calling App "$GUI_RETURN_CODE" from scheduler"
+  echo
 
   case "$GUI_RETURN_CODE" in
     0)

@@ -428,7 +428,7 @@ detect_audio()
 
 
 
-############ FUNCTION TO IDENTIFY VIDEO DEVICE SYTEM ADDRESS #############################
+############ FUNCTION TO IDENTIFY VIDEO DEVICE SYSTEM ADDRESS #############################
 
 detect_video()
 {

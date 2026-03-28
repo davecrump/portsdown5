@@ -1,6 +1,6 @@
 #! /bin/bash
 
-# Compile portsdown gui
+# Compile portsdown gui and run the scheduler
 
 # set -x
 
@@ -12,6 +12,13 @@ fi
 if pgrep -f -x "single_screen_grab_for_web.sh" >/dev/null
 then
   ps -ef | grep single_screen_grab_for_web.sh | grep -v grep | awk '{print $2}' | xargs kill
+fi
+
+
+# Kill any process blocking port 2005
+lsof -ti:2005
+if [ $? == 0 ] ; then
+  lsof -ti:2005 | xargs kill -9
 fi
 
 sudo killall fb2png >/dev/null 2>/dev/null

@@ -357,8 +357,12 @@ if [ "$UPDATE" == "false" ]; then
     SUCCESS=$?; BuildLogMsg $SUCCESS "libsoapysdr-dev install"
   sudo apt-get -y install --no-install-recommends libwxgtk3.2-dev # For LimeSuiteNG
     SUCCESS=$?; BuildLogMsg $SUCCESS "libwxgtk3.2-dev install"
-  sudo apt-get -y install linux-headers-$(uname -r)
+  sudo apt-get -y install linux-headers-$(uname -r)               # For LimeSDR Micro
     SUCCESS=$?; BuildLogMsg $SUCCESS "linux-headers install"
+  sudo apt-get -y install socat                                   # For debugging network issues
+    SUCCESS=$?; BuildLogMsg $SUCCESS "socat install"
+  sudo apt-get -y install lsof                                    # For checking which process is locking a port
+    SUCCESS=$?; BuildLogMsg $SUCCESS "lsof install"
 fi
 
 # Placeholder for New packages during update
