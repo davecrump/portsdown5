@@ -49,18 +49,20 @@ uw2l.sh : recompiles wav2lime and runs it with /home/pi/hamtv_short.wav
 
 uw2lng.sh : recompiles wav2limeng and runs it with /home/pi/hamtv_short.wav
 
-ulbvsp.sh : Recompiles the SDRPlay bandviewer app and runs it without the scheduler
-
-uall.sh: recompiles each app in term but does not run them.  Use after changes in the common libraries
-
 
 Scripts used during the software development process for the KeyLimePi:
 =======================================================================
 
-ulsabv.sh : Compiles the bandviewer on 323 MHz for narrow sweep and runs it
+ulsabv.sh :    Compiles the bandviewer on 323 MHz for narrow sweep and runs it
+               portsdown/src/sa_bv/sa_bv.c
 
-ulsaif.sh : Compiles the 323 MHz IF detector for wide sweep and runs it
+ulsaifwb.sh :  Compiles the 323 MHz IF (AM) detector for wide sweep and runs it
+               /home/pi/portsdown/src/sa_if_wb/sa_if.c
 
-ulsasdr.sh : Compiles the BandViewer for KeyLime Pi and runs it
+ulsasdr.sh :   Compiles the BandViewer for KeyLime Pi and runs it
+               portsdown/src/sa_sdr/sa_sdr.c
 
-ulsdh.sh : Compiles the Application scheduler for KeyLime Pi and runs it
+ulsch.sh :     Compiles the Application scheduler for KeyLime Pi and runs it
+               portsdown/src/sa_sched/sa_sched.c
+
+usall.sh :     Compiles all 4 KLP apps, but does not run them

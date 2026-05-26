@@ -10,7 +10,7 @@ sudo killall sa_if >/dev/null 2>/dev/null
 
 echo Compiling sa_if.c
 
-cd /home/pi/portsdown/src/sa_if
+cd /home/pi/portsdown/src/sa_if_wb
 
 touch sa_if.c
 
@@ -24,7 +24,7 @@ fi
 
 cd /home/pi
 
-mv /home/pi/portsdown/src/sa_if/sa_if /home/pi/portsdown/bin/sa_if
+mv /home/pi/portsdown/src/sa_if_wb/sa_if /home/pi/portsdown/bin/sa_if
 
 /home/pi/portsdown/bin/sa_if
 
