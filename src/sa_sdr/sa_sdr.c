@@ -112,7 +112,7 @@ int wbuttonsize = 100;
 int hbuttonsize = 50;
 int rawX, rawY;
 int FinishedButton = 0;
-int i;
+//int i;
 bool freeze = false;
 bool frozen = false;
 bool activescan = false;
@@ -243,6 +243,7 @@ void snap_from_menu();
 void do_snapcheck();
 int IsImageToBeChanged(int x,int y);
 int CheckLimeConnect();
+//int CheckMouse();
 void Keyboard(char RequestText[63], char InitText[63], int MaxLength);
 int openTouchScreen(int NoDevice);
 int getTouchScreenDetails(int *screenXmin, int *screenXmax,int *screenYmin,int *screenYmax);
@@ -1068,6 +1069,43 @@ return 0;
   pclose(fp);
   return responseint;
 }
+
+
+/***************************************************************************//**
+ * @brief Detects if a mouse is currently connected
+ *
+ * @param nil
+ *
+ * @return 0 if connected, 1 if not connected
+*******************************************************************************/
+
+//int CheckMouse()
+//{
+//  FILE *fp;
+//  char response_line[255];
+
+//  fp = popen("ls -l /dev/input | grep 'mouse'", "r");
+//  if (fp == NULL)
+//  {
+//    printf("Failed to run command\n" );
+//    exit(1);
+//  }
+
+  // Response is "crw-rw---- 1 root input 13, 32 Apr 29 17:02 mouse0" if present, null if not
+  // So, if there is a response, return 0.
+
+  /* Read the output a line at a time - output it. */
+//  while (fgets(response_line, 250, fp) != NULL)
+//  {
+//    if (strlen(response_line) > 1)
+//    {
+//      pclose(fp);
+//      return 0;
+//    }
+//  }
+//  pclose(fp);
+//  return 1;
+//}
 
 
 void Keyboard(char RequestText[63], char InitText[63], int MaxLength)
@@ -2287,6 +2325,7 @@ void wait_touch()
 
 void CalculateMarkers()
 {
+  int i;
   int maxy;
   int xformaxy = 0;
   int xsum = 0;
@@ -3506,8 +3545,8 @@ void RedrawDisplay()
 
 void *WaitButtonEvent(void * arg)
 {
+  int i;
   int  rawPressure;
-  //char ValueToSave[63];
 
   for (;;)
   {
@@ -3620,7 +3659,7 @@ void *WaitButtonEvent(void * arg)
         default:
           printf("Menu 1 Error\n");
       }
-      if(i != 11)
+      if ((i != 11) && (PortsdownExitRequested == true))
       {
         PortsdownExitRequested = false;
         Start_Highlights_Menu1();

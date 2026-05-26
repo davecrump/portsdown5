@@ -22,13 +22,14 @@
 # picoview.c
 # sdrplayview.c
 
+# sa_bv.c
+# sa_if_wb.c
+# sa_sdr.c
+
 # limeng bv - to do
 # limeng nf - to do
 # wav2limeng - to do
 
-# sa_bv.c
-# sa_if.c
-# sa_sdr.c 
 
 # set -x
 
@@ -319,32 +320,32 @@ cd /home/pi
 
 
 # Compile the SA AM IF
-cd /home/pi/portsdown/src/sa_if
+cd /home/pi/portsdown/src/sa_if_wb
 touch sa_if.c
 make -j 4 -O 
 if [ $? != "0" ]; then
   echo
   echo "The SA AM IF failed to compile"
-  echo "/home/pi/portsdown/src/sa_if/sa_if.c"
+  echo "/home/pi/portsdown/src/sa_if_wb/sa_if.c"
   cd /home/pi
   exit
 else
   echo
   echo "Successful SA AM IF compile"
   echo
-  mv /home/pi/portsdown/src/sa_if/sa_if /home/pi/portsdown/bin/sa_if
+  mv /home/pi/portsdown/src/sa_if_wb/sa_if /home/pi/portsdown/bin/sa_if
 fi
 cd /home/pi
 
 
-# Compile the SA wideband SDR
+# Compile the SA raw SDR
 cd /home/pi/portsdown/src/sa_sdr
 touch sa_sdr.c
 make -j 4 -O
 if [ $? != "0" ]; then
   echo
   echo "The SA wideband SDR failed to compile"
-  echo "/home/pi/portsdown/src/sa_if/sa_if.c"
+  echo "/home/pi/portsdown/src/sa_sdr/sa_sdr.c"
   cd /home/pi
   exit
 else

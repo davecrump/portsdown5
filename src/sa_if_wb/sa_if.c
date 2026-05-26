@@ -101,7 +101,6 @@ int wbuttonsize = 100;
 int hbuttonsize = 50;
 int rawX, rawY;
 int FinishedButton = 0;
-int i;
 bool freeze = false;
 bool frozen = false;
 bool normalised = false;
@@ -281,7 +280,6 @@ void snap_from_menu();
 void do_snapcheck();
 int IsImageToBeChanged(int x, int y);
 int CheckLimeConnect();
-//void UpdateWeb();
 void Keyboard(char RequestText[63], char InitText[63], int MaxLength);
 int openTouchScreen(int);
 int getTouchScreenDetails(int *screenXmin, int *screenXmax,int *screenYmin,int *screenYmax);
@@ -1023,17 +1021,6 @@ return 0;
   pclose(fp);
   return responseint;
 }
-
-
-//void UpdateWeb()
-//{
-  // Called after any screen update to update the web page if required.
-
-//  if(webcontrol == true)
-//  {
-//    system("/home/pi/portsdown/scripts/single_screen_grab_for_web.sh &");
-//  }
-//}
 
 
 void Keyboard(char RequestText[63], char InitText[63], int MaxLength)
@@ -2169,6 +2156,7 @@ void wait_touch()
 
 void CalculateMarkers()
 {
+  int i;
   int maxy;
   int xformaxy = 0;
   int xsum = 0;
@@ -2991,6 +2979,7 @@ void ChangeLabel(int button)
 
 void *WaitButtonEvent(void * arg)
 {
+  int i;
   int  rawPressure;
 
   for (;;)
@@ -3076,7 +3065,6 @@ void *WaitButtonEvent(void * arg)
             UpdateWindow();
           }
           break;
-
         case 8:
           if (freeze)
           {
@@ -3092,6 +3080,12 @@ void *WaitButtonEvent(void * arg)
           break;
         default:
           printf("Menu 1 Error\n");
+      }
+      if ((i != 7) && (PortsdownExitRequested == true))
+      {
+        PortsdownExitRequested = false;
+        Start_Highlights_Menu1();
+        UpdateWindow();
       }
       continue;  // Completed Menu 1 action, go and wait for touch
     }
@@ -3253,8 +3247,12 @@ void *WaitButtonEvent(void * arg)
           DrawSettings();     // Draw Title
           UpdateWindow();
           break;
-        case 4:                                            // Shutdown
-          system("sudo shutdown now");
+        case 4:                                            // Restart this App
+          freeze = true;
+          usleep(100000);
+          clearScreen(0, 0, 0);
+          usleep(1000000);
+          cleanexit(170);
           break;
         case 5:                                            // Exit to Portsdown
           freeze = true;
@@ -3264,12 +3262,8 @@ void *WaitButtonEvent(void * arg)
           usleep(1000000);
           cleanexit(207);
           break;
-        case 6:                                            // Restart this App
-          freeze = true;
-          usleep(100000);
-          clearScreen(0, 0, 0);
-          usleep(1000000);
-          cleanexit(170);
+        case 6:                                            // Shutdown
+          system("sudo shutdown now");
           break;
         case 7:                                            // Return to Main Menu
           printf("Main Menu 1 Requested\n");
@@ -3673,7 +3667,7 @@ void Define_Menu4()  // System
   AddButtonStatus(button, " ", &Black);
 
   button = CreateButton(4, 4);
-  AddButtonStatus(button, "Shutdown^System", &Blue);
+  AddButtonStatus(button, "Re-start^App", &Blue);
   AddButtonStatus(button, " ", &Green);
 
   button = CreateButton(4, 5);
@@ -3681,7 +3675,7 @@ void Define_Menu4()  // System
   AddButtonStatus(button, " ", &Green);
 
   button = CreateButton(4, 6);
-  AddButtonStatus(button, "Re-start^App", &Blue);
+  AddButtonStatus(button, "Shutdown^System", &Blue);
   AddButtonStatus(button, " ", &Green);
 
   button = CreateButton(4, 7);
@@ -5006,6 +5000,7 @@ void *PowerMeasure_thread(void *arg)
   int64_t scan_offset_samples;
   int raw_pixel;
   bool use_buffer1;
+  int i;
   int j;
   int pixel_start_offset;
   float buffer_power;
