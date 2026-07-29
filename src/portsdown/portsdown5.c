@@ -420,7 +420,7 @@ void SelectStreamerAction(int NoButton);
 void AmendStreamerPreset(int NoButton);
 void SelectStreamer(int NoButton);
 void ToggleAmendStreamerPreset();
-void SelectTestCardAction(int NoButton);
+void AdjustVLCVolume(int adjustment);
 
 // Useful stuff
 
