@@ -17,7 +17,7 @@ Full information of the Portsdown 5 will be maintained on the BATC Wiki at https
 
 The preferred installation method only needs a Windows PC connected to the same (internet-connected) network as your Raspberry Pi.  Do not connect a keyboard or HDMI display directly to your Raspberry Pi.
 
-- First download the latest 64 bit trixie lite release on to your Windows PC from here https://downloads.raspberrypi.org/raspios_lite_arm64/images/raspios_lite_arm64-2025-10-02/2025-10-01-raspios-trixie-arm64-lite.img.xz
+- First download the latest 64 bit trixie lite release on to your Windows PC from here https://downloads.raspberrypi.org/raspios_lite_arm64/images/raspios_lite_arm64-2026-06-19/2026-06-18-raspios-trixie-arm64-lite.img.xz
 
 - Unzip the image (using 7zip as it is a .xz compressed file) and then transfer it to a Micro-SD Card using Win32diskimager https://sourceforge.net/projects/win32diskimager/
 
@@ -33,10 +33,16 @@ pi:$6$B6mdmoSQrTvKkAbL$Ocwu9m3VjPGpZEGe.uJvYNI4w/UcMUYTJjtt327ysNbmPRlnROBCvigF0
 
 - From your windows PC use Putty (http://www.chiark.greenend.org.uk/~sgtatham/putty/download.html) or kiTTY to log in to the IP address that you noted earlier.  You will get a Security warning the first time you try; this is normal.
 
-- Log in (user: pi, password: raspberry) then cut and paste the following code in, one line at a time:
+- Log in (user: pi, password: raspberry) then cut and paste the following code in:
 
 
 ```sh
+sudo raspi-config nonint do_sudo_pass 1
+
+You will be requested for the password (raspberry), but after this you will only need the password to log in.
+
+Then paste these 3 lines in, one at a time, and press enter after each line is pasted.
+```
 wget https://github.com/BritishAmateurTelevisionClub/portsdown5/raw/main/install_p5.sh
 chmod +x install_p5.sh
 ./install_p5.sh
