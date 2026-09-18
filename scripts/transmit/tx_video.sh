@@ -172,8 +172,8 @@ if [ "$ENCODING" == "MPEG-2" ]; then
   fi
 fi
 
-    let BITRATE_VIDEO=(BITRATE_TS*75)/100-10000
-#    let BITRATE_VIDEO=(BITRATE_TS*60)/100-10000
+#    let BITRATE_VIDEO=(BITRATE_TS*75)/100-10000
+    let BITRATE_VIDEO=(BITRATE_TS*60)/100-10000
 #    let BITRATE_VIDEO=(BITRATE_TS*55)/100-10000
 echo BITRATE_TS:
 echo $BITRATE_TS
@@ -304,16 +304,17 @@ echo Video Source $VIDEOSOURCE
 
         VIDEO_WIDTH=1920
         VIDEO_HEIGHT=1080
+      if [ "$ENCODING" == "H264" ]; then
 
-      ffmpeg \
-        -thread_queue_size 2048 \
-        -f v4l2 -video_size "$VIDEO_WIDTH"x"$VIDEO_HEIGHT" \
-        -i $VID_WEBCAM \
-        -f alsa -thread_queue_size 2048 -ac $AUDIO_CHANNELS -ar $AUDIO_SAMPLE \
-        -i plughw:$AUDIO_CARD_NUMBER,0 \
-        -c:v libx264 -b:v $BITRATE_VIDEO -minrate:v $BITRATE_VIDEO -maxrate:v  $BITRATE_VIDEO -max_delay 2500000 -r 12 -g 100 \
-        -c:a aac -ar 22050 -ac $AUDIO_CHANNELS -ab 64k \
-            -f mpegts  -blocksize 1880 \
+        ffmpeg \
+          -thread_queue_size 2048 \
+          -f v4l2 -video_size "$VIDEO_WIDTH"x"$VIDEO_HEIGHT" \
+          -i $VID_WEBCAM \
+          -f alsa -thread_queue_size 2048 -ac $AUDIO_CHANNELS -ar $AUDIO_SAMPLE \
+          -i plughw:$AUDIO_CARD_NUMBER,0 \
+          -c:v libx264 -b:v $BITRATE_VIDEO -minrate:v $BITRATE_VIDEO -maxrate:v  $BITRATE_VIDEO -max_delay 2500000 -r 12 -g 100 \
+          -c:a aac -ar 22050 -ac $AUDIO_CHANNELS -ab 64k \
+          -f mpegts  -blocksize 1880 \
             -mpegts_original_network_id 1 -mpegts_transport_stream_id 1 \
             -mpegts_service_id 1 \
             -mpegts_pmt_start_pid 4095 -streamid 0:256 -streamid 1:257 \
@@ -321,7 +322,42 @@ echo Video Source $VIDEOSOURCE
             -muxrate $BITRATE_TS -y "udp://127.0.0.1:10000?pkt_size=1316&overrun_nonfatal=1" &
 
        # -f v4l2 -input_format $INPUT_FORMAT -video_size "$VIDEO_WIDTH"x"$VIDEO_HEIGHT" \
+      fi
 
+#      INPUT_FORMAT="yuyv422"
+
+      INPUT_FORMAT="nv12"
+
+      if [ "$ENCODING" == "H265" ]; then
+echo H265 for Camlink
+        ffmpeg -hide_banner -loglevel warning -thread_queue_size 1024 \
+        \
+          -f v4l2 -input_format $INPUT_FORMAT -video_size 1024x576 -framerate 59.94 \
+          -i $VID_WEBCAM \
+        \
+          -thread_queue_size 1024 \
+          -f alsa -ac 2 -ar $AUDIO_SAMPLE \
+          -i hw:$AUDIO_CARD_NUMBER,0 \
+        \
+         -vf format=yuv420p \
+        \
+          -c:v libx265 -preset medium -tune zerolatency -profile:v main \
+          -x265-params bframes=0:ipratio=2.5 -g 150 -keyint_min 15 \
+        \
+          -b:v $BITRATE_VIDEO -minrate $BITRATE_VIDEO -maxrate $BITRATE_VIDEO -bufsize 2048 \
+        \
+          -c:a mp2 -ar 22050 -ac $AUDIO_CHANNELS -ab 64k \
+        \
+          -metadata service_provider="Portsdown 5" \
+          -metadata service_name=$CALL \
+        \
+          -muxrate $BITRATE_TS \
+          -mpegts_flags +resend_headers -muxdelay 0 -muxpreload 0 \
+        \
+          -f mpegts \
+          -y "udp://127.0.0.1:10000?pkt_size=1316&overrun_nonfatal=1" &
+
+      fi
     ;;
 
     "WebCam")
@@ -368,6 +404,8 @@ echo Video Source $VIDEOSOURCE
           --set-ctrl power_line_frequency=1
       fi
 
+      if [ "$ENCODING" == "H264" ]; then
+
       ffmpeg \
         -thread_queue_size 2048 \
         -f v4l2 -input_format $INPUT_FORMAT -video_size "$VIDEO_WIDTH"x"$VIDEO_HEIGHT" \
@@ -382,7 +420,52 @@ echo Video Source $VIDEOSOURCE
             -mpegts_pmt_start_pid 4095 -streamid 0:256 -streamid 1:257 \
             -metadata service_provider="Portsdown 5" -metadata service_name=$CALL \
             -muxrate $BITRATE_TS -y "udp://127.0.0.1:10000?pkt_size=1316&overrun_nonfatal=1" &
+
+      fi
+
+#     -video_size 960x720 \
+#     -framerate 20 \
+#     -x265-params ipratio=1.1:pbratio=1.1 \
+#          -f mpegts \
+      #    -y "udp://127.0.0.1:10000?pkt_size=1316&overrun_nonfatal=1" &
+
+#
+
+#        INPUT_FORMAT="h264"
+        INPUT_FORMAT="yuyv422"
+
+      if [ "$ENCODING" == "H265" ]; then
+
+        ffmpeg -hide_banner -loglevel warning -thread_queue_size 1024 \
+        \
+          -f v4l2 -input_format $INPUT_FORMAT -video_size 1024x576 -framerate 15 \
+          -i $VID_WEBCAM \
+        \
+          -thread_queue_size 1024 \
+          -f alsa -ac 2 -ar $AUDIO_SAMPLE \
+          -i hw:$AUDIO_CARD_NUMBER,0 \
+        \
+         -vf format=yuv420p \
+        \
+          -c:v libx265 -preset medium -tune zerolatency -profile:v main \
+          -x265-params bframes=0:ipratio=2.5 -g 150 -keyint_min 15 \
+        \
+          -b:v $BITRATE_VIDEO -minrate $BITRATE_VIDEO -maxrate $BITRATE_VIDEO -bufsize 2048 \
+        \
+          -c:a aac \
+          -b:a 32000 -ac 2 \
+        \
+          -metadata service_provider="Portsdown 5" \
+          -metadata service_name=$CALL \
+        \
+          -muxrate $BITRATE_TS \
+          -mpegts_flags +resend_headers -muxdelay 0 -muxpreload 0 \
+        \
+          -f mpegts \
+          -y "udp://127.0.0.1:10000?pkt_size=1316&overrun_nonfatal=1" &
+      fi
     ;;
+
   
     "EasyCap")
 

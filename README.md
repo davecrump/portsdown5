@@ -38,11 +38,12 @@ pi:$6$B6mdmoSQrTvKkAbL$Ocwu9m3VjPGpZEGe.uJvYNI4w/UcMUYTJjtt327ysNbmPRlnROBCvigF0
 
 ```sh
 sudo raspi-config nonint do_sudo_pass 1
+```
 
 You will be requested for the password (raspberry), but after this you will only need the password to log in.
 
 Then paste these 3 lines in, one at a time, and press enter after each line is pasted.
-```
+```sh
 wget https://github.com/BritishAmateurTelevisionClub/portsdown5/raw/main/install_p5.sh
 chmod +x install_p5.sh
 ./install_p5.sh
